@@ -46,6 +46,7 @@ googleProvider.addScope('email')
 export function logFirebaseSetup() {
   console.info('[firebase] project:', firebaseConfig.projectId)
   console.info('[firebase] authDomain:', firebaseConfig.authDomain)
+  console.info('[firebase] storageBucket:', firebaseConfig.storageBucket)
   console.info(
     '[firebase] apiKey present:',
     Boolean(firebaseConfig.apiKey) && (firebaseConfig.apiKey?.length ?? 0) > 10,

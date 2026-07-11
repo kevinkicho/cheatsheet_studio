@@ -47,7 +47,8 @@ export function FitContent({
   minScale = 0.08,
   maxScale = 1,
   mode = 'scale',
-  fitMethod = 'transform',
+  // App default: re-render at target size (crisp KaTeX). Pass 'transform' only if needed.
+  fitMethod = 'fontSize',
   baseFontSize = 18,
   showBadge = false,
   contentKey,
@@ -77,10 +78,17 @@ export function FitContent({
 
       const base = Math.max(1, baseFontSize)
 
+      // Detect content that scales poorly with font-size alone (fixed rem
+      // classes, multi-column tables). Prefer CSS transform for those so
+      // the whole layout grows/shrinks with the card.
+      const hasTable = el.querySelector('table') != null
+      const method =
+        fitMethod === 'fontSize' && hasTable ? 'transform' : fitMethod
+
       // 1) Natural size always at base — never measure the already-scaled tree
       el.style.transform = 'none'
       el.style.transformOrigin = 'top left'
-      el.style.fontSize = fitMethod === 'fontSize' ? `${base}px` : ''
+      el.style.fontSize = `${base}px`
       el.style.width = 'max-content'
       el.style.maxWidth = 'none'
       el.style.marginLeft = '0'
@@ -96,7 +104,7 @@ export function FitContent({
       const fit = Math.min(cw / nw, ch / nh)
       let clamped = Math.min(maxScale, Math.max(minScale, fit))
 
-      if (fitMethod === 'fontSize') {
+      if (method === 'fontSize') {
         el.style.transform = 'none'
         el.style.fontSize = `${base * clamped}px`
         void el.offsetWidth
@@ -116,7 +124,8 @@ export function FitContent({
         el.style.marginLeft = `${Math.max(0, (cw - finalW) / 2)}px`
         el.style.marginTop = `${Math.max(0, (ch - finalH) / 2)}px`
       } else {
-        el.style.fontSize = ''
+        // Transform scales the whole painted layer (tables, mixed content)
+        el.style.fontSize = `${base}px`
         el.style.transform = `scale(${clamped})`
         el.style.transformOrigin = 'top left'
         const scaledW = nw * clamped
@@ -190,11 +199,7 @@ export function FitContent({
     >
       <div
         ref={innerRef}
-        className={
-          fitMethod === 'fontSize'
-            ? 'inline-block'
-            : 'inline-block will-change-transform'
-        }
+        className="inline-block will-change-transform origin-top-left"
       >
         {children}
       </div>

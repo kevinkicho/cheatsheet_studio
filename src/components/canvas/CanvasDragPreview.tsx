@@ -1,6 +1,7 @@
 import type { LibraryItem } from '@/types'
 import { DEFAULT_ITEM_STYLE } from '@/types'
 import { FitContent } from '@/components/math/FitContent'
+import { FigureView } from '@/components/math/FigureView'
 import { LatexView } from '@/components/math/LatexView'
 import { MarkdownTable } from '@/components/math/MarkdownTable'
 
@@ -37,8 +38,9 @@ function previewSize(lib: LibraryItem): { width: number; height: number } {
  */
 export function CanvasDragPreview({ item }: { item: LibraryItem }) {
   const { width, height } = previewSize(item)
+  const isFigure = item.type === 'figure' && Boolean(item.imageUrl)
   const style = DEFAULT_ITEM_STYLE
-  const pad = style.padding ?? 12
+  const pad = isFigure ? 8 : (style.padding ?? 12)
   const titleH = 18
   const bodyH = Math.max(32, height - pad * 2 - titleH)
 
@@ -48,6 +50,7 @@ export function CanvasDragPreview({ item }: { item: LibraryItem }) {
       style={{
         width,
         height,
+        // Same solid panel as canvas cards (figures included)
         background: style.background ?? 'rgba(30,32,40,0.95)',
         border: style.border,
         borderRadius: 8,
@@ -63,38 +66,31 @@ export function CanvasDragPreview({ item }: { item: LibraryItem }) {
         {item.title}
       </div>
       <div style={{ height: bodyH, width: '100%' }}>
-        <FitContent
-          mode="scale"
-          minScale={0.2}
-          fitMethod={
-            item.type === 'figure' || item.imageUrl ? 'transform' : 'fontSize'
-          }
-          baseFontSize={style.fontSize ?? 18}
-          contentKey={`drag-${item.id}`}
-          className="h-full w-full"
-        >
-          {(item.type === 'equation' || item.latex) && item.latex && (
-            <LatexView
-              latex={item.latex}
-              className="overflow-visible text-inherit [&_.katex]:text-[1em] [&_.katex-display]:m-0"
-            />
-          )}
-          {item.type === 'table' && item.tableMarkdown && (
-            <MarkdownTable
-              markdown={item.tableMarkdown}
-              fitContent
-              className="overflow-visible"
-            />
-          )}
-          {item.type === 'figure' && item.imageUrl && (
-            <img
-              src={item.imageUrl}
-              alt={item.title}
-              className="block max-h-none max-w-none object-contain"
-              draggable={false}
-            />
-          )}
-        </FitContent>
+        {isFigure && item.imageUrl ? (
+          <FigureView src={item.imageUrl} alt={item.title} />
+        ) : (
+          <FitContent
+            mode="scale"
+            minScale={0.2}
+            baseFontSize={style.fontSize ?? 18}
+            contentKey={`drag-${item.id}`}
+            className="h-full w-full"
+          >
+            {(item.type === 'equation' || item.latex) && item.latex && (
+              <LatexView
+                latex={item.latex}
+                className="overflow-visible text-inherit [&_.katex]:text-[1em] [&_.katex-display]:m-0"
+              />
+            )}
+            {item.type === 'table' && item.tableMarkdown && (
+              <MarkdownTable
+                markdown={item.tableMarkdown}
+                fitContent
+                className="overflow-visible"
+              />
+            )}
+          </FitContent>
+        )}
       </div>
     </div>
   )

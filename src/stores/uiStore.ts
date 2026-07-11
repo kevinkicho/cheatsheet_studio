@@ -3,6 +3,8 @@ import { persist } from 'zustand/middleware'
 
 export type AppView = 'workspace' | 'library' | 'sheets'
 export type RightTool = 'layers' | 'equation' | 'image'
+/** Canvas pointer tool — exclusive (only one active). */
+export type CanvasTool = 'select' | 'pan'
 
 const ZOOM_MIN = 0.25
 const ZOOM_MAX = 2.5
@@ -28,6 +30,8 @@ interface UiState {
   libraryGroupByTopic: boolean
   /** Canvas viewport zoom (1 = 100%). */
   canvasZoom: number
+  /** Active canvas tool: select (marquee / cards) or pan (hand). */
+  canvasTool: CanvasTool
   setView: (view: AppView) => void
   setLeftOpen: (open: boolean) => void
   setRightOpen: (open: boolean) => void
@@ -43,6 +47,7 @@ interface UiState {
   setLibraryGroupByTopic: (group: boolean) => void
   toggleLibraryGroupByTopic: () => void
   setCanvasZoom: (zoom: number) => void
+  setCanvasTool: (tool: CanvasTool) => void
   zoomIn: () => void
   zoomOut: () => void
   zoomReset: () => void
@@ -62,6 +67,7 @@ export const useUiStore = create<UiState>()(
       libraryHoverPreview: true,
       libraryGroupByTopic: true,
       canvasZoom: 1,
+      canvasTool: 'select',
       setView: (view) => set({ view }),
       setLeftOpen: (leftOpen) => set({ leftOpen }),
       setRightOpen: (rightOpen) => set({ rightOpen }),
@@ -82,19 +88,18 @@ export const useUiStore = create<UiState>()(
       toggleLibraryGroupByTopic: () =>
         set({ libraryGroupByTopic: !get().libraryGroupByTopic }),
       setCanvasZoom: (zoom) => set({ canvasZoom: clampZoom(zoom) }),
+      setCanvasTool: (canvasTool) => set({ canvasTool }),
       zoomIn: () => set({ canvasZoom: clampZoom(get().canvasZoom + ZOOM_STEP) }),
       zoomOut: () => set({ canvasZoom: clampZoom(get().canvasZoom - ZOOM_STEP) }),
       zoomReset: () => set({ canvasZoom: 1 }),
     }),
     {
       name: 'cheatsheet-ui',
-      version: 2,
-      // v2: do not persist zoom (old sessions stuck at ~40% after fit-to-letter)
+      version: 3,
       migrate: (persisted) => {
         const p = (persisted ?? {}) as Record<string, unknown>
-        // Drop canvasZoom so we always start sessions at 100%
         const { canvasZoom: _drop, ...rest } = p
-        return rest
+        return { ...rest, canvasTool: (p.canvasTool as string) === 'pan' ? 'pan' : 'select' }
       },
       partialize: (s) => ({
         leftOpen: s.leftOpen,
@@ -104,7 +109,7 @@ export const useUiStore = create<UiState>()(
         libraryLabelsOnly: s.libraryLabelsOnly,
         libraryHoverPreview: s.libraryHoverPreview,
         libraryGroupByTopic: s.libraryGroupByTopic,
-        // canvasZoom intentionally not persisted — default 100% each load
+        canvasTool: s.canvasTool,
       }),
     },
   ),

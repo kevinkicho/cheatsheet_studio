@@ -8,15 +8,21 @@ import {
 } from '@/lib/printSizes'
 import {
   DEFAULT_CANVAS,
-  DEFAULT_ITEM_STYLE,
   DEFAULT_MARGINS,
   FREEFORM_WORKSPACE,
   type CanvasItem,
   type LibraryItem,
+  type OutlinerFolder,
   type PrintMargins,
   type SheetCanvas,
   type ItemStyle,
 } from '@/types'
+import {
+  normalizeCanvasItem,
+  normalizeCanvasItems,
+  newCardBase,
+  withBorderStyle,
+} from '@/lib/cardDefaults'
 
 /** Workspace never shrinks below freeform or the print page. */
 function ensureWorkspaceSize(
@@ -36,7 +42,10 @@ interface CanvasState {
   title: string
   canvas: SheetCanvas
   items: CanvasItem[]
-  selectedId: string | null
+  /** Outliner folders (collections). */
+  folders: OutlinerFolder[]
+  /** Multi-select: ordered list (last = primary for focus tools). */
+  selectedIds: string[]
   dirty: boolean
   maxZ: number
 
@@ -46,6 +55,7 @@ interface CanvasState {
     title: string
     canvas: SheetCanvas
     items: CanvasItem[]
+    folders?: OutlinerFolder[]
   }) => void
   setTitle: (title: string) => void
   setCanvas: (partial: Partial<SheetCanvas>) => void
@@ -63,7 +73,12 @@ interface CanvasState {
   toggleSnapToGrid: () => void
   markClean: () => void
 
+  /** Select one item (or clear with null). Replaces the selection. */
   select: (id: string | null) => void
+  /** Shift+click: add if missing, remove if already selected. */
+  toggleSelect: (id: string) => void
+  /** Replace selection with explicit ids (marquee). */
+  setSelectedIds: (ids: string[]) => void
   addFromLibrary: (
     lib: LibraryItem,
     x: number,
@@ -72,15 +87,84 @@ interface CanvasState {
   addCustomEquation: (latex: string, title?: string) => string
   addCustomImage: (imageUrl: string, title?: string, imagePath?: string) => string
   updateItem: (id: string, partial: Partial<CanvasItem>) => void
+  /** Apply the same partial to every selected id (or explicit ids). */
+  updateItems: (ids: string[], partial: Partial<CanvasItem>) => void
   updateItemStyle: (id: string, style: Partial<ItemStyle>) => void
+  updateItemsStyle: (ids: string[], style: Partial<ItemStyle>) => void
   moveItem: (id: string, x: number, y: number) => void
+  /** Move several items by the same delta (multi-drag). */
+  moveItemsBy: (
+    origins: Record<string, { x: number; y: number }>,
+    dx: number,
+    dy: number,
+  ) => void
   resizeItem: (id: string, width: number, height: number, opts?: { manual?: boolean }) => void
+  /**
+   * Multi-resize: apply the same width/height delta to every item in
+   * `origins` (start sizes), relative to the handle card's drag.
+   */
+  resizeItemsBy: (
+    origins: Record<string, { width: number; height: number }>,
+    dw: number,
+    dh: number,
+    opts?: { manual?: boolean },
+  ) => void
   fitItemToContent: (id: string) => void
+  fitItemsToContent: (ids: string[]) => void
   removeItem: (id: string) => void
+  removeItems: (ids: string[]) => void
   bringForward: (id: string) => void
   sendBackward: (id: string) => void
   bringToFront: (id: string) => void
   sendToBack: (id: string) => void
+  toggleItemHidden: (id: string) => void
+  toggleItemLocked: (id: string) => void
+  /** Mass-set hidden for all items in a folder (null = root / ungrouped). */
+  setFolderHidden: (folderId: string | null, hidden: boolean) => void
+  /** Mass-set locked for all items in a folder (null = root / ungrouped). */
+  setFolderLocked: (folderId: string | null, locked: boolean) => void
+  /** Create a folder; optional parentId nests under another collection. */
+  addFolder: (name?: string, parentId?: string | null) => string
+  renameFolder: (folderId: string, name: string) => void
+  toggleFolderOpen: (folderId: string) => void
+  deleteFolder: (folderId: string, opts?: { deleteItems?: boolean }) => void
+  moveItemsToFolder: (itemIds: string[], folderId: string | null) => void
+  /**
+   * Move dragged items into the target item's folder and stack them
+   * just above the target in z-order (outliner: appear above target).
+   */
+  placeItemsAbove: (targetId: string, draggedIds: string[]) => void
+  /**
+   * Place items relative to a target in the outliner list.
+   * `before` = higher in list (higher z); `after` = lower in list (lower z).
+   * Also adopts the target's folder.
+   */
+  placeItemsRelative: (
+    itemIds: string[],
+    targetItemId: string,
+    position: 'before' | 'after',
+  ) => void
+  /**
+   * Move items into a folder at the front (top of outliner / high z)
+   * or back (bottom / low z) of that folder's items.
+   */
+  placeItemsInFolderAt: (
+    itemIds: string[],
+    folderId: string | null,
+    edge: 'front' | 'back',
+  ) => void
+  /** Reparent a folder (null = top-level). Rejects cycles. */
+  moveFolder: (folderId: string, parentId: string | null) => void
+  /**
+   * Reparent a folder and place it among siblings under `parentId`.
+   * `beforeFolderId`: insert immediately before that sibling; null = append at end.
+   * Rejects cycles. Reindexes sibling `order` values.
+   */
+  placeFolderAmong: (
+    folderId: string,
+    parentId: string | null,
+    beforeFolderId: string | null,
+  ) => void
 }
 
 function estimateTableSize(markdown?: string): { width: number; height: number } {
@@ -111,7 +195,8 @@ const empty = () => ({
   title: 'Untitled sheet',
   canvas: { ...DEFAULT_CANVAS },
   items: [] as CanvasItem[],
-  selectedId: null as string | null,
+  folders: [] as OutlinerFolder[],
+  selectedIds: [] as string[],
   dirty: false,
   maxZ: 1,
 })
@@ -121,7 +206,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 
   reset: () => set({ ...empty(), canvas: { ...DEFAULT_CANVAS } }),
 
-  loadSheet: ({ sheetId, title, canvas, items }) => {
+  loadSheet: ({ sheetId, title, canvas, items, folders }) => {
     const maxZ = items.reduce((m, i) => Math.max(m, i.zIndex), 1)
     const merged = { ...DEFAULT_CANVAS, ...canvas }
     const printSizeId = merged.printSizeId ?? 'letter'
@@ -166,9 +251,10 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         width: workspace.width,
         height: workspace.height,
       },
-      // Always keep items — print toggle must never clear them
-      items: Array.isArray(items) ? [...items] : [],
-      selectedId: null,
+      // Normalize legacy items → crisp fill + figure defaults for current + saved sheets
+      items: Array.isArray(items) ? normalizeCanvasItems(items) : [],
+      folders: Array.isArray(folders) ? [...folders] : [],
+      selectedIds: [],
       dirty: false,
       maxZ,
     })
@@ -320,17 +406,28 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 
   markClean: () => set({ dirty: false }),
 
-  select: (id) => set({ selectedId: id }),
+  select: (id) =>
+    set({ selectedIds: id ? [id] : [] }),
+
+  toggleSelect: (id) =>
+    set((s) => {
+      if (s.selectedIds.includes(id)) {
+        return { selectedIds: s.selectedIds.filter((x) => x !== id) }
+      }
+      return { selectedIds: [...s.selectedIds, id] }
+    }),
+
+  setSelectedIds: (ids) =>
+    set({ selectedIds: [...new Set(ids)] }),
 
   addFromLibrary: (lib, x, y) => {
     const id = createId('item')
     const z = get().maxZ + 1
     const tableSize =
       lib.type === 'table' ? estimateTableSize(lib.tableMarkdown) : null
-    const base: CanvasItem = {
+    const base = newCardBase(lib.type, {
       id,
       libraryItemId: lib.id,
-      type: lib.type,
       title: lib.title,
       x,
       y,
@@ -340,20 +437,15 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       height:
         tableSize?.height ??
         (lib.type === 'figure' ? 220 : 120),
-      autoFit: true, // measure once on drop; organize later freezes size
-      // Fill available body so title band doesn't leave tiny unused math
-      contentFill: true,
-      showTitle: true,
       zIndex: z,
       latex: lib.latex,
       tableMarkdown: lib.tableMarkdown,
       imageUrl: lib.imageUrl,
       imagePath: lib.imagePath,
-      style: { ...DEFAULT_ITEM_STYLE },
-    }
+    })
     set((s) => ({
       items: [...s.items, base],
-      selectedId: id,
+      selectedIds: [id],
       maxZ: z,
       dirty: true,
     }))
@@ -363,24 +455,19 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   addCustomEquation: (latex, title = 'Custom equation') => {
     const id = createId('item')
     const z = get().maxZ + 1
-    const item: CanvasItem = {
+    const item = newCardBase('custom-equation', {
       id,
-      type: 'custom-equation',
       title,
       x: 80 + (get().items.length % 5) * 24,
       y: 80 + (get().items.length % 5) * 24,
       width: 300,
       height: 120,
-      autoFit: true,
-      contentFill: true,
-      showTitle: true,
       zIndex: z,
       latex,
-      style: { ...DEFAULT_ITEM_STYLE },
-    }
+    })
     set((s) => ({
       items: [...s.items, item],
-      selectedId: id,
+      selectedIds: [id],
       maxZ: z,
       dirty: true,
     }))
@@ -390,25 +477,20 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   addCustomImage: (imageUrl, title = 'Custom image', imagePath) => {
     const id = createId('item')
     const z = get().maxZ + 1
-    const item: CanvasItem = {
+    const item = newCardBase('custom-image', {
       id,
-      type: 'custom-image',
       title,
       x: 100 + (get().items.length % 5) * 24,
       y: 100 + (get().items.length % 5) * 24,
       width: 260,
       height: 200,
-      autoFit: true,
-      contentFill: true,
-      showTitle: true,
       zIndex: z,
       imageUrl,
       imagePath,
-      style: { ...DEFAULT_ITEM_STYLE },
-    }
+    })
     set((s) => ({
       items: [...s.items, item],
-      selectedId: id,
+      selectedIds: [id],
       maxZ: z,
       dirty: true,
     }))
@@ -417,21 +499,58 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 
   updateItem: (id, partial) =>
     set((s) => ({
-      items: s.items.map((i) => (i.id === id ? { ...i, ...partial } : i)),
-      dirty: true,
-    })),
-
-  updateItemStyle: (id, style) =>
-    set((s) => ({
       items: s.items.map((i) =>
-        i.id === id ? { ...i, style: { ...i.style, ...style } } : i,
+        i.id === id
+          ? normalizeCanvasItem({ ...i, ...partial })
+          : i,
       ),
       dirty: true,
     })),
 
+  updateItems: (ids, partial) => {
+    if (ids.length === 0) return
+    const setIds = new Set(ids)
+    set((s) => ({
+      items: s.items.map((i) =>
+        setIds.has(i.id)
+          ? normalizeCanvasItem({ ...i, ...partial })
+          : i,
+      ),
+      dirty: true,
+    }))
+  },
+
+  updateItemStyle: (id, style) =>
+    set((s) => ({
+      items: s.items.map((i) =>
+        i.id === id
+          ? {
+              ...i,
+              style: withBorderStyle(i.style, style),
+            }
+          : i,
+      ),
+      dirty: true,
+    })),
+
+  updateItemsStyle: (ids, style) => {
+    if (ids.length === 0) return
+    const setIds = new Set(ids)
+    set((s) => ({
+      items: s.items.map((i) =>
+        setIds.has(i.id)
+          ? { ...i, style: withBorderStyle(i.style, style) }
+          : i,
+      ),
+      dirty: true,
+    }))
+  },
+
   moveItem: (id, x, y) => {
     if (!Number.isFinite(x) || !Number.isFinite(y)) return
     set((s) => {
+      const cur = s.items.find((i) => i.id === id)
+      if (cur?.locked) return s
       const g = Math.max(4, s.canvas.gridSpacing ?? ORGANIZE_GRID)
       const snap = s.canvas.snapToGrid
       const nx = snap ? snapToGridValue(x, g) : Math.round(x)
@@ -445,9 +564,40 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     })
   },
 
+  moveItemsBy: (origins, dx, dy) => {
+    if (!Number.isFinite(dx) || !Number.isFinite(dy)) return
+    const ids = Object.keys(origins)
+    if (ids.length === 0) return
+    set((s) => {
+      const g = Math.max(4, s.canvas.gridSpacing ?? ORGANIZE_GRID)
+      const snap = s.canvas.snapToGrid
+      const idSet = new Set(ids)
+      return {
+        items: s.items.map((i) => {
+          if (!idSet.has(i.id) || i.locked) return i
+          const o = origins[i.id]
+          if (!o) return i
+          let nx = o.x + dx
+          let ny = o.y + dy
+          if (snap) {
+            nx = snapToGridValue(nx, g)
+            ny = snapToGridValue(ny, g)
+          } else {
+            nx = Math.round(nx)
+            ny = Math.round(ny)
+          }
+          return { ...i, x: nx, y: ny }
+        }),
+        dirty: true,
+      }
+    })
+  },
+
   resizeItem: (id, width, height, opts) => {
     if (!Number.isFinite(width) || !Number.isFinite(height)) return
     set((s) => {
+      const cur = s.items.find((i) => i.id === id)
+      if (cur?.locked) return s
       const g = Math.max(4, s.canvas.gridSpacing ?? ORGANIZE_GRID)
       const snap = s.canvas.snapToGrid && opts?.manual
       let w = Math.max(80, width)
@@ -475,6 +625,40 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     })
   },
 
+  resizeItemsBy: (origins, dw, dh, opts) => {
+    if (!Number.isFinite(dw) || !Number.isFinite(dh)) return
+    const ids = Object.keys(origins)
+    if (ids.length === 0) return
+    set((s) => {
+      const g = Math.max(4, s.canvas.gridSpacing ?? ORGANIZE_GRID)
+      const snap = s.canvas.snapToGrid && opts?.manual
+      const idSet = new Set(ids)
+      return {
+        items: s.items.map((i) => {
+          if (!idSet.has(i.id) || i.locked) return i
+          const o = origins[i.id]
+          if (!o) return i
+          let w = Math.max(80, o.width + dw)
+          let h = Math.max(48, o.height + dh)
+          if (snap) {
+            w = Math.max(g, snapToGridValue(w, g))
+            h = Math.max(g, snapToGridValue(h, g))
+          } else {
+            w = Math.round(w)
+            h = Math.round(h)
+          }
+          return {
+            ...i,
+            width: w,
+            height: h,
+            autoFit: opts?.manual ? false : i.autoFit,
+          }
+        }),
+        dirty: true,
+      }
+    })
+  },
+
   fitItemToContent: (id) =>
     set((s) => ({
       items: s.items.map((i) =>
@@ -483,14 +667,74 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       dirty: true,
     })),
 
+  fitItemsToContent: (ids) => {
+    if (ids.length === 0) return
+    const setIds = new Set(ids)
+    set((s) => ({
+      items: s.items.map((i) =>
+        setIds.has(i.id) ? { ...i, autoFit: true } : i,
+      ),
+      dirty: true,
+    }))
+  },
+
   removeItem: (id) =>
     set((s) => ({
       items: s.items.filter((i) => i.id !== id),
-      selectedId: s.selectedId === id ? null : s.selectedId,
+      selectedIds: s.selectedIds.filter((x) => x !== id),
       dirty: true,
     })),
 
+  removeItems: (ids) => {
+    if (ids.length === 0) return
+    const setIds = new Set(ids)
+    set((s) => ({
+      items: s.items.filter((i) => !setIds.has(i.id)),
+      selectedIds: s.selectedIds.filter((x) => !setIds.has(x)),
+      dirty: true,
+    }))
+  },
+
+  /** Move one step above the next-higher zIndex neighbor (swap). */
   bringForward: (id) => {
+    set((s) => {
+      const sorted = [...s.items].sort((a, b) => a.zIndex - b.zIndex)
+      const idx = sorted.findIndex((i) => i.id === id)
+      if (idx < 0 || idx >= sorted.length - 1) return s
+      const cur = sorted[idx]
+      const above = sorted[idx + 1]
+      // Swap zIndex with the neighbor immediately above
+      return {
+        items: s.items.map((i) => {
+          if (i.id === cur.id) return { ...i, zIndex: above.zIndex }
+          if (i.id === above.id) return { ...i, zIndex: cur.zIndex }
+          return i
+        }),
+        dirty: true,
+      }
+    })
+  },
+
+  /** Move one step below the next-lower zIndex neighbor (swap). */
+  sendBackward: (id) => {
+    set((s) => {
+      const sorted = [...s.items].sort((a, b) => a.zIndex - b.zIndex)
+      const idx = sorted.findIndex((i) => i.id === id)
+      if (idx <= 0) return s
+      const cur = sorted[idx]
+      const below = sorted[idx - 1]
+      return {
+        items: s.items.map((i) => {
+          if (i.id === cur.id) return { ...i, zIndex: below.zIndex }
+          if (i.id === below.id) return { ...i, zIndex: cur.zIndex }
+          return i
+        }),
+        dirty: true,
+      }
+    })
+  },
+
+  bringToFront: (id) => {
     const z = get().maxZ + 1
     set((s) => ({
       items: s.items.map((i) => (i.id === id ? { ...i, zIndex: z } : i)),
@@ -499,9 +743,12 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     }))
   },
 
-  sendBackward: (id) => {
+  sendToBack: (id) => {
     set((s) => {
-      const minZ = s.items.reduce((m, i) => Math.min(m, i.zIndex), Infinity)
+      const minZ = s.items.reduce(
+        (m, i) => Math.min(m, i.zIndex),
+        Number.POSITIVE_INFINITY,
+      )
       return {
         items: s.items.map((i) =>
           i.id === id ? { ...i, zIndex: minZ - 1 } : i,
@@ -511,7 +758,374 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     })
   },
 
-  bringToFront: (id) => get().bringForward(id),
+  toggleItemHidden: (id) =>
+    set((s) => ({
+      items: s.items.map((i) =>
+        i.id === id ? { ...i, hidden: !i.hidden } : i,
+      ),
+      dirty: true,
+    })),
 
-  sendToBack: (id) => get().sendBackward(id),
+  toggleItemLocked: (id) =>
+    set((s) => ({
+      items: s.items.map((i) =>
+        i.id === id ? { ...i, locked: !i.locked } : i,
+      ),
+      dirty: true,
+    })),
+
+  setFolderHidden: (folderId, hidden) =>
+    set((s) => {
+      // Root (null): only direct ungrouped items. Folder: this folder + nested descendants.
+      let folderIds: Set<string> | null = null
+      if (folderId != null) {
+        folderIds = new Set<string>([folderId])
+        let grew = true
+        while (grew) {
+          grew = false
+          for (const f of s.folders) {
+            if (f.parentId && folderIds.has(f.parentId) && !folderIds.has(f.id)) {
+              folderIds.add(f.id)
+              grew = true
+            }
+          }
+        }
+      }
+      return {
+        items: s.items.map((i) => {
+          const inFolder =
+            folderId == null
+              ? !i.folderId
+              : Boolean(i.folderId && folderIds!.has(i.folderId))
+          return inFolder ? { ...i, hidden } : i
+        }),
+        dirty: true,
+      }
+    }),
+
+  setFolderLocked: (folderId, locked) =>
+    set((s) => {
+      let folderIds: Set<string> | null = null
+      if (folderId != null) {
+        folderIds = new Set<string>([folderId])
+        let grew = true
+        while (grew) {
+          grew = false
+          for (const f of s.folders) {
+            if (f.parentId && folderIds.has(f.parentId) && !folderIds.has(f.id)) {
+              folderIds.add(f.id)
+              grew = true
+            }
+          }
+        }
+      }
+      return {
+        items: s.items.map((i) => {
+          const inFolder =
+            folderId == null
+              ? !i.folderId
+              : Boolean(i.folderId && folderIds!.has(i.folderId))
+          return inFolder ? { ...i, locked } : i
+        }),
+        dirty: true,
+      }
+    }),
+
+  addFolder: (name = 'Collection', parentId = null) => {
+    const id = createId('folder')
+    set((s) => {
+      const order =
+        s.folders.reduce((m, f) => Math.max(m, f.order ?? 0), 0) + 1
+      let finalName = name
+      let n = 1
+      while (s.folders.some((f) => f.name === finalName)) {
+        n += 1
+        finalName = `${name} ${n}`
+      }
+      // Only nest under an existing parent
+      const parent =
+        parentId && s.folders.some((f) => f.id === parentId) ? parentId : null
+      // Ensure parent is open so the new child is visible
+      const folders = s.folders.map((f) =>
+        parent && f.id === parent ? { ...f, open: true } : f,
+      )
+      return {
+        folders: [
+          ...folders,
+          { id, name: finalName, open: true, order, parentId: parent },
+        ],
+        dirty: true,
+      }
+    })
+    return id
+  },
+
+  renameFolder: (folderId, name) => {
+    const trimmed = name.trim()
+    if (!trimmed) return
+    set((s) => ({
+      folders: s.folders.map((f) =>
+        f.id === folderId ? { ...f, name: trimmed } : f,
+      ),
+      dirty: true,
+    }))
+  },
+
+  toggleFolderOpen: (folderId) =>
+    set((s) => ({
+      folders: s.folders.map((f) =>
+        f.id === folderId ? { ...f, open: f.open === false } : f,
+      ),
+      dirty: true,
+    })),
+
+  deleteFolder: (folderId, opts) =>
+    set((s) => {
+      // Collect this folder + all descendants
+      const toRemove = new Set<string>()
+      const walk = (id: string) => {
+        toRemove.add(id)
+        for (const f of s.folders) {
+          if (f.parentId === id) walk(f.id)
+        }
+      }
+      walk(folderId)
+
+      if (opts?.deleteItems) {
+        return {
+          folders: s.folders.filter((f) => !toRemove.has(f.id)),
+          items: s.items.filter(
+            (i) => !i.folderId || !toRemove.has(i.folderId),
+          ),
+          selectedIds: s.selectedIds.filter((id) => {
+            const it = s.items.find((i) => i.id === id)
+            return !it || !it.folderId || !toRemove.has(it.folderId)
+          }),
+          dirty: true,
+        }
+      }
+      // Keep items & child folders: promote children of deleted root to parent of deleted
+      const deleted = s.folders.find((f) => f.id === folderId)
+      const promoteTo = deleted?.parentId ?? null
+      return {
+        folders: s.folders
+          .filter((f) => f.id !== folderId)
+          .map((f) =>
+            f.parentId === folderId ? { ...f, parentId: promoteTo } : f,
+          ),
+        items: s.items.map((i) =>
+          i.folderId === folderId ? { ...i, folderId: promoteTo } : i,
+        ),
+        dirty: true,
+      }
+    }),
+
+  moveItemsToFolder: (itemIds, folderId) => {
+    if (itemIds.length === 0) return
+    const idSet = new Set(itemIds)
+    set((s) => ({
+      items: s.items.map((i) =>
+        idSet.has(i.id) ? { ...i, folderId: folderId } : i,
+      ),
+      dirty: true,
+    }))
+  },
+
+  placeItemsAbove: (targetId, draggedIds) => {
+    get().placeItemsRelative(draggedIds, targetId, 'before')
+  },
+
+  placeItemsRelative: (itemIds, targetItemId, position) => {
+    const unique = [...new Set(itemIds)].filter((id) => id !== targetItemId)
+    if (unique.length === 0) return
+    set((s) => {
+      const target = s.items.find((i) => i.id === targetItemId)
+      if (!target) return s
+      const folderId = target.folderId ?? null
+      const idSet = new Set(unique)
+
+      // Sibling items in same folder after move (excluding dragged), high z first
+      const siblings = s.items
+        .filter(
+          (i) =>
+            (i.folderId ?? null) === folderId &&
+            !idSet.has(i.id) &&
+            i.id !== targetItemId,
+        )
+        .sort((a, b) => b.zIndex - a.zIndex)
+
+      // Outliner list order (top → bottom): higher z first
+      // before target → insert immediately above target in list
+      // after target → insert immediately below target in list
+      const above = siblings.filter((i) => i.zIndex > target.zIndex)
+      const below = siblings.filter((i) => i.zIndex < target.zIndex)
+
+      const dragged = unique
+        .map((id) => s.items.find((i) => i.id === id))
+        .filter(Boolean) as CanvasItem[]
+      dragged.sort((a, b) => b.zIndex - a.zIndex)
+
+      const sequence: CanvasItem[] =
+        position === 'before'
+          ? [...above, ...dragged, target, ...below]
+          : [...above, target, ...dragged, ...below]
+
+      // Assign descending z so list order is preserved
+      const base = Math.max(s.maxZ, sequence.length) + sequence.length
+      const zAssign = new Map<string, number>()
+      sequence.forEach((it, idx) => {
+        zAssign.set(it.id, base - idx)
+      })
+
+      return {
+        items: s.items.map((i) => {
+          if (i.id === targetItemId) {
+            return {
+              ...i,
+              zIndex: zAssign.get(i.id) ?? i.zIndex,
+            }
+          }
+          if (!idSet.has(i.id)) {
+            const z = zAssign.get(i.id)
+            return z != null ? { ...i, zIndex: z } : i
+          }
+          return {
+            ...i,
+            folderId,
+            zIndex: zAssign.get(i.id) ?? i.zIndex,
+          }
+        }),
+        maxZ: Math.max(s.maxZ, base),
+        dirty: true,
+      }
+    })
+  },
+
+  placeItemsInFolderAt: (itemIds, folderId, edge) => {
+    const unique = [...new Set(itemIds)]
+    if (unique.length === 0) return
+    set((s) => {
+      const idSet = new Set(unique)
+      const others = s.items
+        .filter(
+          (i) =>
+            (i.folderId ?? null) === folderId && !idSet.has(i.id),
+        )
+        .sort((a, b) => b.zIndex - a.zIndex)
+
+      const dragged = unique
+        .map((id) => s.items.find((i) => i.id === id))
+        .filter(Boolean) as CanvasItem[]
+      dragged.sort((a, b) => b.zIndex - a.zIndex)
+
+      const sequence =
+        edge === 'front' ? [...dragged, ...others] : [...others, ...dragged]
+
+      const base = Math.max(s.maxZ, sequence.length) + sequence.length
+      const zAssign = new Map<string, number>()
+      sequence.forEach((it, idx) => {
+        zAssign.set(it.id, base - idx)
+      })
+
+      return {
+        items: s.items.map((i) => {
+          if (!idSet.has(i.id) && !zAssign.has(i.id)) return i
+          if (idSet.has(i.id)) {
+            return {
+              ...i,
+              folderId,
+              zIndex: zAssign.get(i.id) ?? i.zIndex,
+            }
+          }
+          return { ...i, zIndex: zAssign.get(i.id) ?? i.zIndex }
+        }),
+        maxZ: Math.max(s.maxZ, base),
+        dirty: true,
+      }
+    })
+  },
+
+  moveFolder: (folderId, parentId) => {
+    // Append at end of new parent's children
+    get().placeFolderAmong(folderId, parentId, null)
+  },
+
+  placeFolderAmong: (folderId, parentId, beforeFolderId) => {
+    if (folderId === parentId) return
+    if (beforeFolderId === folderId) return
+    set((s) => {
+      // Reject cycles
+      if (parentId) {
+        const descendants = new Set<string>()
+        const walk = (id: string) => {
+          descendants.add(id)
+          for (const f of s.folders) {
+            if (f.parentId === id) walk(f.id)
+          }
+        }
+        walk(folderId)
+        if (descendants.has(parentId)) return s
+        if (!s.folders.some((f) => f.id === parentId)) return s
+      }
+
+      // Sibling folders under parentId, excluding the one being moved
+      const siblings = s.folders
+        .filter(
+          (f) =>
+            f.id !== folderId && (f.parentId ?? null) === (parentId ?? null),
+        )
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+
+      const next: OutlinerFolder[] = []
+      let inserted = false
+      for (const sib of siblings) {
+        if (beforeFolderId && sib.id === beforeFolderId) {
+          next.push({
+            id: folderId,
+            name: '',
+            order: 0,
+            parentId: parentId ?? null,
+          } as OutlinerFolder)
+          inserted = true
+        }
+        next.push(sib)
+      }
+      if (!inserted) {
+        // Append (or beforeFolderId not found)
+        next.push({
+          id: folderId,
+          name: '',
+          order: 0,
+          parentId: parentId ?? null,
+        } as OutlinerFolder)
+      }
+
+      // Build order map for all siblings including moved
+      const orderMap = new Map<string, number>()
+      next.forEach((f, idx) => {
+        orderMap.set(f.id, idx + 1)
+      })
+
+      return {
+        folders: s.folders.map((f) => {
+          if (f.id === folderId) {
+            return {
+              ...f,
+              parentId: parentId ?? null,
+              order: orderMap.get(f.id) ?? f.order,
+            }
+          }
+          if (orderMap.has(f.id)) {
+            return { ...f, order: orderMap.get(f.id) }
+          }
+          // Open destination parent
+          if (parentId && f.id === parentId) {
+            return { ...f, open: true }
+          }
+          return f
+        }),
+        dirty: true,
+      }
+    })
+  },
 }))

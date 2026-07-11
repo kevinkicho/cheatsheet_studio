@@ -11,10 +11,12 @@ import { useDroppable } from '@dnd-kit/core'
 import {
   Focus,
   Grid3x3,
+  Hand,
   LayoutGrid,
   Magnet,
   Maximize2,
   Minus,
+  MousePointer2,
   Plus,
   Scan,
 } from 'lucide-react'
@@ -23,6 +25,7 @@ import { DEFAULT_MARGINS } from '@/types'
 import { useCanvasStore } from '@/stores/canvasStore'
 import { useUiStore, ZOOM_MAX, ZOOM_MIN, ZOOM_STEP } from '@/stores/uiStore'
 import { CanvasItemView } from './CanvasItemView'
+import { MultiSelectFrame } from './MultiSelectFrame'
 
 function clampZoom(z: number) {
   return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(z * 100) / 100))
@@ -66,8 +69,9 @@ function applyZoomAtAnchor(
 
 export function MainCanvas() {
   const items = useCanvasStore((s) => s.items)
-  const selectedId = useCanvasStore((s) => s.selectedId)
+  const selectedIds = useCanvasStore((s) => s.selectedIds)
   const select = useCanvasStore((s) => s.select)
+  const setSelectedIds = useCanvasStore((s) => s.setSelectedIds)
   const canvas = useCanvasStore((s) => s.canvas)
   const autoOrganize = useCanvasStore((s) => s.autoOrganize)
   const toggleGrid = useCanvasStore((s) => s.toggleGrid)
@@ -75,6 +79,8 @@ export function MainCanvas() {
   const setCanvas = useCanvasStore((s) => s.setCanvas)
   const zoom = useUiStore((s) => s.canvasZoom)
   const setCanvasZoom = useUiStore((s) => s.setCanvasZoom)
+  const canvasTool = useUiStore((s) => s.canvasTool)
+  const setCanvasTool = useUiStore((s) => s.setCanvasTool)
   const margins = { ...DEFAULT_MARGINS, ...canvas.margins }
   const printPage = getPrintPageSize(
     canvas.printSizeId ?? 'letter',
@@ -84,6 +90,7 @@ export function MainCanvas() {
   const gridOpacity = Math.min(1, Math.max(0.05, canvas.gridOpacity ?? 0.1))
 
   const viewportRef = useRef<HTMLDivElement>(null)
+  const surfaceRef = useRef<HTMLDivElement | null>(null)
   const zoomRef = useRef(zoom)
   zoomRef.current = zoom
   const [isPanning, setIsPanning] = useState(false)
@@ -95,11 +102,33 @@ export function MainCanvas() {
     scrollTop: number
     didMove: boolean
   } | null>(null)
+  /** Marquee drag-select in canvas coordinates (select tool only). */
+  const [marquee, setMarquee] = useState<{
+    x0: number
+    y0: number
+    x1: number
+    y1: number
+  } | null>(null)
+  const marqueeRef = useRef<{
+    pointerId: number
+    x0: number
+    y0: number
+    additive: boolean
+    didMove: boolean
+  } | null>(null)
 
   const { setNodeRef, isOver } = useDroppable({
     id: 'main-canvas',
     data: { type: 'canvas' },
   })
+
+  const setSurfaceNode = useCallback(
+    (node: HTMLDivElement | null) => {
+      surfaceRef.current = node
+      setNodeRef(node)
+    },
+    [setNodeRef],
+  )
 
   /** True when the event started on empty board (not a card / control). */
   const isBackgroundTarget = (target: EventTarget | null) => {
@@ -110,75 +139,170 @@ export function MainCanvas() {
     return true
   }
 
+  /** Client → canvas coords (accounts for CSS scale on the surface). */
+  const clientToCanvas = useCallback(
+    (clientX: number, clientY: number) => {
+      const surface = surfaceRef.current
+      if (!surface) return { x: 0, y: 0 }
+      const rect = surface.getBoundingClientRect()
+      const z = zoomRef.current > 0.01 ? zoomRef.current : 1
+      return {
+        x: (clientX - rect.left) / z,
+        y: (clientY - rect.top) / z,
+      }
+    },
+    [],
+  )
+
   const onViewportPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
-    // Left button only; ignore if starting on a card
     if (e.button !== 0) return
     if (!isBackgroundTarget(e.target)) return
     const vp = viewportRef.current
     if (!vp) return
 
-    panRef.current = {
+    // —— Pan tool: drag empty board to scroll ——
+    if (canvasTool === 'pan') {
+      panRef.current = {
+        pointerId: e.pointerId,
+        startX: e.clientX,
+        startY: e.clientY,
+        scrollLeft: vp.scrollLeft,
+        scrollTop: vp.scrollTop,
+        didMove: false,
+      }
+      marqueeRef.current = null
+      setMarquee(null)
+      vp.setPointerCapture(e.pointerId)
+      setIsPanning(true)
+      return
+    }
+
+    // —— Select tool: marquee on empty board ——
+    const { x, y } = clientToCanvas(e.clientX, e.clientY)
+    marqueeRef.current = {
       pointerId: e.pointerId,
-      startX: e.clientX,
-      startY: e.clientY,
-      scrollLeft: vp.scrollLeft,
-      scrollTop: vp.scrollTop,
+      x0: x,
+      y0: y,
+      additive: e.shiftKey,
       didMove: false,
     }
+    setMarquee({ x0: x, y0: y, x1: x, y1: y })
+    panRef.current = null
     vp.setPointerCapture(e.pointerId)
-    setIsPanning(true)
   }
 
   const onViewportPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
-    const pan = panRef.current
     const vp = viewportRef.current
-    if (!pan || !vp || pan.pointerId !== e.pointerId) return
+    if (!vp) return
 
-    const dx = e.clientX - pan.startX
-    const dy = e.clientY - pan.startY
-    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
-      pan.didMove = true
+    // Pan
+    const pan = panRef.current
+    if (pan && pan.pointerId === e.pointerId) {
+      const dx = e.clientX - pan.startX
+      const dy = e.clientY - pan.startY
+      if (Math.abs(dx) > 2 || Math.abs(dy) > 2) pan.didMove = true
+      vp.scrollLeft = pan.scrollLeft - dx
+      vp.scrollTop = pan.scrollTop - dy
+      return
     }
 
-    // Grab-and-drag: move the board with the cursor (map-style pan)
-    vp.scrollLeft = pan.scrollLeft - dx
-    vp.scrollTop = pan.scrollTop - dy
+    // Marquee
+    const m = marqueeRef.current
+    if (m && m.pointerId === e.pointerId) {
+      const { x, y } = clientToCanvas(e.clientX, e.clientY)
+      if (Math.hypot(x - m.x0, y - m.y0) > 3) m.didMove = true
+      setMarquee({ x0: m.x0, y0: m.y0, x1: x, y1: y })
+    }
   }
 
-  const endPan = (e: ReactPointerEvent<HTMLDivElement>) => {
-    const pan = panRef.current
+  const endViewportPointer = (e: ReactPointerEvent<HTMLDivElement>) => {
     const vp = viewportRef.current
-    if (!pan || pan.pointerId !== e.pointerId) return
 
-    try {
-      vp?.releasePointerCapture(e.pointerId)
-    } catch {
-      /* already released */
+    // End pan
+    const pan = panRef.current
+    if (pan && pan.pointerId === e.pointerId) {
+      try {
+        vp?.releasePointerCapture(e.pointerId)
+      } catch {
+        /* already released */
+      }
+      if (pan.didMove && vp) {
+        ;(vp as HTMLElement & { __skipClick?: boolean }).__skipClick = true
+        window.setTimeout(() => {
+          if (vp) {
+            ;(vp as HTMLElement & { __skipClick?: boolean }).__skipClick = false
+          }
+        }, 0)
+      }
+      panRef.current = null
+      setIsPanning(false)
+      return
     }
 
-    // Brief flag so click handler can skip deselect after a drag-pan
-    if (pan.didMove) {
-      ;(vp as HTMLElement & { __didPan?: boolean }).__didPan = true
-      window.setTimeout(() => {
-        if (vp) {
-          ;(vp as HTMLElement & { __didPan?: boolean }).__didPan = false
-        }
-      }, 0)
-    }
+    // End marquee → select intersecting cards
+    const m = marqueeRef.current
+    if (m && m.pointerId === e.pointerId) {
+      try {
+        vp?.releasePointerCapture(e.pointerId)
+      } catch {
+        /* already released */
+      }
+      // Final corner from this event (state may lag one frame)
+      const end = clientToCanvas(e.clientX, e.clientY)
+      marqueeRef.current = null
+      setMarquee(null)
 
-    panRef.current = null
-    setIsPanning(false)
+      if (!m.didMove) {
+        // Click empty (no drag) → clear selection unless Shift
+        if (!m.additive) select(null)
+        return
+      }
+
+      const minX = Math.min(m.x0, end.x)
+      const maxX = Math.max(m.x0, end.x)
+      const minY = Math.min(m.y0, end.y)
+      const maxY = Math.max(m.y0, end.y)
+
+      const hit = useCanvasStore
+        .getState()
+        .items.filter(
+          (it) =>
+            !it.hidden &&
+            it.x < maxX &&
+            it.x + it.width > minX &&
+            it.y < maxY &&
+            it.y + it.height > minY,
+        )
+        .map((it) => it.id)
+
+      if (m.additive) {
+        const prev = useCanvasStore.getState().selectedIds
+        setSelectedIds([...new Set([...prev, ...hit])])
+      } else {
+        setSelectedIds(hit)
+      }
+
+      if (vp) {
+        ;(vp as HTMLElement & { __skipClick?: boolean }).__skipClick = true
+        window.setTimeout(() => {
+          if (vp) {
+            ;(vp as HTMLElement & { __skipClick?: boolean }).__skipClick = false
+          }
+        }, 0)
+      }
+    }
   }
 
   const onViewportClick = (e: ReactMouseEvent<HTMLDivElement>) => {
     const vp = viewportRef.current as
-      | (HTMLElement & { __didPan?: boolean })
+      | (HTMLElement & { __skipClick?: boolean })
       | null
-    if (vp?.__didPan) {
+    if (vp?.__skipClick) {
       e.preventDefault()
       e.stopPropagation()
       return
     }
+    if (canvasTool === 'pan') return
     if (!isBackgroundTarget(e.target)) return
     select(null)
   }
@@ -341,18 +465,27 @@ export function MainCanvas() {
 
   const showPrint = canvas.showPrintArea !== false
 
+  const cursorClass =
+    canvasTool === 'pan'
+      ? isPanning
+        ? 'cursor-grabbing select-none'
+        : 'cursor-grab'
+      : marquee
+        ? 'cursor-crosshair select-none'
+        : 'cursor-default'
+
   return (
     <div className="relative h-full w-full">
       <div
         ref={viewportRef}
-        className={`relative h-full w-full overflow-auto ${
-          isPanning ? 'cursor-grabbing select-none' : 'cursor-grab'
-        } ${isOver ? 'ring-2 ring-inset ring-indigo-500/40' : ''}`}
+        className={`relative h-full w-full overflow-auto ${cursorClass} ${
+          isOver ? 'ring-2 ring-inset ring-indigo-500/40' : ''
+        }`}
         style={{ background: canvas.background }}
         onPointerDown={onViewportPointerDown}
         onPointerMove={onViewportPointerMove}
-        onPointerUp={endPan}
-        onPointerCancel={endPan}
+        onPointerUp={endViewportPointer}
+        onPointerCancel={endViewportPointer}
         onClick={onViewportClick}
       >
         {/* Spacer = full free workspace × zoom (min 100% of viewport) */}
@@ -366,9 +499,10 @@ export function MainCanvas() {
           }}
         >
           <div
-            ref={setNodeRef}
+            ref={setSurfaceNode}
             id="main-canvas-surface"
             data-zoom={zoom}
+            data-canvas-tool={canvasTool}
             className="absolute left-0 top-0 origin-top-left"
             style={{
               width: canvas.width,
@@ -451,19 +585,54 @@ export function MainCanvas() {
               <CanvasItemView
                 key={item.id}
                 item={item}
-                selected={item.id === selectedId}
+                selected={selectedIds.includes(item.id)}
                 zoom={zoom}
+                interactive={canvasTool === 'select'}
               />
             ))}
+
+            {/* Group transform frame — above all cards when multi-selected */}
+            <MultiSelectFrame
+              zoom={zoom}
+              interactive={canvasTool === 'select'}
+            />
+
+            {/* Marquee selection rectangle (canvas space, inside scaled surface) */}
+            {marquee && (
+              <div
+                className="pointer-events-none absolute z-[50] border border-indigo-400 bg-indigo-500/15"
+                style={{
+                  left: Math.min(marquee.x0, marquee.x1),
+                  top: Math.min(marquee.y0, marquee.y1),
+                  width: Math.abs(marquee.x1 - marquee.x0),
+                  height: Math.abs(marquee.y1 - marquee.y0),
+                }}
+              />
+            )}
           </div>
         </div>
       </div>
 
-      {/* Zoom / grid toolbar */}
+      {/* Tools + zoom / grid toolbar */}
       <div
         className="absolute bottom-3 right-3 z-20 flex items-center gap-0.5 rounded-lg border border-zinc-700/80 bg-zinc-950/90 p-1 shadow-lg backdrop-blur"
         onClick={(e) => e.stopPropagation()}
       >
+        <ToolBtn
+          title="Select (V) — click cards, drag on empty canvas to marquee-select"
+          active={canvasTool === 'select'}
+          onClick={() => setCanvasTool('select')}
+        >
+          <MousePointer2 className="h-3.5 w-3.5" />
+        </ToolBtn>
+        <ToolBtn
+          title="Pan (H) — drag to move the viewport"
+          active={canvasTool === 'pan'}
+          onClick={() => setCanvasTool('pan')}
+        >
+          <Hand className="h-3.5 w-3.5" />
+        </ToolBtn>
+        <div className="mx-0.5 h-4 w-px bg-zinc-700" />
         <ZoomBtn title="Zoom out (from viewport center)" onClick={handleZoomOut}>
           <Minus className="h-3.5 w-3.5" />
         </ZoomBtn>
@@ -498,13 +667,24 @@ export function MainCanvas() {
         <ZoomBtn
           title="Focus selection (or fit content)"
           onClick={() => {
-            if (selectedId) {
-              const it = items.find((i) => i.id === selectedId)
-              if (!it || !viewportRef.current) return
+            const selected = items.filter((i) => selectedIds.includes(i.id))
+            if (selected.length > 0 && viewportRef.current) {
+              let minX = Infinity
+              let minY = Infinity
+              let maxX = -Infinity
+              let maxY = -Infinity
+              for (const it of selected) {
+                minX = Math.min(minX, it.x)
+                minY = Math.min(minY, it.y)
+                maxX = Math.max(maxX, it.x + it.width)
+                maxY = Math.max(maxY, it.y + it.height)
+              }
+              const w = Math.max(maxX - minX, 40)
+              const h = Math.max(maxY - minY, 40)
               const pad = 80
               const scale = Math.min(
-                (viewportRef.current.clientWidth - pad) / it.width,
-                (viewportRef.current.clientHeight - pad) / it.height,
+                (viewportRef.current.clientWidth - pad) / w,
+                (viewportRef.current.clientHeight - pad) / h,
                 1.5,
               )
               setCanvasZoom(scale)
@@ -514,11 +694,11 @@ export function MainCanvas() {
                 el.scrollTo({
                   left: Math.max(
                     0,
-                    it.x * scale + (it.width * scale) / 2 - el.clientWidth / 2,
+                    minX * scale + (w * scale) / 2 - el.clientWidth / 2,
                   ),
                   top: Math.max(
                     0,
-                    it.y * scale + (it.height * scale) / 2 - el.clientHeight / 2,
+                    minY * scale + (h * scale) / 2 - el.clientHeight / 2,
                   ),
                   behavior: 'smooth',
                 })
@@ -585,6 +765,34 @@ function ZoomBtn({
       title={title}
       onClick={onClick}
       className="rounded p-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
+    >
+      {children}
+    </button>
+  )
+}
+
+function ToolBtn({
+  children,
+  onClick,
+  title,
+  active,
+}: {
+  children: ReactNode
+  onClick: () => void
+  title: string
+  active?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      onClick={onClick}
+      aria-pressed={active}
+      className={`rounded p-1.5 transition ${
+        active
+          ? 'bg-indigo-500/20 text-indigo-300 ring-1 ring-indigo-500/50'
+          : 'text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100'
+      }`}
     >
       {children}
     </button>

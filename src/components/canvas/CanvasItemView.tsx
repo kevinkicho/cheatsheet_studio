@@ -9,13 +9,21 @@ import {
 import type { CanvasItem } from '@/types'
 import { useCanvasStore } from '@/stores/canvasStore'
 import { FitContent } from '@/components/math/FitContent'
+import { FigureView } from '@/components/math/FigureView'
 import { LatexView } from '@/components/math/LatexView'
 import { MarkdownTable } from '@/components/math/MarkdownTable'
+import {
+  CARD_DEFAULTS,
+  composeBorderCss,
+  isFigureLike,
+} from '@/lib/cardDefaults'
 
 interface CanvasItemViewProps {
   item: CanvasItem
   selected: boolean
   zoom: number
+  /** When false (pan tool), card ignores pointer so the board can be dragged. */
+  interactive?: boolean
 }
 
 const MAX_AUTO_W = 520
@@ -24,6 +32,7 @@ const DRAG_THRESHOLD_PX = 3
 /** Title row + margin — reserved so showing the title grows the card instead of shrinking math. */
 const TITLE_BAND = 22
 
+/** Equations/tables only — figures use a dedicated crisp layout path. */
 function ItemBody({ item }: { item: CanvasItem }) {
   return (
     <>
@@ -40,28 +49,29 @@ function ItemBody({ item }: { item: CanvasItem }) {
         <MarkdownTable
           markdown={item.tableMarkdown}
           fitContent
-          className="overflow-visible"
+          className="overflow-visible text-inherit"
         />
       )}
-      {(item.type === 'figure' ||
-        item.type === 'custom-image' ||
-        item.imageUrl) &&
-        item.imageUrl && (
-          <img
-            src={item.imageUrl}
-            alt={item.title ?? 'figure'}
-            className="block max-h-none max-w-none object-contain"
-            draggable={false}
-          />
-        )}
     </>
   )
 }
 
-export function CanvasItemView({ item, selected, zoom }: CanvasItemViewProps) {
+export function CanvasItemView({
+  item,
+  selected,
+  zoom,
+  interactive = true,
+}: CanvasItemViewProps) {
   const select = useCanvasStore((s) => s.select)
+  const toggleSelect = useCanvasStore((s) => s.toggleSelect)
   const moveItem = useCanvasStore((s) => s.moveItem)
+  const moveItemsBy = useCanvasStore((s) => s.moveItemsBy)
   const resizeItem = useCanvasStore((s) => s.resizeItem)
+  const resizeItemsBy = useCanvasStore((s) => s.resizeItemsBy)
+  const selectedCount = useCanvasStore((s) => s.selectedIds.length)
+  /** Multi-select: group frame owns resize; cards float above non-selected. */
+  const multiSelected = selected && selectedCount > 1
+  const displayZ = multiSelected ? item.zIndex + 10_000 : item.zIndex
   const updateItem = useCanvasStore((s) => s.updateItem)
   const rootRef = useRef<HTMLDivElement>(null)
   const naturalRef = useRef<HTMLDivElement>(null)
@@ -76,6 +86,11 @@ export function CanvasItemView({ item, selected, zoom }: CanvasItemViewProps) {
     origW: number
     origH: number
     hitTitle: boolean
+    /** Multi-drag: start positions of every selected card */
+    groupOrigins: Record<string, { x: number; y: number }> | null
+    /** Multi-resize: start sizes of every selected card */
+    groupSizes: Record<string, { width: number; height: number }> | null
+    shiftToggle: boolean
   } | null>(null)
   const lastFitRef = useRef({ w: 0, h: 0 })
   const [dragging, setDragging] = useState(false)
@@ -149,12 +164,31 @@ export function CanvasItemView({ item, selected, zoom }: CanvasItemViewProps) {
 
   const beginMove = useCallback(
     (e: ReactPointerEvent) => {
+      if (!interactive) return
       if (e.button !== 0) return
       if ((e.target as HTMLElement).closest('[data-resize-handle]')) return
 
       e.stopPropagation()
       e.preventDefault()
-      select(item.id)
+
+      const shift = e.shiftKey
+      if (shift) {
+        // Shift+click: add/remove from multi-select (no drag start intent)
+        toggleSelect(item.id)
+      } else {
+        // Plain click: select only this card, unless it's already part of a
+        // multi-selection (keep group so we can drag all together).
+        const state = useCanvasStore.getState()
+        const inMulti =
+          state.selectedIds.includes(item.id) && state.selectedIds.length > 1
+        if (!inMulti) select(item.id)
+      }
+
+      // Locked items can be selected but not dragged
+      if (item.locked) {
+        dragRef.current = null
+        return
+      }
 
       const hitTitle = Boolean(
         (e.target as HTMLElement).closest('[data-card-title]'),
@@ -169,6 +203,23 @@ export function CanvasItemView({ item, selected, zoom }: CanvasItemViewProps) {
         }
       }
 
+      const state = useCanvasStore.getState()
+      const idsForGroup =
+        !shift && state.selectedIds.includes(item.id) && state.selectedIds.length > 1
+          ? state.selectedIds
+          : [item.id]
+      const groupOrigins: Record<string, { x: number; y: number }> = {}
+      for (const id of idsForGroup) {
+        const it = state.items.find((x) => x.id === id)
+        // Never include locked cards in multi-drag
+        if (it && !it.locked) groupOrigins[id] = { x: it.x, y: it.y }
+      }
+      // If everything in the group was locked, abort drag
+      if (Object.keys(groupOrigins).length === 0) {
+        dragRef.current = null
+        return
+      }
+
       dragRef.current = {
         mode: 'move',
         active: false,
@@ -179,19 +230,57 @@ export function CanvasItemView({ item, selected, zoom }: CanvasItemViewProps) {
         origY: item.y,
         origW: item.width,
         origH: item.height,
-        hitTitle,
+        hitTitle: hitTitle && !shift,
+        groupOrigins: shift ? null : groupOrigins,
+        groupSizes: null,
+        shiftToggle: shift,
       }
     },
-    [item.id, item.x, item.y, item.width, item.height, select],
+    [
+      item.id,
+      item.x,
+      item.y,
+      item.width,
+      item.height,
+      item.locked,
+      select,
+      toggleSelect,
+      interactive,
+    ],
   )
 
   const beginResize = useCallback(
     (e: ReactPointerEvent) => {
+      if (!interactive || item.locked) return
       if (e.button !== 0) return
       e.stopPropagation()
       e.preventDefault()
-      select(item.id)
+      const state = useCanvasStore.getState()
+      // Ensure this card is selected; keep multi-selection if already in it
+      if (!state.selectedIds.includes(item.id)) {
+        select(item.id)
+      }
       ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+
+      const idsForGroup =
+        state.selectedIds.includes(item.id) && state.selectedIds.length > 1
+          ? state.selectedIds
+          : [item.id]
+      // If we just selected only this card above, group is just [item.id]
+      const ids =
+        useCanvasStore.getState().selectedIds.includes(item.id) &&
+        useCanvasStore.getState().selectedIds.length > 1
+          ? useCanvasStore.getState().selectedIds
+          : idsForGroup
+
+      const groupSizes: Record<string, { width: number; height: number }> = {}
+      for (const id of ids) {
+        const it = useCanvasStore.getState().items.find((x) => x.id === id)
+        if (it && !it.locked)
+          groupSizes[id] = { width: it.width, height: it.height }
+      }
+      if (Object.keys(groupSizes).length === 0) return
+
       dragRef.current = {
         mode: 'resize',
         active: true,
@@ -203,15 +292,30 @@ export function CanvasItemView({ item, selected, zoom }: CanvasItemViewProps) {
         origW: item.width,
         origH: item.height,
         hitTitle: false,
+        groupOrigins: null,
+        groupSizes,
+        shiftToggle: false,
       }
     },
-    [item.id, item.x, item.y, item.width, item.height, select],
+    [
+      item.id,
+      item.x,
+      item.y,
+      item.width,
+      item.height,
+      item.locked,
+      select,
+      interactive,
+    ],
   )
 
   const onPointerMove = useCallback(
     (e: ReactPointerEvent) => {
+      if (!interactive) return
       const d = dragRef.current
       if (!d || d.pointerId !== e.pointerId) return
+      // Shift+click toggle: ignore move
+      if (d.shiftToggle) return
 
       const z = zoom > 0.01 ? zoom : 1
       const rawDx = e.clientX - d.startX
@@ -226,32 +330,49 @@ export function CanvasItemView({ item, selected, zoom }: CanvasItemViewProps) {
       const dx = rawDx / z
       const dy = rawDy / z
       if (d.mode === 'move') {
-        const nx = d.origX + dx
-        const ny = d.origY + dy
-        if (Number.isFinite(nx) && Number.isFinite(ny)) {
-          moveItem(item.id, nx, ny)
+        if (d.groupOrigins && Object.keys(d.groupOrigins).length > 1) {
+          moveItemsBy(d.groupOrigins, dx, dy)
+        } else {
+          const nx = d.origX + dx
+          const ny = d.origY + dy
+          if (Number.isFinite(nx) && Number.isFinite(ny)) {
+            moveItem(item.id, nx, ny)
+          }
         }
       } else {
-        const nw = d.origW + dx
-        const nh = d.origH + dy
-        if (Number.isFinite(nw) && Number.isFinite(nh)) {
-          resizeItem(item.id, nw, nh, { manual: true })
+        // Multi-resize: same width/height delta for every selected card
+        if (d.groupSizes && Object.keys(d.groupSizes).length > 1) {
+          resizeItemsBy(d.groupSizes, dx, dy, { manual: true })
+        } else {
+          const nw = d.origW + dx
+          const nh = d.origH + dy
+          if (Number.isFinite(nw) && Number.isFinite(nh)) {
+            resizeItem(item.id, nw, nh, { manual: true })
+          }
         }
       }
     },
-    [item.id, moveItem, resizeItem, zoom],
+    [
+      item.id,
+      moveItem,
+      moveItemsBy,
+      resizeItem,
+      resizeItemsBy,
+      zoom,
+      interactive,
+    ],
   )
 
   const endPointer = useCallback(
     (e: ReactPointerEvent) => {
+      if (!interactive) return
       const d = dragRef.current
       if (d && d.pointerId !== e.pointerId) return
 
       // Click (no drag) on title area → hide title; reclaim band so body size stays
-      if (d && d.mode === 'move' && !d.active && d.hitTitle) {
+      if (d && d.mode === 'move' && !d.active && d.hitTitle && !d.shiftToggle) {
         updateItem(item.id, {
           showTitle: false,
-          // Keep formula size: drop the reserved title band from the card height
           height: Math.max(48, item.height - TITLE_BAND),
           contentFitKey: (item.contentFitKey ?? 0) + 1,
         })
@@ -268,7 +389,7 @@ export function CanvasItemView({ item, selected, zoom }: CanvasItemViewProps) {
         }
       }
     },
-    [item.id, item.height, item.contentFitKey, updateItem],
+    [item.id, item.height, item.contentFitKey, updateItem, interactive],
   )
 
   /**
@@ -277,6 +398,7 @@ export function CanvasItemView({ item, selected, zoom }: CanvasItemViewProps) {
    */
   const onDoubleClick = useCallback(
     (e: ReactMouseEvent) => {
+      if (!interactive) return
       if ((e.target as HTMLElement).closest('[data-resize-handle]')) return
       if ((e.target as HTMLElement).closest('[data-card-title]')) return
       e.stopPropagation()
@@ -287,7 +409,7 @@ export function CanvasItemView({ item, selected, zoom }: CanvasItemViewProps) {
         contentFitKey: (item.contentFitKey ?? 0) + 1,
       })
     },
-    [item.id, item.contentFitKey, updateItem],
+    [item.id, item.contentFitKey, updateItem, interactive],
   )
 
   const style = item.style ?? {}
@@ -296,30 +418,65 @@ export function CanvasItemView({ item, selected, zoom }: CanvasItemViewProps) {
   const safeH = Math.max(48, item.height || 48)
   const left = Number.isFinite(item.x) ? item.x : 0
   const top = Number.isFinite(item.y) ? item.y : 0
+  const asFigure = isFigureLike(item)
+  // Background fill ON unless user set transparentBackground: true
+  // (figures and equations share the same solid panel default)
+  const transparent = item.transparentBackground === true
+  const titleAlign = item.titleAlign ?? CARD_DEFAULTS.titleAlign
+  const contentFill = item.contentFill !== false
+  const titleAlignClass =
+    titleAlign === 'center'
+      ? 'text-center'
+      : titleAlign === 'right'
+        ? 'text-right'
+        : 'text-left'
+
+  if (item.hidden) {
+    // Still occupies layout identity for marquee hit-tests only when not hidden;
+    // fully omit from canvas when Outliner eye is off.
+    return null
+  }
 
   return (
     <div
       ref={rootRef}
       data-canvas-item
       className={`absolute select-none overflow-hidden touch-none ${
-        selected ? 'ring-2 ring-indigo-400' : 'ring-1 ring-transparent hover:ring-zinc-600'
-      } ${dragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+        selected
+          ? 'ring-2 ring-indigo-400'
+          : transparent
+            ? 'ring-1 ring-transparent hover:ring-zinc-600/60'
+            : 'ring-1 ring-transparent hover:ring-zinc-600'
+      } ${
+        !interactive
+          ? 'pointer-events-none'
+          : item.locked
+            ? 'cursor-default'
+            : dragging
+              ? 'cursor-grabbing'
+              : 'cursor-grab'
+      }`}
       style={{
         left,
         top,
         width: safeW,
         height: safeH,
-        zIndex: item.zIndex,
-        background: style.background ?? 'rgba(30,32,40,0.92)',
-        border: style.border,
+        zIndex: displayZ,
+        background: transparent
+          ? 'transparent'
+          : (style.background ?? 'rgba(30,32,40,0.92)'),
+        // Border is independent of background fill (user can toggle stroke)
+        border: composeBorderCss(style),
         borderRadius: 8,
         color: style.color ?? '#e8eaed',
         fontSize: style.fontSize ?? 18,
         padding: pad,
         boxSizing: 'border-box',
-        boxShadow: selected
-          ? '0 0 0 1px rgba(129,140,248,0.4), 0 8px 24px rgba(0,0,0,0.35)'
-          : '0 4px 16px rgba(0,0,0,0.25)',
+        boxShadow: transparent
+          ? 'none'
+          : selected
+            ? '0 0 0 1px rgba(129,140,248,0.4), 0 8px 24px rgba(0,0,0,0.35)'
+            : '0 4px 16px rgba(0,0,0,0.25)',
       }}
       onPointerDown={beginMove}
       onPointerMove={onPointerMove}
@@ -329,7 +486,9 @@ export function CanvasItemView({ item, selected, zoom }: CanvasItemViewProps) {
       onDragStart={(e) => e.preventDefault()}
       onClick={(e) => {
         e.stopPropagation()
-        select(item.id)
+        // Selection handled on pointer down (supports Shift multi-select)
+        if (e.shiftKey) return
+        if (!selected) select(item.id)
       }}
     >
       <div className="relative z-0 flex h-full min-h-0 flex-col">
@@ -337,13 +496,13 @@ export function CanvasItemView({ item, selected, zoom }: CanvasItemViewProps) {
           <div
             data-card-title
             title="Click to hide title"
-            className="pointer-events-auto relative z-10 mb-1 h-[18px] shrink-0 cursor-pointer truncate text-[10px] font-medium uppercase leading-[18px] tracking-wide text-zinc-500 hover:text-zinc-300"
+            className={`pointer-events-auto relative z-10 mb-1 h-[18px] shrink-0 cursor-pointer truncate text-[10px] font-medium uppercase leading-[18px] tracking-wide text-zinc-500 hover:text-zinc-300 ${titleAlignClass}`}
           >
             {item.title}
           </div>
         )}
 
-        {autoFit && (
+        {autoFit && !asFigure && (
           <div
             aria-hidden
             className="pointer-events-none fixed -left-[9999px] top-0 opacity-0"
@@ -357,34 +516,31 @@ export function CanvasItemView({ item, selected, zoom }: CanvasItemViewProps) {
 
         {/* flex-1 body: title is shrink-0 so it never compresses the formula area */}
         <div className="pointer-events-none min-h-0 w-full flex-1">
-          <FitContent
-            mode="scale"
-            minScale={0.08}
-            // Fill mode: high cap so content keeps growing as you drag larger
-            // (old cap of 12× made scaling look like it “suddenly stopped”)
-            maxScale={item.contentFill === false ? 1 : 64}
-            // Transform is continuous & reliable while dragging corners.
-            // Font-size is crisp but can hitch; use it only when not filling.
-            fitMethod={
-              item.contentFill === false &&
-              item.type !== 'figure' &&
-              item.type !== 'custom-image' &&
-              !(item.imageUrl && !item.latex && !item.tableMarkdown)
-                ? 'fontSize'
-                : 'transform'
-            }
-            baseFontSize={style.fontSize ?? 18}
-            showBadge={selected}
-            // Do NOT include width/height — ResizeObserver handles continuous resize
-            contentKey={`${item.id}-${item.latex ?? ''}-${item.tableMarkdown ?? ''}-${item.imageUrl ?? ''}-${item.style?.fontSize ?? ''}-fit${item.contentFitKey ?? 0}-fill${item.contentFill === false ? 0 : 1}-t${showTitle ? 1 : 0}`}
-            className="h-full w-full"
-          >
-            <ItemBody item={item} />
-          </FitContent>
+          {asFigure && item.imageUrl ? (
+            // Vector/bitmap at container size — no transform upscale blur
+            <FigureView src={item.imageUrl} alt={item.title ?? 'figure'} />
+          ) : (
+            <FitContent
+              mode="scale"
+              minScale={CARD_DEFAULTS.minFitScale}
+              maxScale={
+                contentFill ? CARD_DEFAULTS.maxFillScale : 1
+              }
+              // App-wide default: fontSize (crisp). Figures never reach here.
+              fitMethod={CARD_DEFAULTS.equationFitMethod}
+              baseFontSize={style.fontSize ?? 18}
+              showBadge={selected}
+              contentKey={`${item.id}-${item.latex ?? ''}-${item.tableMarkdown ?? ''}-${item.style?.fontSize ?? ''}-fit${item.contentFitKey ?? 0}-fill${contentFill ? 1 : 0}-t${showTitle ? 1 : 0}`}
+              className="h-full w-full"
+            >
+              <ItemBody item={item} />
+            </FitContent>
+          )}
         </div>
       </div>
 
-      {selected && (
+      {/* Per-card handle only for single selection; multi uses MultiSelectFrame */}
+      {selected && !item.locked && !multiSelected && (
         <div
           data-resize-handle
           className="absolute bottom-0 right-0 z-20 h-4 w-4 cursor-se-resize rounded-tl bg-indigo-400"
@@ -394,6 +550,14 @@ export function CanvasItemView({ item, selected, zoom }: CanvasItemViewProps) {
           onPointerCancel={endPointer}
           title="Resize"
         />
+      )}
+      {item.locked && selected && (
+        <div
+          className="pointer-events-none absolute bottom-1 right-1 z-20 rounded bg-zinc-950/80 px-1 text-[9px] text-zinc-400 ring-1 ring-zinc-700"
+          title="Locked — unlock in Outliner"
+        >
+          🔒
+        </div>
       )}
     </div>
   )

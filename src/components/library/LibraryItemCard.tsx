@@ -3,6 +3,7 @@ import { useDraggable } from '@dnd-kit/core'
 import { ImageIcon, Sigma, Table2 } from 'lucide-react'
 import type { LibraryItem } from '@/types'
 import { FitContent } from '@/components/math/FitContent'
+import { FigureView } from '@/components/math/FigureView'
 import { LatexView } from '@/components/math/LatexView'
 import { MarkdownTable } from '@/components/math/MarkdownTable'
 import {
@@ -78,7 +79,11 @@ export function LibraryItemCard({
         {...attributes}
         onMouseEnter={handleEnter}
         onMouseLeave={handleLeave}
-        title="Drag onto the canvas"
+        title={
+          item.description
+            ? `${item.title} — ${item.description} (drag onto canvas)`
+            : 'Drag onto the canvas'
+        }
         className={`group relative flex touch-none cursor-grab flex-col overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900/80 transition active:cursor-grabbing ${
           isDragging ? 'opacity-40' : 'hover:border-indigo-500/50'
         } ${labelsOnly ? 'px-2 py-1.5' : compact ? 'p-2' : 'p-3'}`}
@@ -98,41 +103,37 @@ export function LibraryItemCard({
             </span>
           </div>
 
-          {!labelsOnly && (
-            <FitContent
-              mode="scale"
-              minScale={0.22}
-              fitMethod={
-                item.type === 'figure' || item.imageUrl ? 'transform' : 'fontSize'
-              }
-              baseFontSize={14}
-              showBadge
-              contentKey={`${item.id}-${item.latex ?? ''}-${item.tableMarkdown ?? ''}`}
-              className={`w-full rounded-md bg-zinc-950/60 p-1.5 ${previewH}`}
-            >
-              {(item.type === 'equation' || item.latex) && item.latex && (
-                <LatexView
-                  latex={item.latex}
-                  className="overflow-visible text-xs text-zinc-100 [&_.katex]:text-[0.9em] [&_.katex-display]:m-0"
-                />
-              )}
-              {item.type === 'table' && item.tableMarkdown && (
-                <MarkdownTable
-                  markdown={item.tableMarkdown}
-                  fitContent
-                  className="overflow-visible [&_td]:py-0.5 [&_th]:py-0.5"
-                />
-              )}
-              {item.type === 'figure' && item.imageUrl && (
-                <img
-                  src={item.imageUrl}
-                  alt={item.title}
-                  className="block max-h-20 object-contain"
-                  draggable={false}
-                />
-              )}
-            </FitContent>
-          )}
+          {!labelsOnly &&
+            (item.type === 'figure' && item.imageUrl ? (
+              <div
+                className={`w-full rounded-md bg-transparent p-1 ${previewH}`}
+              >
+                <FigureView src={item.imageUrl} alt={item.title} />
+              </div>
+            ) : (
+              <FitContent
+                mode="scale"
+                minScale={0.22}
+                baseFontSize={14}
+                showBadge
+                contentKey={`${item.id}-${item.latex ?? ''}-${item.tableMarkdown ?? ''}`}
+                className={`w-full rounded-md bg-zinc-950/60 p-1.5 ${previewH}`}
+              >
+                {(item.type === 'equation' || item.latex) && item.latex && (
+                  <LatexView
+                    latex={item.latex}
+                    className="overflow-visible text-xs text-zinc-100 [&_.katex]:text-[0.9em] [&_.katex-display]:m-0"
+                  />
+                )}
+                {item.type === 'table' && item.tableMarkdown && (
+                  <MarkdownTable
+                    markdown={item.tableMarkdown}
+                    fitContent
+                    className="overflow-visible [&_td]:py-0.5 [&_th]:py-0.5"
+                  />
+                )}
+              </FitContent>
+            ))}
         </div>
       </div>
 

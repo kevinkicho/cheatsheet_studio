@@ -17,9 +17,11 @@ import {
   formatFirestoreError,
   stripUndefined,
 } from '@/lib/firestoreSanitize'
+import { promoteLocalImagesForCloud } from '@/lib/promoteLocalImages'
 import {
   DEFAULT_CANVAS,
   type CanvasItem,
+  type OutlinerFolder,
   type SheetCanvas,
 } from '@/types'
 import { useCanvasStore } from './canvasStore'
@@ -72,6 +74,7 @@ function buildSheetPayload(
   items: CanvasItem[],
   now: number,
   includeCreatedAt: boolean,
+  folders: OutlinerFolder[] = [],
 ) {
   const base = {
     ownerId: uid,
@@ -79,6 +82,7 @@ function buildSheetPayload(
     updatedAt: now,
     canvas,
     items,
+    folders,
     ...(includeCreatedAt ? { createdAt: now } : {}),
   }
   return stripUndefined(base)
@@ -230,11 +234,13 @@ export const useSheetsStore = create<SheetsState>((set, get) => ({
       const data = snap.data()
       const canvas = (data.canvas as SheetCanvas) ?? { ...DEFAULT_CANVAS }
       const items = (data.items as CanvasItem[]) ?? []
+      const folders = (data.folders as OutlinerFolder[]) ?? []
       useCanvasStore.getState().loadSheet({
         sheetId,
         title: (data.title as string) ?? 'Untitled sheet',
         canvas,
         items,
+        folders,
       })
       set({
         activeSheetId: sheetId,
@@ -255,6 +261,18 @@ export const useSheetsStore = create<SheetsState>((set, get) => ({
 
     set({ saveStatus: 'saving', lastCloudError: null })
 
+    // Lift IndexedDB images → Storage URLs; drop dead blob: links
+    let itemsForSave = canvasState.items
+    try {
+      const promoted = await promoteLocalImagesForCloud(uid, canvasState.items)
+      itemsForSave = promoted.items
+      if (promoted.changed) {
+        useCanvasStore.setState({ items: itemsForSave, dirty: true })
+      }
+    } catch (e) {
+      console.warn('[sheets] local image promote skipped:', e)
+    }
+
     // Local sheet → create a real Firestore document (first successful cloud save)
     if (!sheetId || sheetId.startsWith('local_')) {
       try {
@@ -262,9 +280,10 @@ export const useSheetsStore = create<SheetsState>((set, get) => ({
           uid,
           canvasState.title,
           canvasState.canvas,
-          canvasState.items,
+          itemsForSave,
           now,
           true,
+          canvasState.folders,
         )
         const ref = await addDoc(collection(db, 'sheets'), payload)
         const oldLocal = sheetId
@@ -298,9 +317,10 @@ export const useSheetsStore = create<SheetsState>((set, get) => ({
         uid,
         canvasState.title,
         canvasState.canvas,
-        canvasState.items,
+        itemsForSave,
         now,
         false,
+        canvasState.folders,
       )
       await updateDoc(doc(db, 'sheets', sheetId), payload)
       useCanvasStore.getState().markClean()
@@ -412,6 +432,7 @@ export const useSheetsStore = create<SheetsState>((set, get) => ({
         canvasState.items ?? [],
         now,
         true,
+        canvasState.folders ?? [],
       )
       const ref = await addDoc(collection(db, 'sheets'), payload)
       useCanvasStore.setState({ sheetId: ref.id, dirty: false })

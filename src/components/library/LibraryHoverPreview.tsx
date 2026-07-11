@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { LibraryItem } from '@/types'
 import { FitContent } from '@/components/math/FitContent'
+import { FigureView } from '@/components/math/FigureView'
 import { LatexView } from '@/components/math/LatexView'
 import { MarkdownTable } from '@/components/math/MarkdownTable'
 
@@ -92,43 +93,54 @@ export function LibraryHoverPreview({
         </span>
       </div>
 
+      {item.description && (
+        <p className="border-b border-zinc-800/80 px-3 py-1.5 text-[11px] leading-snug text-zinc-400">
+          {item.description}
+        </p>
+      )}
+      {item.tags?.length > 0 && (
+        <div className="flex flex-wrap gap-1 border-b border-zinc-800/80 px-3 py-1.5">
+          {item.tags.slice(0, 6).map((t) => (
+            <span
+              key={t}
+              className="rounded bg-zinc-900 px-1.5 py-px text-[9px] text-zinc-500 ring-1 ring-zinc-800"
+            >
+              {t}
+            </span>
+          ))}
+        </div>
+      )}
+
       <div style={{ height: PREVIEW_H }} className="w-full bg-zinc-900/40 p-3">
-        <FitContent
-          mode="scale"
-          minScale={0.18}
-          fitMethod={
-            item.type === 'figure' || item.imageUrl ? 'transform' : 'fontSize'
-          }
-          baseFontSize={18}
-          showBadge
-          contentKey={`hover-body-${item.id}-${item.latex ?? ''}-${item.tableMarkdown ?? ''}-${item.imageUrl ?? ''}`}
-          className="h-full w-full"
-        >
-          {(item.type === 'equation' || item.latex) && item.latex && (
-            <LatexView
-              latex={item.latex}
-              className="overflow-visible text-zinc-100 [&_.katex]:text-[1.1em] [&_.katex-display]:m-0"
-            />
-          )}
-          {item.type === 'table' && item.tableMarkdown && (
-            <MarkdownTable
-              markdown={item.tableMarkdown}
-              fitContent
-              className="overflow-visible text-sm"
-            />
-          )}
-          {item.type === 'figure' && item.imageUrl && (
-            <img
-              src={item.imageUrl}
-              alt={item.title}
-              className="block max-h-[220px] object-contain"
-              draggable={false}
-            />
-          )}
-          {!item.latex && !item.tableMarkdown && !item.imageUrl && (
-            <p className="text-xs text-zinc-500">No preview content</p>
-          )}
-        </FitContent>
+        {item.type === 'figure' && item.imageUrl ? (
+          <FigureView src={item.imageUrl} alt={item.title} />
+        ) : (
+          <FitContent
+            mode="scale"
+            minScale={0.18}
+            baseFontSize={18}
+            showBadge
+            contentKey={`hover-body-${item.id}-${item.latex ?? ''}-${item.tableMarkdown ?? ''}`}
+            className="h-full w-full"
+          >
+            {(item.type === 'equation' || item.latex) && item.latex && (
+              <LatexView
+                latex={item.latex}
+                className="overflow-visible text-zinc-100 [&_.katex]:text-[1.1em] [&_.katex-display]:m-0"
+              />
+            )}
+            {item.type === 'table' && item.tableMarkdown && (
+              <MarkdownTable
+                markdown={item.tableMarkdown}
+                fitContent
+                className="overflow-visible text-sm"
+              />
+            )}
+            {!item.latex && !item.tableMarkdown && !item.imageUrl && (
+              <p className="text-xs text-zinc-500">No preview content</p>
+            )}
+          </FitContent>
+        )}
       </div>
     </div>,
     document.body,

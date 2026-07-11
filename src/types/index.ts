@@ -21,11 +21,33 @@ export type CanvasItemType =
   | 'custom-equation'
   | 'custom-image'
 
+export type TitleAlign = 'left' | 'center' | 'right'
+
+/** CSS border-style values we expose in the UI. */
+export type BorderStroke =
+  | 'solid'
+  | 'dashed'
+  | 'dotted'
+  | 'double'
+  | 'none'
+
 export interface ItemStyle {
   fontSize?: number
   color?: string
   background?: string
+  /**
+   * Composed CSS border shorthand (kept in sync from border* fields).
+   * Prefer borderEnabled / borderWidth / borderStyle / borderColor for edits.
+   */
   border?: string
+  /** When false, no border is drawn. Default true. */
+  borderEnabled?: boolean
+  /** Stroke thickness in CSS px. Default 1. */
+  borderWidth?: number
+  /** solid | dashed | dotted | double | none. Default solid. */
+  borderStyle?: BorderStroke
+  /** Stroke color (hex or rgba). */
+  borderColor?: string
   padding?: number
 }
 
@@ -62,6 +84,8 @@ export interface CanvasItem {
   autoFit?: boolean
   /** When false, hide the title bar on the card. Default true. */
   showTitle?: boolean
+  /** Title text alignment on the card. Default left. */
+  titleAlign?: TitleAlign
   /** Bumped to force content re-scale inside the card viewport. */
   contentFitKey?: number
   /**
@@ -69,11 +93,33 @@ export interface CanvasItem {
    * (set by double-click fit).
    */
   contentFill?: boolean
+  /**
+   * When true, card chrome is fully transparent (no fill/shadow) so figures
+   * and equations blend with the dark canvas. Default false; figures often set true.
+   */
+  transparentBackground?: boolean
+  /** When true, card is hidden on the canvas (Outliner eye off). Default false. */
+  hidden?: boolean
+  /** When true, card cannot be moved/resized (Outliner lock). Default false. */
+  locked?: boolean
+  /** Outliner folder id; undefined/null = root (ungrouped). */
+  folderId?: string | null
   latex?: string
   tableMarkdown?: string
   imageUrl?: string
   imagePath?: string
   style?: ItemStyle
+}
+
+/** Outliner collection / folder (Blender-style). Supports nesting. */
+export interface OutlinerFolder {
+  id: string
+  name: string
+  /** Collapsed in Outliner when false. Default true (open). */
+  open?: boolean
+  order?: number
+  /** Parent folder id; null/undefined = top-level under sheet root. */
+  parentId?: string | null
 }
 
 /** Print margins in CSS px @ 96 dpi (0.5 in = 48 px). */
@@ -167,10 +213,16 @@ export const DEFAULT_CANVAS: SheetCanvas = {
   margins: { ...DEFAULT_MARGINS },
 }
 
+export const DEFAULT_BORDER_COLOR = 'rgba(99, 102, 241, 0.55)'
+
 export const DEFAULT_ITEM_STYLE: ItemStyle = {
   fontSize: 18,
   color: '#e8eaed',
   background: 'rgba(30, 32, 40, 0.92)',
-  border: '1px solid rgba(99, 102, 241, 0.35)',
+  borderEnabled: true,
+  borderWidth: 1,
+  borderStyle: 'solid',
+  borderColor: DEFAULT_BORDER_COLOR,
+  border: `1px solid ${DEFAULT_BORDER_COLOR}`,
   padding: 12,
 }

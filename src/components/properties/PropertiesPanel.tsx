@@ -1,23 +1,38 @@
 import type { ReactNode } from 'react'
 import { Scan, Trash2 } from 'lucide-react'
+import type { BorderStroke, CanvasItem, ItemStyle, TitleAlign } from '@/types'
 import { useCanvasStore } from '@/stores/canvasStore'
 import { LatexView } from '@/components/math/LatexView'
 
+function commonValue<T>(
+  items: CanvasItem[],
+  get: (i: CanvasItem) => T,
+): T | 'mixed' {
+  if (items.length === 0) return 'mixed'
+  const first = get(items[0])
+  for (let i = 1; i < items.length; i++) {
+    if (get(items[i]) !== first) return 'mixed'
+  }
+  return first
+}
+
 export function PropertiesPanel() {
-  const selectedId = useCanvasStore((s) => s.selectedId)
+  const selectedIds = useCanvasStore((s) => s.selectedIds)
   const items = useCanvasStore((s) => s.items)
   const title = useCanvasStore((s) => s.title)
   const canvas = useCanvasStore((s) => s.canvas)
   const setTitle = useCanvasStore((s) => s.setTitle)
   const setCanvas = useCanvasStore((s) => s.setCanvas)
-  const updateItem = useCanvasStore((s) => s.updateItem)
-  const updateItemStyle = useCanvasStore((s) => s.updateItemStyle)
-  const fitItemToContent = useCanvasStore((s) => s.fitItemToContent)
-  const removeItem = useCanvasStore((s) => s.removeItem)
+  const updateItems = useCanvasStore((s) => s.updateItems)
+  const updateItemsStyle = useCanvasStore((s) => s.updateItemsStyle)
+  const fitItemsToContent = useCanvasStore((s) => s.fitItemsToContent)
+  const removeItems = useCanvasStore((s) => s.removeItems)
 
-  const item = items.find((i) => i.id === selectedId)
+  const selected = items.filter((i) => selectedIds.includes(i.id))
+  const multi = selected.length > 1
+  const single = selected.length === 1 ? selected[0] : null
 
-  if (!item) {
+  if (selected.length === 0) {
     return (
       <div className="flex h-full flex-col gap-4 overflow-y-auto p-3">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
@@ -68,7 +83,6 @@ export function PropertiesPanel() {
           <label className="mt-2 flex flex-col gap-1">
             <span className="text-[10px] text-zinc-500">
               Spacing · {canvas.gridSpacing ?? 24}px
-              <span className="text-zinc-600"> (24 aligns with 0.5″ margins)</span>
             </span>
             <input
               type="range"
@@ -100,46 +114,81 @@ export function PropertiesPanel() {
           </label>
         </div>
 
-        <div className="rounded-md border border-zinc-800 bg-zinc-900/50 px-2 py-2 text-[11px] text-zinc-400">
-          <p className="font-medium text-zinc-300">Print page</p>
-          <p className="mt-0.5">
-            {canvas.showPrintArea !== false ? (
-              <>
-                {(canvas.printSizeId ?? 'letter').toUpperCase()} ·{' '}
-                {canvas.orientation ?? 'portrait'}
-              </>
-            ) : (
-              <span className="text-amber-200/90">Frame hidden · free board</span>
-            )}
-          </p>
-          <p className="mt-0.5 text-zinc-500">
-            Workspace {canvas.width} × {canvas.height} px
-          </p>
-          <p className="mt-1 text-[10px] text-zinc-600">
-            Printer toggles the Letter/A4 frame only — cards stay put. Grid
-            covers the full free board when the frame is off.
-          </p>
-        </div>
         <p className="mt-2 text-xs leading-relaxed text-zinc-500">
-          Select an item on the canvas to edit its position, style, and content.
+          Select a card to edit it. Hold{' '}
+          <kbd className="rounded bg-zinc-800 px-1 text-[10px] text-zinc-300">
+            Shift
+          </kbd>{' '}
+          and click to select multiple cards, then edit them together here.
         </p>
       </div>
     )
   }
 
-  const style = item.style ?? {}
+  const ids = selected.map((i) => i.id)
+  const primary = selected[selected.length - 1]
+
+  const patch = (partial: Partial<CanvasItem>) => updateItems(ids, partial)
+  const patchStyle = (s: Partial<ItemStyle>) => updateItemsStyle(ids, s)
+
+  const showTitleVal = commonValue(selected, (i) => i.showTitle !== false)
+  const contentFillVal = commonValue(selected, (i) => i.contentFill !== false)
+  const titleAlignVal = commonValue(
+    selected,
+    (i) => (i.titleAlign ?? 'left') as TitleAlign,
+  )
+  const bgFillVal = commonValue(
+    selected,
+    (i) => i.transparentBackground !== true,
+  )
+  const fontSizeVal = commonValue(selected, (i) => i.style?.fontSize ?? 18)
+  const borderOnVal = commonValue(
+    selected,
+    (i) =>
+      i.style?.borderEnabled !== false && i.style?.borderStyle !== 'none',
+  )
+  const borderStyleVal = commonValue(
+    selected,
+    (i) => (i.style?.borderStyle ?? 'solid') as BorderStroke,
+  )
+  const borderWidthVal = commonValue(selected, (i) => i.style?.borderWidth ?? 1)
+  const borderColorVal = commonValue(
+    selected,
+    (i) => i.style?.borderColor ?? '#6366f1',
+  )
+  const textColorVal = commonValue(
+    selected,
+    (i) => i.style?.color ?? '#e8eaed',
+  )
+  const fillColorVal = commonValue(
+    selected,
+    (i) => i.style?.background ?? '#1e2028',
+  )
+
+  const allEquations = selected.every(
+    (i) =>
+      i.type === 'equation' ||
+      i.type === 'custom-equation' ||
+      Boolean(i.latex),
+  )
+  const allFigures = selected.every(
+    (i) =>
+      i.type === 'figure' ||
+      i.type === 'custom-image' ||
+      (Boolean(i.imageUrl) && !i.latex),
+  )
 
   return (
     <div className="flex h-full flex-col gap-3 overflow-y-auto p-3">
       <div className="flex items-center justify-between gap-1">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
-          Item properties
+          {multi ? `${selected.length} cards selected` : 'Item properties'}
         </h2>
         <div className="flex items-center gap-0.5">
           <button
             type="button"
-            title="Fit card to content"
-            onClick={() => fitItemToContent(item.id)}
+            title="Fit card(s) to content"
+            onClick={() => fitItemsToContent(ids)}
             className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-indigo-300 hover:bg-indigo-500/10"
           >
             <Scan className="h-3.5 w-3.5" />
@@ -147,7 +196,7 @@ export function PropertiesPanel() {
           </button>
           <button
             type="button"
-            onClick={() => removeItem(item.id)}
+            onClick={() => removeItems(ids)}
             className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-red-300 hover:bg-red-500/10"
           >
             <Trash2 className="h-3.5 w-3.5" />
@@ -156,163 +205,336 @@ export function PropertiesPanel() {
         </div>
       </div>
 
-      <p className="text-[10px] leading-relaxed text-zinc-500">
-        Size mode:{' '}
-        <span className="text-zinc-300">
-          {item.autoFit !== false ? 'auto-fit (grow up to max)' : 'manual resize'}
-        </span>
-        . Oversized equations/tables always <span className="text-zinc-300">scale to fit</span>{' '}
-        inside the card so nothing spills.
-      </p>
+      {multi && (
+        <p className="rounded-md border border-indigo-500/20 bg-indigo-500/10 px-2 py-1.5 text-[10px] leading-relaxed text-indigo-200/90">
+          Edits below apply to all {selected.length} selected cards. Shift+click
+          a card to add or remove it from the selection.
+        </p>
+      )}
 
-      <Field label="Title">
-        <input
-          value={item.title ?? ''}
-          onChange={(e) => updateItem(item.id, { title: e.target.value })}
-          className="field-input"
-        />
-      </Field>
-      <label className="flex items-center gap-2 text-xs text-zinc-300">
-        <input
-          type="checkbox"
-          checked={item.showTitle !== false}
-          onChange={(e) => {
-            const show = e.target.checked
-            const TITLE_BAND = 22
-            const wasShown = item.showTitle !== false
-            // Grow/shrink the card so the formula area keeps the same height
-            let nextH = item.height
-            if (show && !wasShown) nextH = item.height + TITLE_BAND
-            if (!show && wasShown) nextH = Math.max(48, item.height - TITLE_BAND)
-            updateItem(item.id, {
+      {!multi && single && (
+        <p className="text-[10px] leading-relaxed text-zinc-500">
+          Size mode:{' '}
+          <span className="text-zinc-300">
+            {single.autoFit !== false
+              ? 'auto-fit (grow up to max)'
+              : 'manual resize'}
+          </span>
+          . Shift+click other cards to multi-select.
+        </p>
+      )}
+
+      {!multi && (
+        <Field label="Title">
+          <input
+            value={primary.title ?? ''}
+            onChange={(e) => patch({ title: e.target.value })}
+            className="field-input"
+          />
+        </Field>
+      )}
+
+      <TriCheck
+        label="Show title on card"
+        value={showTitleVal}
+        onChange={(show) => {
+          const TITLE_BAND = 22
+          for (const it of selected) {
+            const wasShown = it.showTitle !== false
+            let nextH = it.height
+            if (show && !wasShown) nextH = it.height + TITLE_BAND
+            if (!show && wasShown) nextH = Math.max(48, it.height - TITLE_BAND)
+            useCanvasStore.getState().updateItem(it.id, {
               showTitle: show,
               height: nextH,
-              contentFitKey: (item.contentFitKey ?? 0) + 1,
-            })
-          }}
-          className="rounded border-zinc-600"
-        />
-        Show title on card
-      </label>
-      <p className="text-[10px] text-zinc-600">
-        Tip: click the title on the card to hide it (card height shrinks so
-        content stays large). Double-click the body to re-fit content.
-      </p>
-      <label className="flex items-center gap-2 text-xs text-zinc-300">
-        <input
-          type="checkbox"
-          checked={item.contentFill !== false}
-          onChange={(e) =>
-            updateItem(item.id, {
-              contentFill: e.target.checked,
-              contentFitKey: (item.contentFitKey ?? 0) + 1,
+              contentFitKey: (it.contentFitKey ?? 0) + 1,
             })
           }
-          className="rounded border-zinc-600"
-        />
-        Fill card with content (scale to fit)
-      </label>
-      <p className="text-[10px] text-zinc-600">
-        When on, content grows/shrinks with the card as you drag corners (up
-        to a large cap). When off, content only shrinks if the card is too
-        small.
-      </p>
+        }}
+      />
 
-      <div className="grid grid-cols-2 gap-2">
-        <Field label="X">
-          <input
-            type="number"
-            value={item.x}
-            onChange={(e) =>
-              updateItem(item.id, { x: Number(e.target.value) || 0 })
-            }
-            className="field-input"
-          />
+      {(showTitleVal === true || showTitleVal === 'mixed') && (
+        <Field label="Title alignment">
+          <div className="flex gap-1">
+            {(
+              [
+                ['left', 'Left'],
+                ['center', 'Center'],
+                ['right', 'Right'],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => patch({ titleAlign: value })}
+                className={`flex-1 rounded-md border px-2 py-1 text-[11px] transition ${
+                  titleAlignVal === value
+                    ? 'border-indigo-500/60 bg-indigo-500/15 text-indigo-200'
+                    : 'border-zinc-800 bg-zinc-900/50 text-zinc-400 hover:border-zinc-700'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {titleAlignVal === 'mixed' && (
+            <span className="text-[10px] text-amber-500/80">Mixed</span>
+          )}
         </Field>
-        <Field label="Y">
-          <input
-            type="number"
-            value={item.y}
-            onChange={(e) =>
-              updateItem(item.id, { y: Number(e.target.value) || 0 })
-            }
-            className="field-input"
-          />
-        </Field>
-        <Field label="Width">
-          <input
-            type="number"
-            value={item.width}
-            onChange={(e) =>
-              updateItem(item.id, {
-                width: Math.max(80, Number(e.target.value) || 80),
-              })
-            }
-            className="field-input"
-          />
-        </Field>
-        <Field label="Height">
-          <input
-            type="number"
-            value={item.height}
-            onChange={(e) =>
-              updateItem(item.id, {
-                height: Math.max(48, Number(e.target.value) || 48),
-              })
-            }
-            className="field-input"
-          />
-        </Field>
-      </div>
+      )}
 
-      <Field label="Font size">
+      <TriCheck
+        label="Scale content to fill card"
+        value={contentFillVal}
+        onChange={(on) =>
+          patch({
+            contentFill: on,
+            contentFitKey: Date.now(),
+          })
+        }
+      />
+
+      {!multi && (
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="X">
+            <input
+              type="number"
+              value={primary.x}
+              onChange={(e) =>
+                patch({ x: Number(e.target.value) || 0 })
+              }
+              className="field-input"
+            />
+          </Field>
+          <Field label="Y">
+            <input
+              type="number"
+              value={primary.y}
+              onChange={(e) =>
+                patch({ y: Number(e.target.value) || 0 })
+              }
+              className="field-input"
+            />
+          </Field>
+          <Field label="Width">
+            <input
+              type="number"
+              value={primary.width}
+              onChange={(e) =>
+                patch({
+                  width: Math.max(80, Number(e.target.value) || 80),
+                })
+              }
+              className="field-input"
+            />
+          </Field>
+          <Field label="Height">
+            <input
+              type="number"
+              value={primary.height}
+              onChange={(e) =>
+                patch({
+                  height: Math.max(48, Number(e.target.value) || 48),
+                })
+              }
+              className="field-input"
+            />
+          </Field>
+        </div>
+      )}
+
+      <Field
+        label={
+          fontSizeVal === 'mixed'
+            ? 'Font size · mixed'
+            : `Font size · ${fontSizeVal}px`
+        }
+      >
         <input
           type="range"
           min={12}
           max={36}
-          value={style.fontSize ?? 18}
+          value={fontSizeVal === 'mixed' ? 18 : fontSizeVal}
           onChange={(e) =>
-            updateItemStyle(item.id, { fontSize: Number(e.target.value) })
+            patchStyle({ fontSize: Number(e.target.value) })
           }
           className="w-full"
         />
       </Field>
 
+      <TriCheck
+        label="Background fill"
+        value={bgFillVal}
+        onChange={(on) => {
+          if (on) {
+            for (const it of selected) {
+              const st = it.style ?? {}
+              useCanvasStore.getState().updateItem(it.id, {
+                transparentBackground: false,
+                style: {
+                  ...st,
+                  background:
+                    st.background && st.background !== 'transparent'
+                      ? st.background
+                      : 'rgba(30, 32, 40, 0.92)',
+                },
+              })
+            }
+          } else {
+            patch({ transparentBackground: true })
+          }
+        }}
+      />
+
       <div className="grid grid-cols-2 gap-2">
         <Field label="Text color">
           <input
             type="color"
-            value={style.color ?? '#e8eaed'}
-            onChange={(e) =>
-              updateItemStyle(item.id, { color: e.target.value })
+            value={
+              textColorVal === 'mixed'
+                ? '#e8eaed'
+                : textColorVal.startsWith('#')
+                  ? textColorVal
+                  : '#e8eaed'
             }
+            onChange={(e) => patchStyle({ color: e.target.value })}
             className="h-8 w-full cursor-pointer rounded border border-zinc-700"
           />
         </Field>
-        <Field label="Background">
+        <Field label="Fill color">
           <input
             type="color"
+            disabled={bgFillVal === false}
             value={
-              style.background?.startsWith('#')
-                ? style.background
-                : '#1e2028'
+              fillColorVal === 'mixed'
+                ? '#1e2028'
+                : fillColorVal.startsWith('#')
+                  ? fillColorVal
+                  : '#1e2028'
             }
-            onChange={(e) =>
-              updateItemStyle(item.id, { background: e.target.value })
-            }
-            className="h-8 w-full cursor-pointer rounded border border-zinc-700"
+            onChange={(e) => {
+              patch({ transparentBackground: false })
+              patchStyle({ background: e.target.value })
+            }}
+            className="h-8 w-full cursor-pointer rounded border border-zinc-700 disabled:cursor-not-allowed disabled:opacity-40"
           />
         </Field>
       </div>
 
-      {(item.type === 'equation' ||
-        item.type === 'custom-equation' ||
-        item.latex !== undefined) && (
+      {/* Border */}
+      <div className="rounded-md border border-zinc-800 bg-zinc-900/40 px-2 py-2">
+        <TriCheck
+          label="Border"
+          value={borderOnVal}
+          onChange={(on) =>
+            patchStyle({
+              borderEnabled: on,
+              borderStyle: on
+                ? borderStyleVal === 'none' || borderStyleVal === 'mixed'
+                  ? 'solid'
+                  : borderStyleVal
+                : 'none',
+            })
+          }
+        />
+        <p className="mt-1 text-[10px] text-zinc-600">
+          Stroke around the card. Independent of background fill.
+        </p>
+
+        {borderOnVal !== false && (
+          <div className="mt-2 flex flex-col gap-2">
+            <Field label="Stroke type">
+              <div className="grid grid-cols-2 gap-1 sm:grid-cols-4">
+                {(
+                  [
+                    ['solid', 'Solid'],
+                    ['dashed', 'Dashed'],
+                    ['dotted', 'Dotted'],
+                    ['double', 'Double'],
+                  ] as const
+                ).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() =>
+                      patchStyle({
+                        borderEnabled: true,
+                        borderStyle: value,
+                      })
+                    }
+                    className={`rounded-md border px-1.5 py-1 text-[10px] transition ${
+                      borderStyleVal === value
+                        ? 'border-indigo-500/60 bg-indigo-500/15 text-indigo-200'
+                        : 'border-zinc-800 bg-zinc-950/50 text-zinc-400 hover:border-zinc-700'
+                    }`}
+                    title={label}
+                  >
+                    <span
+                      className="mx-auto mb-0.5 block h-0 w-full border-t-2 border-zinc-300"
+                      style={{
+                        borderTopStyle: value,
+                        borderTopColor: 'currentColor',
+                      }}
+                    />
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </Field>
+
+            <Field
+              label={
+                borderWidthVal === 'mixed'
+                  ? 'Thickness · mixed'
+                  : `Thickness · ${borderWidthVal}px`
+              }
+            >
+              <input
+                type="range"
+                min={1}
+                max={8}
+                step={1}
+                value={borderWidthVal === 'mixed' ? 1 : borderWidthVal}
+                onChange={(e) =>
+                  patchStyle({
+                    borderEnabled: true,
+                    borderWidth: Number(e.target.value),
+                  })
+                }
+                className="w-full"
+              />
+            </Field>
+
+            <Field label="Stroke color">
+              <input
+                type="color"
+                value={
+                  borderColorVal === 'mixed'
+                    ? '#6366f1'
+                    : borderColorVal.startsWith('#')
+                      ? borderColorVal
+                      : '#6366f1'
+                }
+                onChange={(e) =>
+                  patchStyle({
+                    borderEnabled: true,
+                    borderColor: e.target.value,
+                  })
+                }
+                className="h-8 w-full cursor-pointer rounded border border-zinc-700"
+              />
+            </Field>
+          </div>
+        )}
+      </div>
+
+      {/* Content-specific: only when single or all same kind */}
+      {!multi && single && (single.latex !== undefined || single.type === 'equation' || single.type === 'custom-equation') && (
         <>
           <Field label="LaTeX">
             <textarea
-              value={item.latex ?? ''}
-              onChange={(e) => updateItem(item.id, { latex: e.target.value })}
+              value={single.latex ?? ''}
+              onChange={(e) => patch({ latex: e.target.value })}
               rows={4}
               className="field-input font-mono text-[11px]"
               spellCheck={false}
@@ -320,29 +542,74 @@ export function PropertiesPanel() {
           </Field>
           <div className="rounded-md border border-zinc-800 bg-zinc-950 p-2">
             <p className="mb-1 text-[10px] uppercase text-zinc-500">Preview</p>
-            <LatexView latex={item.latex ?? ''} className="text-sm" />
+            <LatexView latex={single.latex ?? ''} className="text-sm" />
           </div>
         </>
       )}
 
-      {(item.type === 'figure' ||
-        item.type === 'custom-image' ||
-        item.imageUrl) && (
-        <Field label="Image URL">
-          <input
-            value={item.imageUrl ?? ''}
-            onChange={(e) =>
-              updateItem(item.id, { imageUrl: e.target.value })
-            }
-            className="field-input text-[11px]"
-          />
-        </Field>
+      {!multi &&
+        single &&
+        (single.type === 'figure' ||
+          single.type === 'custom-image' ||
+          single.imageUrl) && (
+          <Field label="Image URL">
+            <input
+              value={single.imageUrl ?? ''}
+              onChange={(e) => patch({ imageUrl: e.target.value })}
+              className="field-input text-[11px]"
+            />
+          </Field>
+        )}
+
+      {multi && allEquations && (
+        <p className="text-[10px] text-zinc-500">
+          All selected are equations — shared chrome edits apply. Edit LaTeX
+          one card at a time.
+        </p>
+      )}
+      {multi && allFigures && (
+        <p className="text-[10px] text-zinc-500">
+          All selected are figures — shared chrome edits apply.
+        </p>
       )}
 
       <p className="text-[10px] text-zinc-600">
-        Type: {item.type} · z: {item.zIndex}
+        {multi
+          ? `Types: ${[...new Set(selected.map((i) => i.type))].join(', ')}`
+          : `Type: ${primary.type} · z: ${primary.zIndex}`}
       </p>
     </div>
+  )
+}
+
+/** Checkbox that supports true / false / mixed (indeterminate). */
+function TriCheck({
+  label,
+  value,
+  onChange,
+}: {
+  label: string
+  value: boolean | 'mixed'
+  onChange: (next: boolean) => void
+}) {
+  return (
+    <label className="flex items-center gap-2 text-xs text-zinc-300">
+      <input
+        type="checkbox"
+        checked={value === true}
+        ref={(el) => {
+          if (el) el.indeterminate = value === 'mixed'
+        }}
+        onChange={(e) => onChange(e.target.checked)}
+        className="rounded border-zinc-600"
+      />
+      <span>
+        {label}
+        {value === 'mixed' && (
+          <span className="ml-1 text-[10px] text-amber-500/80">(mixed)</span>
+        )}
+      </span>
+    </label>
   )
 }
 
