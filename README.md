@@ -4,7 +4,7 @@
 
 **Math · Science · Economics · Finance cheat-sheet builder**
 
-Author: **Grok/xAI** · License: [MIT](./LICENSE)
+License: [MIT](./LICENSE)
 
 </div>
 
@@ -191,4 +191,6 @@ After deploy, add the Hosting domain under **Authentication → Settings → Aut
 
 ## License
 
-[MIT](./LICENSE) © 2026 **Grok/xAI**
+Released under the [MIT License](./LICENSE).
+
+**Attribution (courtesy):** The product direction and requirements were provided by the project owner; implementation (code, Firebase setup, and iteration) was done by **Grok / xAI**.

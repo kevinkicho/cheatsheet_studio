@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "description": "CheatSheet Studio — math/science cheat-sheet builder with Firebase",
-  "author": "Grok/xAI",
+  "author": "Project owner (instructions) · Grok/xAI (implementation)",
   "license": "MIT",
   "type": "module",
   "scripts": {
