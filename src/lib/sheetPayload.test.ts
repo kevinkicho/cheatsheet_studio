@@ -58,7 +58,7 @@ describe('buildSheetPayload', () => {
       [item as never],
       1,
       false,
-    ) as {
+    ) as unknown as {
       canvas: Record<string, unknown>
       items: Record<string, unknown>[]
     }

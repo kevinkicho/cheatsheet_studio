@@ -3,6 +3,11 @@ interface MarkdownTableProps {
   className?: string
   /** Size to content instead of stretching to 100% width (canvas cards). */
   fitContent?: boolean
+  /**
+   * Light paper theme with inline hex colors only — safe for html2canvas-pro
+   * (avoids Tailwind oklch utilities).
+   */
+  printTheme?: boolean
 }
 
 /** Parse GitHub-style pipe tables into row arrays (header separator stripped). */
@@ -37,14 +42,81 @@ export function MarkdownTable({
   markdown,
   className = '',
   fitContent = false,
+  printTheme = false,
 }: MarkdownTableProps) {
   const rows = parsePipeTable(markdown)
 
   if (rows.length === 0) {
+    if (printTheme) {
+      return (
+        <div style={{ fontSize: '0.85em', color: '#6b7280' }}>Empty table</div>
+      )
+    }
     return <div className="text-[0.85em] text-zinc-500">Empty table</div>
   }
 
   const [header, ...body] = rows
+
+  if (printTheme) {
+    return (
+      <div style={{ overflow: fitContent ? 'visible' : 'auto' }}>
+        <table
+          style={{
+            borderCollapse: 'collapse',
+            textAlign: 'left',
+            fontSize: '1em',
+            lineHeight: 1.35,
+            color: '#111827',
+            width: fitContent ? 'max-content' : '100%',
+            maxWidth: fitContent ? 'none' : undefined,
+          }}
+        >
+          <thead>
+            <tr>
+              {header.map((cell, i) => (
+                <th
+                  key={i}
+                  style={{
+                    whiteSpace: 'nowrap',
+                    borderBottom: '1px solid #9ca3af',
+                    padding: '0.4em 0.65em',
+                    fontWeight: 600,
+                    color: '#3730a3',
+                  }}
+                >
+                  {cell}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {body.map((row, ri) => (
+              <tr
+                key={ri}
+                style={{
+                  background: ri % 2 === 1 ? 'rgba(0,0,0,0.03)' : 'transparent',
+                }}
+              >
+                {row.map((cell, ci) => (
+                  <td
+                    key={ci}
+                    style={{
+                      whiteSpace: 'nowrap',
+                      borderBottom: '1px solid #e5e7eb',
+                      padding: '0.4em 0.65em',
+                      color: '#111827',
+                    }}
+                  >
+                    {cell}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )
+  }
 
   return (
     <div

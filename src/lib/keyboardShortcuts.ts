@@ -21,13 +21,31 @@ export type ShortcutResult =
 function isTypingTarget(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null
   if (!el) return false
-  const tag = el.tagName?.toLowerCase()
-  return (
-    tag === 'input' ||
-    tag === 'textarea' ||
-    tag === 'select' ||
-    el.isContentEditable === true
+  if (el.isContentEditable === true) return true
+  // Prefer closest() so labels / SVG icons inside controls don't steal “typing”
+  const field = el.closest?.(
+    'input, textarea, select, [contenteditable="true"]',
   )
+  if (field) {
+    const tag = field.tagName?.toLowerCase()
+    if (tag === 'input') {
+      const type = (field as HTMLInputElement).type?.toLowerCase() ?? 'text'
+      // Don't treat buttons/checkboxes as text fields for shortcut suppression
+      if (
+        type === 'button' ||
+        type === 'submit' ||
+        type === 'checkbox' ||
+        type === 'radio' ||
+        type === 'file' ||
+        type === 'range' ||
+        type === 'color'
+      ) {
+        return false
+      }
+    }
+    return true
+  }
+  return false
 }
 
 /**

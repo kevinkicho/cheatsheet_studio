@@ -52,18 +52,21 @@ describe('authStore (Firebase mocked)', () => {
   })
 
   it('init subscribes to auth and clears loading on callback', () => {
-    let authCb: ((u: unknown) => void) | null = null
-    onAuthStateChanged.mockImplementation((_auth, cb) => {
-      authCb = cb
-      return () => {}
-    })
+    let authCb: ((u: unknown) => void) | undefined
+    onAuthStateChanged.mockImplementation(
+      (_auth: unknown, cb: (u: unknown) => void) => {
+        authCb = cb
+        return () => {}
+      },
+    )
     const unsub = useAuthStore.getState().init()
     expect(typeof unsub).toBe('function')
     expect(onAuthStateChanged).toHaveBeenCalled()
 
     const fakeUser = { uid: 'u1', displayName: 'Ada', email: 'a@b.c' }
     getDoc.mockResolvedValue({ exists: () => true })
-    authCb?.(fakeUser)
+    expect(authCb).toBeTypeOf('function')
+    authCb!(fakeUser)
     expect(useAuthStore.getState().user).toEqual(fakeUser)
     expect(useAuthStore.getState().loading).toBe(false)
   })

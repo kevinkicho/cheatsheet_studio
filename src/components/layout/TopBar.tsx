@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import {
   BookOpen,
   ChevronDown,
@@ -18,6 +19,7 @@ import { useCanvasStore } from '@/stores/canvasStore'
 import { useSheetsStore } from '@/stores/sheetsStore'
 import { useUiStore, type AppView } from '@/stores/uiStore'
 import { PrintSizeMenu } from './PrintSizeMenu'
+import { ExportMenu, type ExportStatusKind } from './ExportMenu'
 
 export function TopBar() {
   const user = useAuthStore((s) => s.user)
@@ -29,6 +31,11 @@ export function TopBar() {
   const futureLen = useCanvasStore((s) => s.future.length)
   const undo = useCanvasStore((s) => s.undo)
   const redo = useCanvasStore((s) => s.redo)
+  const [exportBusy, setExportBusy] = useState(false)
+  const [exportStatus, setExportStatus] = useState<string | null>(null)
+  const [exportStatusKind, setExportStatusKind] = useState<ExportStatusKind>(
+    'info',
+  )
   const sheets = useSheetsStore((s) => s.sheets)
   const activeSheetId = useSheetsStore((s) => s.activeSheetId)
   const cloudAvailable = useSheetsStore((s) => s.cloudAvailable)
@@ -220,6 +227,30 @@ export function TopBar() {
           </button>
 
           <PrintSizeMenu />
+
+          <ExportMenu
+            busy={exportBusy}
+            setBusy={setExportBusy}
+            setStatus={setExportStatus}
+            setStatusKind={setExportStatusKind}
+          />
+        </div>
+      )}
+
+      {exportStatus && view === 'workspace' && (
+        <div
+          role="status"
+          data-testid="export-pdf-status"
+          className={`pointer-events-none absolute left-1/2 top-full z-[60] mt-1 max-w-[min(28rem,92vw)] -translate-x-1/2 rounded-md border px-3 py-1.5 text-center text-[11px] shadow-lg ${
+            exportStatusKind === 'err'
+              ? 'border-rose-500/40 bg-rose-950/95 text-rose-100'
+              : exportStatusKind === 'ok'
+                ? 'border-emerald-500/40 bg-emerald-950/95 text-emerald-100'
+                : 'border-zinc-700 bg-zinc-900/95 text-zinc-200'
+          }`}
+          title={exportStatus}
+        >
+          {exportStatus}
         </div>
       )}
 

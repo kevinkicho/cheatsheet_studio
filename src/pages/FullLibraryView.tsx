@@ -4,7 +4,7 @@ import {
   List,
   MessageSquareText,
 } from 'lucide-react'
-import { SUBJECTS, type Subject } from '@/types'
+import { SUBJECTS } from '@/types'
 import { useLibraryStore } from '@/stores/libraryStore'
 import { useUiStore } from '@/stores/uiStore'
 import {
@@ -12,6 +12,7 @@ import {
   LibraryItemCard,
 } from '@/components/library/LibraryItemCard'
 import { useLibraryHoverPreview } from '@/components/library/LibraryHoverPreview'
+import { filterLibraryItems } from '@/lib/libraryFilter'
 
 function cardGridClass(labelsOnly: boolean) {
   return labelsOnly
@@ -21,10 +22,12 @@ function cardGridClass(labelsOnly: boolean) {
 
 export function FullLibraryView() {
   const items = useLibraryStore((s) => s.items)
-  const librarySubject = useUiStore((s) => s.librarySubject) as Subject
+  const librarySubject = useUiStore((s) => s.librarySubject)
   const setLibrarySubject = useUiStore((s) => s.setLibrarySubject)
   const librarySearch = useUiStore((s) => s.librarySearch)
   const setLibrarySearch = useUiStore((s) => s.setLibrarySearch)
+  const libraryTopic = useUiStore((s) => s.libraryTopic)
+  const libraryTypeFilter = useUiStore((s) => s.libraryTypeFilter)
   const labelsOnly = useUiStore((s) => s.libraryLabelsOnly)
   const toggleLibraryLabelsOnly = useUiStore((s) => s.toggleLibraryLabelsOnly)
   const hoverPreview = useUiStore((s) => s.libraryHoverPreview)
@@ -38,15 +41,11 @@ export function FullLibraryView() {
   const setView = useUiStore((s) => s.setView)
   const hover = useLibraryHoverPreview()
 
-  const filtered = items.filter((item) => {
-    if (item.subject !== librarySubject) return false
-    if (!librarySearch.trim()) return true
-    const q = librarySearch.toLowerCase()
-    return (
-      item.title.toLowerCase().includes(q) ||
-      item.topic.toLowerCase().includes(q) ||
-      item.tags.some((t) => t.toLowerCase().includes(q))
-    )
+  const filtered = filterLibraryItems(items, {
+    subject: librarySubject,
+    topic: libraryTopic,
+    type: libraryTypeFilter,
+    search: librarySearch,
   })
 
   const topics = Array.from(new Set(filtered.map((i) => i.topic))).sort()
@@ -150,6 +149,17 @@ export function FullLibraryView() {
         </button>
       </div>
       <div className="flex gap-1 overflow-x-auto border-b border-zinc-800 px-3 py-2">
+        <button
+          type="button"
+          onClick={() => setLibrarySubject('all')}
+          className={`shrink-0 rounded-full px-3 py-1 text-xs ${
+            librarySubject === 'all'
+              ? 'bg-indigo-500/20 text-indigo-200'
+              : 'text-zinc-400 hover:bg-zinc-900'
+          }`}
+        >
+          All
+        </button>
         {SUBJECTS.map((s) => (
           <button
             key={s.id}

@@ -1,4 +1,10 @@
+import React from 'react'
 import '@testing-library/jest-dom/vitest'
+
+// Vitest may not inject the automatic JSX runtime; expose React for classic JSX.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+;(globalThis as any).React = React
+
 
 /**
  * jsdom has no real Canvas2D. CanvasGridLayer builds a pattern via
@@ -13,6 +19,7 @@ function installCanvasStub() {
   if (proto.__grokCanvasStub) return
   proto.__grokCanvasStub = true
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   proto.getContext = function getContext() {
     return {
       setTransform() {},
@@ -30,7 +37,7 @@ function installCanvasStub() {
       lineWidth: 1,
       globalAlpha: 1,
     } as unknown as CanvasRenderingContext2D
-  }
+  } as typeof HTMLCanvasElement.prototype.getContext
 
   proto.toDataURL = function toDataURL() {
     return 'data:image/png;base64,gridpatternstub'

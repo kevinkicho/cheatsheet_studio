@@ -47,6 +47,18 @@ body {
   color: inherit;
 }
 
+/* Export capture: avoid Tailwind utilities (oklch) on math inside print pages */
+.export-latex {
+  overflow: visible;
+  color: inherit;
+}
+.export-latex .katex {
+  font-size: 1em;
+}
+.export-latex .katex-display {
+  margin: 0;
+}
+
 .katex-error {
   color: #fca5a5;
   font-size: 0.75rem;

@@ -20,16 +20,18 @@ vi.mock('@/lib/firebase', () => ({
 }))
 
 vi.mock('firebase/firestore', () => ({
-  collection: (...a: unknown[]) => collection(...a),
-  doc: (...a: unknown[]) => doc(...a),
-  query: (...a: unknown[]) => query(...a),
-  where: (...a: unknown[]) => where(...a),
-  orderBy: (...a: unknown[]) => orderBy(...a),
-  getDocs: (...a: unknown[]) => getDocs(...a),
-  getDoc: (...a: unknown[]) => getDoc(...a),
-  addDoc: (...a: unknown[]) => addDoc(...a),
-  updateDoc: (...a: unknown[]) => updateDoc(...a),
-  deleteDoc: (...a: unknown[]) => deleteDoc(...a),
+  collection: (...a: unknown[]) => (collection as (...x: unknown[]) => unknown)(...a),
+  doc: (...a: unknown[]) => (doc as (...x: unknown[]) => unknown)(...a),
+  query: (...a: unknown[]) => (query as (...x: unknown[]) => unknown)(...a),
+  where: (...a: unknown[]) => (where as (...x: unknown[]) => unknown)(...a),
+  orderBy: (...a: unknown[]) => (orderBy as (...x: unknown[]) => unknown)(...a),
+  getDocs: (...a: unknown[]) => (getDocs as (...x: unknown[]) => unknown)(...a),
+  getDoc: (...a: unknown[]) => (getDoc as (...x: unknown[]) => unknown)(...a),
+  addDoc: (...a: unknown[]) => (addDoc as (...x: unknown[]) => unknown)(...a),
+  updateDoc: (...a: unknown[]) =>
+    (updateDoc as (...x: unknown[]) => unknown)(...a),
+  deleteDoc: (...a: unknown[]) =>
+    (deleteDoc as (...x: unknown[]) => unknown)(...a),
   Timestamp: class Timestamp {
     static fromMillis(ms: number) {
       return { toMillis: () => ms }

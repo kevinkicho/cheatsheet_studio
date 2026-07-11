@@ -127,23 +127,31 @@ export function LibraryItemCard({
           {!labelsOnly &&
             (item.type === 'figure' && item.imageUrl ? (
               <div
-                className={`w-full rounded-md bg-transparent p-1 ${previewH}`}
+                className={`flex w-full items-center justify-center overflow-hidden rounded-md bg-transparent p-0.5 ${previewH}`}
               >
-                <FigureView src={item.imageUrl} alt={item.title} />
+                <FigureView
+                  src={item.imageUrl}
+                  alt={item.title}
+                  className="h-full w-full"
+                />
               </div>
             ) : (
               <FitContent
                 mode="scale"
-                minScale={0.22}
+                // Allow grow + shrink so small formulas fill the preview box
+                // (default maxScale=1 is shrink-only → empty margins at 100%).
+                minScale={0.12}
+                maxScale={16}
+                fitMethod="transform"
                 baseFontSize={14}
                 showBadge
                 contentKey={`${item.id}-${item.latex ?? ''}-${item.tableMarkdown ?? ''}`}
-                className={`w-full rounded-md bg-zinc-950/60 p-1.5 ${previewH}`}
+                className={`w-full rounded-md bg-zinc-950/60 p-1 ${previewH}`}
               >
                 {(item.type === 'equation' || item.latex) && item.latex && (
                   <LatexView
                     latex={item.latex}
-                    className="overflow-visible text-xs text-zinc-100 [&_.katex]:text-[0.9em] [&_.katex-display]:m-0"
+                    className="overflow-visible text-zinc-100 [&_.katex]:text-[1em] [&_.katex-display]:m-0"
                   />
                 )}
                 {item.type === 'table' && item.tableMarkdown && (

@@ -63,12 +63,12 @@ describe('handleCanvasKeyDown', () => {
   it('Ctrl+Shift+Z and Ctrl+Y redo', () => {
     const a = actions({ futureLength: 1 })
     expect(
-      handleCanvasKeyDown(key('z', { ctrlKey: true, shiftKey: true }), a)
-        .action,
-    ).toBe('redo')
-    expect(
-      handleCanvasKeyDown(key('y', { metaKey: true }), a).action,
-    ).toBe('redo')
+      handleCanvasKeyDown(key('z', { ctrlKey: true, shiftKey: true }), a),
+    ).toEqual({ handled: true, action: 'redo' })
+    expect(handleCanvasKeyDown(key('y', { metaKey: true }), a)).toEqual({
+      handled: true,
+      action: 'redo',
+    })
     expect(a.calls.redo).toHaveBeenCalledTimes(2)
   })
 
@@ -85,10 +85,16 @@ describe('handleCanvasKeyDown', () => {
 
   it('Delete/Backspace removes selection', () => {
     const a = actions({ selectedIds: ['x', 'y'] })
-    expect(handleCanvasKeyDown(key('Delete'), a).action).toBe('delete')
+    expect(handleCanvasKeyDown(key('Delete'), a)).toEqual({
+      handled: true,
+      action: 'delete',
+    })
     expect(a.calls.removeItems).toHaveBeenCalledWith(['x', 'y'])
     a.calls.removeItems.mockClear()
-    expect(handleCanvasKeyDown(key('Backspace'), a).action).toBe('delete')
+    expect(handleCanvasKeyDown(key('Backspace'), a)).toEqual({
+      handled: true,
+      action: 'delete',
+    })
   })
 
   it('does not delete when nothing selected', () => {
@@ -98,15 +104,24 @@ describe('handleCanvasKeyDown', () => {
 
   it('Escape clears selection', () => {
     const a = actions()
-    expect(handleCanvasKeyDown(key('Escape'), a).action).toBe('deselect')
+    expect(handleCanvasKeyDown(key('Escape'), a)).toEqual({
+      handled: true,
+      action: 'deselect',
+    })
     expect(a.calls.select).toHaveBeenCalledWith(null)
   })
 
   it('V selects tool, H pans', () => {
     const a = actions()
-    expect(handleCanvasKeyDown(key('v'), a).action).toBe('tool-select')
+    expect(handleCanvasKeyDown(key('v'), a)).toEqual({
+      handled: true,
+      action: 'tool-select',
+    })
     expect(a.calls.setCanvasTool).toHaveBeenCalledWith('select')
-    expect(handleCanvasKeyDown(key('H'), a).action).toBe('tool-pan')
+    expect(handleCanvasKeyDown(key('H'), a)).toEqual({
+      handled: true,
+      action: 'tool-pan',
+    })
     expect(a.calls.setCanvasTool).toHaveBeenCalledWith('pan')
   })
 

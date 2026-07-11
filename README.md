@@ -21,7 +21,7 @@ License: [MIT](./LICENSE) · Status: **active development** (v0.1.0)
 
 <br />
 
-A Firebase-backed app for building multi-page, print-aware cheat sheets from equations, tables, and figures. Drag items from a curated library onto a freeform board, create custom KaTeX, import images (including seamless GIF loops), organize layers in nested folders, and sync sheets per Google account.
+A Firebase-backed app for building multi-page, print-aware cheat sheets from equations, tables, and figures. Drag items from a curated library onto a freeform board, create custom KaTeX, import images (including seamless GIF loops), export print pages to PDF/PNG/JPEG, organize layers in nested folders, and sync sheets per Google account.
 
 > **Firebase is required for production use.** Auth, Firestore, Storage, and Hosting are part of the product. A built-in seed library loads offline; sign-in, cloud sheets, and durable image upload need a configured Firebase project. Local **Auth emulators** support automated E2E without a real Google login.
 
@@ -34,11 +34,13 @@ A Firebase-backed app for building multi-page, print-aware cheat sheets from equ
 | Core workspace (canvas, library, properties) | **Stable / usable** |
 | Multi-page print frames + layout modes | **Implemented** |
 | Per-page / printable / whole-board grids | **Implemented** |
+| PDF / PNG / JPEG export (print pages) | **Implemented** |
+| Library cards + catalog list views | **Implemented** |
 | Nested outliner folders + multi-select | **Implemented** |
 | Local image persistence (IndexedDB) + Storage promote | **Implemented** |
 | GIF ping-pong bake at import | **Implemented** |
 | Undo / redo (document history) | **Implemented** |
-| Unit + component tests (Vitest) | **~178 tests** |
+| Unit + component tests (Vitest) | **199 tests** |
 | E2E smoke + Auth-emulator workspace E2E | **Playwright** |
 | Firebase Hosting deploy path | **Supported** (`dist/`) |
 
@@ -63,11 +65,26 @@ A Firebase-backed app for building multi-page, print-aware cheat sheets from equ
 - Margin presets; fit-to-viewport uses the **full multi-page bounds**  
 - Page labels and free-layout drag handles  
 
+### Export (print pages)
+- Top bar **Export** opens a fixed-size dialog (portaled so it is not clipped by the top bar)  
+- **Scrollable preview** of selected print frames (light paper theme)  
+- **Formats:** PDF (multi-page), PNG, JPEG (one file per page when multi-page)  
+- **Pages:** multi-select which frames to include  
+- **Color modes:** Color · Greyscale · Black & white (threshold)  
+- Capture uses **html2canvas-pro** (Tailwind v4 `oklch` safe)  
+- Only cards that intersect the dashed print frames are included  
+
 ### Library & content
 - Subjects: Mathematics, Physics, Chemistry, Biology, Economics, Finance  
 - Built-in **seed catalog** (deduped IDs) + optional Firestore seed  
+- Bottom library: **Cards** or **List** (catalog-style split: list + resizable preview)  
+- Catalog filters: search, subject, topic, type (equation / table / figure), clear  
+- Search ranking: title prefixes first; short queries ignore raw LaTeX (`\frac` no longer matches `g`)  
+- Library card previews **zoom-to-fill** the thumbnail (not shrink-only)  
+- Resizable list/preview divider (horizontal) in list mode  
 - Custom equations (KaTeX), markdown tables, figure / image cards  
-- Create Equation panel (catalog insert + filters)  
+- Create Equation panel — **Insert from catalog** (equations only; same search rules)  
+  - Filters + sort; resizable vertical divider for preview height  
 - Import Image panel (preview, local persist, Storage upload when signed in)  
 - GIF seamless loop via bake-at-import (avoids Storage CORS reverse-play issues)  
 
@@ -85,11 +102,11 @@ A Firebase-backed app for building multi-page, print-aware cheat sheets from equ
 ### App chrome
 | Region | Role |
 |--------|------|
-| Top bar | Workspace / Library / Sheets, sheet switcher, print menu, undo/redo, save, account |
+| Top bar | Workspace / Library / Sheets, sheet switcher, print menu, **Export**, undo/redo, save, account |
 | Left | Properties — sheet (grid covers, background) or selected card(s) |
 | Center | Freeform canvas + print frames |
 | Right | Layers · Equation · Image |
-| Bottom | Collapsible library by subject / topic |
+| Bottom | Collapsible library (cards/list, filters, resizable catalog preview) |
 
 ---
 
@@ -101,6 +118,7 @@ A Firebase-backed app for building multi-page, print-aware cheat sheets from equ
 | State | Zustand (+ persist for UI prefs) |
 | Math | KaTeX |
 | DnD / layout | @dnd-kit, react-resizable-panels |
+| Export | jspdf, html2canvas-pro |
 | Backend | Firebase Auth, Firestore, Storage, Hosting |
 | Tests | Vitest, Testing Library, Playwright |
 | Local backend | Firebase Emulators (Auth; optional Firestore/Storage) |
@@ -217,7 +235,7 @@ firebase serve    # http://localhost:5000 — must rebuild to see latest code
 | Command | Description |
 |---------|-------------|
 | `npm run dev` | Vite dev server (live source) |
-| `npm run build` | Production build → `dist/` |
+| `npm run build` | `tsc -b` + Vite production build → `dist/` |
 | `npm run preview` | Preview production build |
 | `npm test` | Vitest unit + component tests |
 | `npm run test:watch` | Vitest watch mode |
@@ -236,7 +254,9 @@ firebase serve    # http://localhost:5000 — must rebuild to see latest code
 
 ### Unit & component (Vitest + Testing Library)
 
-Covers grid opacity mapping, page layouts, grid coverage exclusivity, print helpers, canvas store (print/items/folders/history), sheets/auth (mocked Firebase), library seed, keyboard shortcuts, Properties / Print menu / sidebars, and more.
+Covers grid opacity mapping, page layouts, grid coverage, print helpers, export helpers (filenames, page rects, color modes, library search ranking), canvas store, sheets/auth (mocked Firebase), keyboard shortcuts, Properties / Print menu / sidebars, and more.
+
+App TypeScript build (`tsc -b`) **excludes** `*.test.*` and `src/test/**`; Vitest uses a separate `vitest.config.ts`.
 
 ```bash
 npm test
@@ -259,7 +279,9 @@ CI (`.github/workflows/ci.yml`) runs unit tests, smoke E2E, Auth-emulator worksp
 ## Architecture notes
 
 - **State:** Zustand stores (`canvasStore`, `sheetsStore`, `authStore`, `libraryStore`, `uiStore`)  
-- **Print/grid pure logic:** `src/lib/printSizes.ts`, `src/lib/gridCoverage.ts`  
+- **Print / grid pure logic:** `src/lib/printSizes.ts`, `src/lib/gridCoverage.ts`  
+- **Export:** `src/lib/exportPdf.ts`, `exportCapture.ts`, `runSheetExport.ts`, `components/export/`  
+- **Library search:** `src/lib/libraryFilter.ts` (shared by bottom library + Insert from catalog)  
 - **Images:** `local-asset:` refs in IndexedDB; promote to Storage on cloud save  
 - **Rules:** Sheets private to `ownerId == auth.uid`; system library read-only from client  
 

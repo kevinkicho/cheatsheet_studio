@@ -39,4 +39,11 @@ describe('uiStore — zoom & tools', () => {
     expect(useUiStore.getState().rightOpen).toBe(true)
     expect(useUiStore.getState().rightTool).toBe('equation')
   })
+
+  it('setLibraryLayout switches cards / list', () => {
+    useUiStore.getState().setLibraryLayout('list')
+    expect(useUiStore.getState().libraryLayout).toBe('list')
+    useUiStore.getState().setLibraryLayout('cards')
+    expect(useUiStore.getState().libraryLayout).toBe('cards')
+  })
 })
