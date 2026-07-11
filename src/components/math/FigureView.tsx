@@ -7,13 +7,8 @@ import {
 
 /**
  * Display a figure/image at the container’s layout size.
- *
- * Unlike FitContent’s CSS transform scale (which rasterizes small then
- * upscales — soft edges), this sizes the <img> to the box so SVG data-URLs
- * re-rasterize crisply as vectors at the display resolution.
- *
- * Also resolves durable `local-asset:` refs from IndexedDB (session blob
- * URLs are never stored on cards — they die on refresh).
+ * Resolves durable `local-asset:` refs from IndexedDB for display.
+ * Seamless GIF loops are baked into the file at import time (normal <img>).
  */
 export function FigureView({
   src,
@@ -38,11 +33,10 @@ export function FigureView({
     setHint(null)
 
     if (isEphemeralBlobUrl(src)) {
-      // blob: from a previous session — permanently dead after refresh
       setResolved(null)
       setFailed(true)
       setHint(
-        'This image used a temporary browser link that expires on refresh. Re-import the file (sign in to store it in Firebase Storage).',
+        'This image used a temporary browser link that expires on refresh. Re-import the file.',
       )
       return
     }

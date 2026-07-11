@@ -1,15 +1,29 @@
 import { create } from 'zustand'
 import { createId } from '@/lib/ids'
-import { layoutItemsInRows, snapToGridValue, ORGANIZE_GRID } from '@/lib/autoOrganize'
 import {
+  getPrintAwareSnapOrigin,
+  layoutItemsInRows,
+  snapToGridValue,
+  ORGANIZE_GRID,
+} from '@/lib/autoOrganize'
+import {
+  autoPrintPageOrigins,
+  clampPrintPageCount,
+  multiPageLayoutBounds,
+  normalizePrintPageLayout,
+  resizeFreePagePositions,
   resolvePagePixels,
   type PageOrientation,
+  type PrintPageLayout,
+  type PrintPageOrigin,
   type PrintSizeId,
 } from '@/lib/printSizes'
 import {
   DEFAULT_CANVAS,
   DEFAULT_MARGINS,
   FREEFORM_WORKSPACE,
+  clampGridOpacity,
+  normalizeGridExtent,
   type CanvasItem,
   type LibraryItem,
   type OutlinerFolder,
@@ -24,17 +38,58 @@ import {
   withBorderStyle,
 } from '@/lib/cardDefaults'
 
-/** Workspace never shrinks below freeform or the print page. */
+/** Workspace never shrinks below freeform or the print page stack. */
 function ensureWorkspaceSize(
   width: number,
   height: number,
   printW: number,
   printH: number,
+  /** Extra space needed when free pages sit away from origin. */
+  maxExtentX = printW,
+  maxExtentY = printH,
 ) {
   return {
-    width: Math.max(width, FREEFORM_WORKSPACE.width, printW + 200),
-    height: Math.max(height, FREEFORM_WORKSPACE.height, printH + 200),
+    width: Math.max(
+      width,
+      FREEFORM_WORKSPACE.width,
+      printW + 200,
+      Math.ceil(maxExtentX) + 200,
+    ),
+    height: Math.max(
+      height,
+      FREEFORM_WORKSPACE.height,
+      printH + 200,
+      Math.ceil(maxExtentY) + 200,
+    ),
   }
+}
+
+/** Ensure board fits current page size × count × layout. */
+function workspaceForPages(
+  canvas: SheetCanvas,
+  printSizeId: PrintSizeId,
+  orientation: PageOrientation,
+  pageCount: number,
+  layout?: PrintPageLayout,
+  freePositions?: PrintPageOrigin[] | null,
+) {
+  const page = resolvePagePixels(printSizeId, orientation)
+  const mode = normalizePrintPageLayout(
+    layout ?? canvas.printPageLayout ?? 'vertical',
+  )
+  const positions =
+    freePositions !== undefined
+      ? freePositions
+      : canvas.printPagePositions
+  const bounds = multiPageLayoutBounds(page, pageCount, mode, positions)
+  return ensureWorkspaceSize(
+    canvas.width,
+    canvas.height,
+    bounds.width,
+    bounds.height,
+    bounds.maxX,
+    bounds.maxY,
+  )
 }
 
 interface CanvasState {
@@ -48,6 +103,10 @@ interface CanvasState {
   selectedIds: string[]
   dirty: boolean
   maxZ: number
+  /** Undo stack (document snapshots before edits). */
+  past: CanvasDocSnapshot[]
+  /** Redo stack. */
+  future: CanvasDocSnapshot[]
 
   reset: () => void
   loadSheet: (payload: {
@@ -66,12 +125,33 @@ interface CanvasState {
   setOrientation: (orientation: PageOrientation) => void
   setShowPrintArea: (show: boolean) => void
   toggleShowPrintArea: () => void
+  /** Set how many print page frames to show (1–20). Grows workspace if needed. */
+  setPrintPageCount: (count: number) => void
+  /** Arrange page frames: vertical | horizontal | grid | free. */
+  setPrintPageLayout: (layout: PrintPageLayout) => void
+  /** Set absolute board position of a free-layout page (0-based index). */
+  setPrintPagePosition: (
+    pageIndex: number,
+    pos: PrintPageOrigin,
+  ) => void
+  /** Replace all free-layout page positions. */
+  setPrintPagePositions: (positions: PrintPageOrigin[]) => void
   setMargins: (margins: Partial<PrintMargins>) => void
   setUniformMargin: (px: number) => void
   autoOrganize: () => void
   toggleGrid: () => void
   toggleSnapToGrid: () => void
   markClean: () => void
+  /** Undo last document edit. */
+  undo: () => void
+  /** Redo last undone edit. */
+  redo: () => void
+  /**
+   * Coalesce continuous edits (drag/resize): first mutation in the batch
+   * records one history entry; further mutations until endHistoryBatch do not.
+   */
+  beginHistoryBatch: () => void
+  endHistoryBatch: () => void
 
   /** Select one item (or clear with null). Replaces the selection. */
   select: (id: string | null) => void
@@ -85,7 +165,11 @@ interface CanvasState {
     y: number,
   ) => string
   addCustomEquation: (latex: string, title?: string) => string
-  addCustomImage: (imageUrl: string, title?: string, imagePath?: string) => string
+  addCustomImage: (
+    imageUrl: string,
+    title?: string,
+    imagePath?: string,
+  ) => string
   updateItem: (id: string, partial: Partial<CanvasItem>) => void
   /** Apply the same partial to every selected id (or explicit ids). */
   updateItems: (ids: string[], partial: Partial<CanvasItem>) => void
@@ -167,6 +251,41 @@ interface CanvasState {
   ) => void
 }
 
+/** Snapshot of undoable document fields (not sheetId / dirty alone). */
+export type CanvasDocSnapshot = {
+  items: CanvasItem[]
+  folders: OutlinerFolder[]
+  maxZ: number
+  canvas: SheetCanvas
+  title: string
+  selectedIds: string[]
+}
+
+const HISTORY_MAX = 50
+
+function takeDocSnapshot(s: {
+  items: CanvasItem[]
+  folders: OutlinerFolder[]
+  maxZ: number
+  canvas: SheetCanvas
+  title: string
+  selectedIds: string[]
+}): CanvasDocSnapshot {
+  return {
+    items: structuredClone(s.items),
+    folders: structuredClone(s.folders),
+    maxZ: s.maxZ,
+    canvas: structuredClone(s.canvas),
+    title: s.title,
+    selectedIds: [...s.selectedIds],
+  }
+}
+
+/** Suppress history while applying undo/redo or loading sheets. */
+let applyingHistory = false
+let historyBatchDepth = 0
+let historyBatchPushed = false
+
 function estimateTableSize(markdown?: string): { width: number; height: number } {
   if (!markdown) return { width: 320, height: 200 }
   const lines = markdown
@@ -199,12 +318,18 @@ const empty = () => ({
   selectedIds: [] as string[],
   dirty: false,
   maxZ: 1,
+  past: [] as CanvasDocSnapshot[],
+  future: [] as CanvasDocSnapshot[],
 })
 
 export const useCanvasStore = create<CanvasState>((set, get) => ({
   ...empty(),
 
-  reset: () => set({ ...empty(), canvas: { ...DEFAULT_CANVAS } }),
+  reset: () => {
+    applyingHistory = true
+    set({ ...empty(), canvas: { ...DEFAULT_CANVAS } })
+    applyingHistory = false
+  },
 
   loadSheet: ({ sheetId, title, canvas, items, folders }) => {
     const maxZ = items.reduce((m, i) => Math.max(m, i.zIndex), 1)
@@ -218,23 +343,41 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       4,
       Math.min(128, merged.gridSpacing ?? ORGANIZE_GRID),
     )
-    const gridOpacity = Math.min(
-      1,
-      Math.max(0.05, merged.gridOpacity ?? 0.1),
-    )
+    const gridOpacity = clampGridOpacity(merged.gridOpacity)
+    const gridExtent = normalizeGridExtent(merged.gridExtent)
     const margins = {
       ...DEFAULT_MARGINS,
       ...(merged.margins ?? {}),
     }
+    const pageCount = clampPrintPageCount(merged.printPageCount ?? 1)
+    const printPageLayout = normalizePrintPageLayout(merged.printPageLayout)
     const page = resolvePagePixels(printSizeId, orientation)
+    const printPagePositions =
+      printPageLayout === 'free'
+        ? resizeFreePagePositions(merged.printPagePositions, page, pageCount)
+        : Array.isArray(merged.printPagePositions)
+          ? merged.printPagePositions.map((p) => ({
+              x: Number(p?.x) || 0,
+              y: Number(p?.y) || 0,
+            }))
+          : []
     // Never shrink workspace to letter-only — that made cards "vanish" when
     // print frame toggled and board size jumped. Keep a large free board.
+    const bounds = multiPageLayoutBounds(
+      page,
+      pageCount,
+      printPageLayout,
+      printPagePositions,
+    )
     const workspace = ensureWorkspaceSize(
       merged.width,
       merged.height,
-      page.width,
-      page.height,
+      bounds.width,
+      bounds.height,
+      bounds.maxX,
+      bounds.maxY,
     )
+    applyingHistory = true
     set({
       sheetId,
       title,
@@ -243,10 +386,14 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         printSizeId,
         orientation,
         showPrintArea,
+        printPageCount: pageCount,
+        printPageLayout,
+        printPagePositions,
         showGrid,
         snapToGrid,
         gridSpacing,
         gridOpacity,
+        gridExtent,
         margins,
         width: workspace.width,
         height: workspace.height,
@@ -257,23 +404,97 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       selectedIds: [],
       dirty: false,
       maxZ,
+      past: [],
+      future: [],
     })
+    applyingHistory = false
+  },
+
+  beginHistoryBatch: () => {
+    if (historyBatchDepth === 0) historyBatchPushed = false
+    historyBatchDepth += 1
+  },
+
+  endHistoryBatch: () => {
+    historyBatchDepth = Math.max(0, historyBatchDepth - 1)
+    if (historyBatchDepth === 0) historyBatchPushed = false
+  },
+
+  undo: () => {
+    const s = get()
+    if (s.past.length === 0) return
+    const prev = s.past[s.past.length - 1]!
+    const current = takeDocSnapshot(s)
+    applyingHistory = true
+    set({
+      items: prev.items,
+      folders: prev.folders,
+      maxZ: prev.maxZ,
+      canvas: prev.canvas,
+      title: prev.title,
+      selectedIds: prev.selectedIds,
+      past: s.past.slice(0, -1),
+      future: [current, ...s.future].slice(0, HISTORY_MAX),
+      dirty: true,
+    })
+    applyingHistory = false
+  },
+
+  redo: () => {
+    const s = get()
+    if (s.future.length === 0) return
+    const next = s.future[0]!
+    const current = takeDocSnapshot(s)
+    applyingHistory = true
+    set({
+      items: next.items,
+      folders: next.folders,
+      maxZ: next.maxZ,
+      canvas: next.canvas,
+      title: next.title,
+      selectedIds: next.selectedIds,
+      past: [...s.past, current].slice(-HISTORY_MAX),
+      future: s.future.slice(1),
+      dirty: true,
+    })
+    applyingHistory = false
   },
 
   setTitle: (title) => set({ title, dirty: true }),
 
   setCanvas: (partial) =>
-    set((s) => ({ canvas: { ...s.canvas, ...partial }, dirty: true })),
+    set((s) => {
+      const next = { ...s.canvas, ...partial }
+      if (partial.gridOpacity !== undefined) {
+        next.gridOpacity = clampGridOpacity(partial.gridOpacity)
+      }
+      if (partial.gridExtent !== undefined) {
+        next.gridExtent = normalizeGridExtent(partial.gridExtent)
+      }
+      if (partial.gridSpacing !== undefined) {
+        next.gridSpacing = Math.max(
+          4,
+          Math.min(128, Math.round(partial.gridSpacing)),
+        )
+      }
+      if (partial.printPageCount !== undefined) {
+        next.printPageCount = clampPrintPageCount(partial.printPageCount)
+      }
+      return { canvas: next, dirty: true }
+    }),
 
   setPrintSize: (printSizeId, orientation) =>
     set((s) => {
       const ori = orientation ?? s.canvas.orientation ?? 'portrait'
-      const page = resolvePagePixels(printSizeId, ori)
-      const workspace = ensureWorkspaceSize(
-        s.canvas.width,
-        s.canvas.height,
-        page.width,
-        page.height,
+      const pageCount = clampPrintPageCount(s.canvas.printPageCount ?? 1)
+      const layout = normalizePrintPageLayout(s.canvas.printPageLayout)
+      const workspace = workspaceForPages(
+        s.canvas,
+        printSizeId,
+        ori,
+        pageCount,
+        layout,
+        s.canvas.printPagePositions,
       )
       return {
         canvas: {
@@ -281,7 +502,8 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           printSizeId,
           orientation: ori,
           showPrintArea: true,
-          // Grow workspace if needed; never shrink; never touch items
+          printPageCount: pageCount,
+          printPageLayout: layout,
           width: workspace.width,
           height: workspace.height,
         },
@@ -292,17 +514,22 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   setOrientation: (orientation) =>
     set((s) => {
       const printSizeId = s.canvas.printSizeId ?? 'letter'
-      const page = resolvePagePixels(printSizeId, orientation)
-      const workspace = ensureWorkspaceSize(
-        s.canvas.width,
-        s.canvas.height,
-        page.width,
-        page.height,
+      const pageCount = clampPrintPageCount(s.canvas.printPageCount ?? 1)
+      const layout = normalizePrintPageLayout(s.canvas.printPageLayout)
+      const workspace = workspaceForPages(
+        s.canvas,
+        printSizeId,
+        orientation,
+        pageCount,
+        layout,
+        s.canvas.printPagePositions,
       )
       return {
         canvas: {
           ...s.canvas,
           orientation,
+          printPageCount: pageCount,
+          printPageLayout: layout,
           width: workspace.width,
           height: workspace.height,
         },
@@ -316,20 +543,22 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
    */
   setShowPrintArea: (show) =>
     set((s) => {
-      const page = resolvePagePixels(
+      const pageCount = clampPrintPageCount(s.canvas.printPageCount ?? 1)
+      const layout = normalizePrintPageLayout(s.canvas.printPageLayout)
+      const workspace = workspaceForPages(
+        s.canvas,
         s.canvas.printSizeId ?? 'letter',
         s.canvas.orientation ?? 'portrait',
-      )
-      const workspace = ensureWorkspaceSize(
-        s.canvas.width,
-        s.canvas.height,
-        page.width,
-        page.height,
+        pageCount,
+        layout,
+        s.canvas.printPagePositions,
       )
       return {
         canvas: {
           ...s.canvas,
           showPrintArea: show,
+          printPageCount: pageCount,
+          printPageLayout: layout,
           width: workspace.width,
           height: workspace.height,
         },
@@ -342,6 +571,166 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     const show = get().canvas.showPrintArea !== false
     get().setShowPrintArea(!show)
   },
+
+  setPrintPageCount: (count) =>
+    set((s) => {
+      const pageCount = clampPrintPageCount(count)
+      const printSizeId = s.canvas.printSizeId ?? 'letter'
+      const orientation = s.canvas.orientation ?? 'portrait'
+      const layout = normalizePrintPageLayout(s.canvas.printPageLayout)
+      const page = resolvePagePixels(printSizeId, orientation)
+      const printPagePositions =
+        layout === 'free'
+          ? resizeFreePagePositions(
+              s.canvas.printPagePositions,
+              page,
+              pageCount,
+            )
+          : s.canvas.printPagePositions ?? []
+      const workspace = workspaceForPages(
+        s.canvas,
+        printSizeId,
+        orientation,
+        pageCount,
+        layout,
+        printPagePositions,
+      )
+      return {
+        canvas: {
+          ...s.canvas,
+          printPageCount: pageCount,
+          printPageLayout: layout,
+          printPagePositions,
+          showPrintArea: true,
+          width: workspace.width,
+          height: workspace.height,
+        },
+        dirty: true,
+      }
+    }),
+
+  setPrintPageLayout: (layout) =>
+    set((s) => {
+      const mode = normalizePrintPageLayout(layout)
+      const pageCount = clampPrintPageCount(s.canvas.printPageCount ?? 1)
+      const printSizeId = s.canvas.printSizeId ?? 'letter'
+      const orientation = s.canvas.orientation ?? 'portrait'
+      const page = resolvePagePixels(printSizeId, orientation)
+      const prevMode = normalizePrintPageLayout(s.canvas.printPageLayout)
+
+      // Seed free positions from the previous auto layout (or keep free coords).
+      let printPagePositions = s.canvas.printPagePositions ?? []
+      if (mode === 'free') {
+        if (
+          prevMode === 'free' &&
+          printPagePositions.length === pageCount
+        ) {
+          // keep
+        } else {
+          const seedFrom =
+            prevMode === 'free' ? 'vertical' : (prevMode as Exclude<
+              PrintPageLayout,
+              'free'
+            >)
+          printPagePositions = autoPrintPageOrigins(
+            page,
+            pageCount,
+            seedFrom,
+          )
+        }
+        printPagePositions = resizeFreePagePositions(
+          printPagePositions,
+          page,
+          pageCount,
+        )
+      }
+
+      const workspace = workspaceForPages(
+        s.canvas,
+        printSizeId,
+        orientation,
+        pageCount,
+        mode,
+        printPagePositions,
+      )
+      return {
+        canvas: {
+          ...s.canvas,
+          printPageLayout: mode,
+          printPagePositions,
+          printPageCount: pageCount,
+          showPrintArea: true,
+          width: workspace.width,
+          height: workspace.height,
+        },
+        dirty: true,
+      }
+    }),
+
+  setPrintPagePosition: (pageIndex, pos) =>
+    set((s) => {
+      const pageCount = clampPrintPageCount(s.canvas.printPageCount ?? 1)
+      if (pageIndex < 0 || pageIndex >= pageCount) return s
+      const printSizeId = s.canvas.printSizeId ?? 'letter'
+      const orientation = s.canvas.orientation ?? 'portrait'
+      const page = resolvePagePixels(printSizeId, orientation)
+      const positions = resizeFreePagePositions(
+        s.canvas.printPagePositions,
+        page,
+        pageCount,
+      )
+      positions[pageIndex] = {
+        x: Math.round(pos.x),
+        y: Math.round(pos.y),
+      }
+      const workspace = workspaceForPages(
+        s.canvas,
+        printSizeId,
+        orientation,
+        pageCount,
+        'free',
+        positions,
+      )
+      return {
+        canvas: {
+          ...s.canvas,
+          printPageLayout: 'free',
+          printPagePositions: positions,
+          printPageCount: pageCount,
+          width: workspace.width,
+          height: workspace.height,
+        },
+        dirty: true,
+      }
+    }),
+
+  setPrintPagePositions: (positions) =>
+    set((s) => {
+      const pageCount = clampPrintPageCount(s.canvas.printPageCount ?? 1)
+      const printSizeId = s.canvas.printSizeId ?? 'letter'
+      const orientation = s.canvas.orientation ?? 'portrait'
+      const page = resolvePagePixels(printSizeId, orientation)
+      const next = resizeFreePagePositions(positions, page, pageCount)
+      const workspace = workspaceForPages(
+        s.canvas,
+        printSizeId,
+        orientation,
+        pageCount,
+        'free',
+        next,
+      )
+      return {
+        canvas: {
+          ...s.canvas,
+          printPageLayout: 'free',
+          printPagePositions: next,
+          printPageCount: pageCount,
+          width: workspace.width,
+          height: workspace.height,
+        },
+        dirty: true,
+      }
+    }),
 
   setMargins: (partial) =>
     set((s) => {
@@ -553,11 +942,20 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       if (cur?.locked) return s
       const g = Math.max(4, s.canvas.gridSpacing ?? ORGANIZE_GRID)
       const snap = s.canvas.snapToGrid
-      const nx = snap ? snapToGridValue(x, g) : Math.round(x)
-      const ny = snap ? snapToGridValue(y, g) : Math.round(y)
+      if (snap) {
+        const { ox, oy } = getPrintAwareSnapOrigin(x, y, s.canvas)
+        const nx = snapToGridValue(x, g, ox)
+        const ny = snapToGridValue(y, g, oy)
+        return {
+          items: s.items.map((i) =>
+            i.id === id ? { ...i, x: nx, y: ny } : i,
+          ),
+          dirty: true,
+        }
+      }
       return {
         items: s.items.map((i) =>
-          i.id === id ? { ...i, x: nx, y: ny } : i,
+          i.id === id ? { ...i, x: Math.round(x), y: Math.round(y) } : i,
         ),
         dirty: true,
       }
@@ -580,8 +978,9 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           let nx = o.x + dx
           let ny = o.y + dy
           if (snap) {
-            nx = snapToGridValue(nx, g)
-            ny = snapToGridValue(ny, g)
+            const { ox, oy } = getPrintAwareSnapOrigin(nx, ny, s.canvas)
+            nx = snapToGridValue(nx, g, ox)
+            ny = snapToGridValue(ny, g, oy)
           } else {
             nx = Math.round(nx)
             ny = Math.round(ny)
@@ -904,18 +1303,86 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           dirty: true,
         }
       }
-      // Keep items & child folders: promote children of deleted root to parent of deleted
+
+      // Keep items & child folders: promote one level (to parent of deleted).
+      // Preserve layering: item z-order and sibling collection order.
       const deleted = s.folders.find((f) => f.id === folderId)
-      const promoteTo = deleted?.parentId ?? null
+      if (!deleted) return s
+      const promoteTo = deleted.parentId ?? null
+
+      // —— Child collections: keep their relative order, insert where deleted sat ——
+      const childFolders = s.folders
+        .filter((f) => f.parentId === folderId)
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+
+      const siblingsAtDest = s.folders
+        .filter((f) => (f.parentId ?? null) === promoteTo)
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+
+      const deletedIdx = siblingsAtDest.findIndex((f) => f.id === folderId)
+      const insertAt = deletedIdx >= 0 ? deletedIdx : siblingsAtDest.length
+      const before = siblingsAtDest.slice(0, insertAt).filter((f) => f.id !== folderId)
+      const after = siblingsAtDest.slice(insertAt + (deletedIdx >= 0 ? 1 : 0))
+      // New sibling sequence at promoteTo: before | promoted children | after
+      const destFolderSequence = [...before, ...childFolders, ...after]
+      const folderOrderMap = new Map<string, number>()
+      destFolderSequence.forEach((f, i) => folderOrderMap.set(f.id, i + 1))
+
+      const folders = s.folders
+        .filter((f) => f.id !== folderId)
+        .map((f) => {
+          if (f.parentId === folderId) {
+            return {
+              ...f,
+              parentId: promoteTo,
+              order: folderOrderMap.get(f.id) ?? f.order,
+            }
+          }
+          if ((f.parentId ?? null) === promoteTo && folderOrderMap.has(f.id)) {
+            return { ...f, order: folderOrderMap.get(f.id) }
+          }
+          return f
+        })
+
+      // —— Items: keep canvas layering (zIndex) exactly as-is ——
+      // Only reparent. Relative stack order among the folder’s cards (and vs
+      // every other card on the sheet) is therefore unchanged.
+      // If any promoted cards share a zIndex, break ties with a stable sort
+      // and give them consecutive unique z so outliner order stays deterministic.
+      const promoted = s.items
+        .filter((i) => i.folderId === folderId)
+        .sort((a, b) => {
+          if (a.zIndex !== b.zIndex) return a.zIndex - b.zIndex
+          return a.id.localeCompare(b.id)
+        })
+
+      const hasZTies =
+        promoted.length > 1 &&
+        promoted.some((p, i) => i > 0 && p.zIndex === promoted[i - 1]!.zIndex)
+
+      let items = s.items.map((i) =>
+        i.folderId === folderId ? { ...i, folderId: promoteTo } : i,
+      )
+      let maxZ = s.maxZ
+
+      if (hasZTies && promoted.length > 0) {
+        // Strictly increasing z in the same relative order
+        const zAssign = new Map<string, number>()
+        let z = promoted[0]!.zIndex
+        for (const it of promoted) {
+          zAssign.set(it.id, z)
+          z += 1
+        }
+        maxZ = Math.max(maxZ, z - 1)
+        items = items.map((i) =>
+          zAssign.has(i.id) ? { ...i, zIndex: zAssign.get(i.id)! } : i,
+        )
+      }
+
       return {
-        folders: s.folders
-          .filter((f) => f.id !== folderId)
-          .map((f) =>
-            f.parentId === folderId ? { ...f, parentId: promoteTo } : f,
-          ),
-        items: s.items.map((i) =>
-          i.folderId === folderId ? { ...i, folderId: promoteTo } : i,
-        ),
+        folders,
+        items,
+        maxZ,
         dirty: true,
       }
     }),
@@ -1129,3 +1596,34 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     })
   },
 }))
+
+/**
+ * Auto-record document history: whenever items/folders/canvas/title/maxZ
+ * change, push the *previous* snapshot onto `past` (unless undoing/loading
+ * or inside a history batch after the first push).
+ */
+useCanvasStore.subscribe((state, prev) => {
+  if (applyingHistory) return
+  if (
+    state.items === prev.items &&
+    state.folders === prev.folders &&
+    state.canvas === prev.canvas &&
+    state.title === prev.title &&
+    state.maxZ === prev.maxZ
+  ) {
+    return
+  }
+
+  if (historyBatchDepth > 0) {
+    if (historyBatchPushed) return
+    historyBatchPushed = true
+  }
+
+  const snap = takeDocSnapshot(prev)
+  applyingHistory = true
+  useCanvasStore.setState((s) => ({
+    past: [...s.past.slice(-(HISTORY_MAX - 1)), snap],
+    future: [],
+  }))
+  applyingHistory = false
+})

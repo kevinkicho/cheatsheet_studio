@@ -1,0 +1,119 @@
+import { describe, expect, it, vi } from 'vitest'
+import {
+  handleCanvasKeyDown,
+  type ShortcutActions,
+} from '@/lib/keyboardShortcuts'
+
+function actions(partial: Partial<ShortcutActions> = {}): ShortcutActions & {
+  calls: {
+    undo: ReturnType<typeof vi.fn>
+    redo: ReturnType<typeof vi.fn>
+    removeItems: ReturnType<typeof vi.fn>
+    select: ReturnType<typeof vi.fn>
+    setCanvasTool: ReturnType<typeof vi.fn>
+  }
+} {
+  const calls = {
+    undo: vi.fn(),
+    redo: vi.fn(),
+    removeItems: vi.fn(),
+    select: vi.fn(),
+    setCanvasTool: vi.fn(),
+  }
+  return {
+    undo: calls.undo,
+    redo: calls.redo,
+    removeItems: calls.removeItems,
+    select: calls.select,
+    setCanvasTool: calls.setCanvasTool,
+    pastLength: 1,
+    futureLength: 1,
+    selectedIds: ['a'],
+    ...partial,
+    calls,
+  }
+}
+
+function key(
+  k: string,
+  mods: Partial<KeyboardEvent> = {},
+): Pick<
+  KeyboardEvent,
+  'key' | 'ctrlKey' | 'metaKey' | 'shiftKey' | 'altKey' | 'target'
+> {
+  return {
+    key: k,
+    ctrlKey: false,
+    metaKey: false,
+    shiftKey: false,
+    altKey: false,
+    target: document.body,
+    ...mods,
+  }
+}
+
+describe('handleCanvasKeyDown', () => {
+  it('Ctrl/Cmd+Z undoes when history exists', () => {
+    const a = actions({ pastLength: 2 })
+    const r = handleCanvasKeyDown(key('z', { ctrlKey: true }), a)
+    expect(r).toEqual({ handled: true, action: 'undo' })
+    expect(a.calls.undo).toHaveBeenCalledOnce()
+  })
+
+  it('Ctrl+Shift+Z and Ctrl+Y redo', () => {
+    const a = actions({ futureLength: 1 })
+    expect(
+      handleCanvasKeyDown(key('z', { ctrlKey: true, shiftKey: true }), a)
+        .action,
+    ).toBe('redo')
+    expect(
+      handleCanvasKeyDown(key('y', { metaKey: true }), a).action,
+    ).toBe('redo')
+    expect(a.calls.redo).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not steal undo when typing in an input', () => {
+    const a = actions()
+    const input = document.createElement('input')
+    const r = handleCanvasKeyDown(
+      key('z', { ctrlKey: true, target: input }),
+      a,
+    )
+    expect(r.handled).toBe(false)
+    expect(a.calls.undo).not.toHaveBeenCalled()
+  })
+
+  it('Delete/Backspace removes selection', () => {
+    const a = actions({ selectedIds: ['x', 'y'] })
+    expect(handleCanvasKeyDown(key('Delete'), a).action).toBe('delete')
+    expect(a.calls.removeItems).toHaveBeenCalledWith(['x', 'y'])
+    a.calls.removeItems.mockClear()
+    expect(handleCanvasKeyDown(key('Backspace'), a).action).toBe('delete')
+  })
+
+  it('does not delete when nothing selected', () => {
+    const a = actions({ selectedIds: [] })
+    expect(handleCanvasKeyDown(key('Delete'), a).handled).toBe(false)
+  })
+
+  it('Escape clears selection', () => {
+    const a = actions()
+    expect(handleCanvasKeyDown(key('Escape'), a).action).toBe('deselect')
+    expect(a.calls.select).toHaveBeenCalledWith(null)
+  })
+
+  it('V selects tool, H pans', () => {
+    const a = actions()
+    expect(handleCanvasKeyDown(key('v'), a).action).toBe('tool-select')
+    expect(a.calls.setCanvasTool).toHaveBeenCalledWith('select')
+    expect(handleCanvasKeyDown(key('H'), a).action).toBe('tool-pan')
+    expect(a.calls.setCanvasTool).toHaveBeenCalledWith('pan')
+  })
+
+  it('ignores tool keys with modifiers', () => {
+    const a = actions()
+    expect(handleCanvasKeyDown(key('v', { ctrlKey: true }), a).handled).toBe(
+      false,
+    )
+  })
+})

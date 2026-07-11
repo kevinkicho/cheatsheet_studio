@@ -33,7 +33,13 @@ export function RightSidebar() {
           </button>
         ))}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div
+        className={`min-h-0 flex-1 ${
+          rightTool === 'equation' || rightTool === 'layers'
+            ? 'overflow-hidden'
+            : 'overflow-y-auto'
+        }`}
+      >
         {rightTool === 'layers' && <LayersPanel />}
         {rightTool === 'equation' && <CreateEquationPanel />}
         {rightTool === 'image' && <ImportImagePanel />}

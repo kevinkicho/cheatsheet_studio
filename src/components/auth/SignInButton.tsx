@@ -1,12 +1,22 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { LogIn } from 'lucide-react'
+import { FlaskConical, LogIn } from 'lucide-react'
 import { useAuthStore } from '@/stores/authStore'
+
+/** Default credentials for emulator E2E (Auth emulator only). */
+export const EMULATOR_E2E_EMAIL = 'e2e@cheatsheet.test'
+export const EMULATOR_E2E_PASSWORD = 'e2e-test-password-123'
 
 export function SignInButton({ className = '' }: { className?: string }) {
   const navigate = useNavigate()
   const signInWithGoogle = useAuthStore((s) => s.signInWithGoogle)
-  const signInWithGoogleRedirect = useAuthStore((s) => s.signInWithGoogleRedirect)
+  const signInWithGoogleRedirect = useAuthStore(
+    (s) => s.signInWithGoogleRedirect,
+  )
+  const signInWithEmailPassword = useAuthStore(
+    (s) => s.signInWithEmailPassword,
+  )
+  const emulatorMode = useAuthStore((s) => s.emulatorMode)
   const user = useAuthStore((s) => s.user)
   const error = useAuthStore((s) => s.error)
   const clearError = useAuthStore((s) => s.clearError)
@@ -63,7 +73,39 @@ export function SignInButton({ className = '' }: { className?: string }) {
         >
           Use redirect instead
         </button>
+        {emulatorMode && (
+          <button
+            type="button"
+            data-testid="emulator-sign-in"
+            disabled={busy}
+            title="Auth emulator email/password (E2E / local only)"
+            onClick={async () => {
+              clearError()
+              setBusy(true)
+              try {
+                const signedIn = await signInWithEmailPassword(
+                  EMULATOR_E2E_EMAIL,
+                  EMULATOR_E2E_PASSWORD,
+                )
+                if (signedIn) {
+                  navigate('/app', { replace: true })
+                }
+              } finally {
+                setBusy(false)
+              }
+            }}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-100 hover:bg-amber-500/20 disabled:opacity-60"
+          >
+            <FlaskConical className="h-3.5 w-3.5" />
+            {busy ? 'Signing in…' : 'Emulator sign-in'}
+          </button>
+        )}
       </div>
+      {emulatorMode && (
+        <p className="text-[10px] text-amber-500/80" data-testid="emulator-banner">
+          Firebase emulators mode — use “Emulator sign-in” for local E2E.
+        </p>
+      )}
       {error && (
         <div
           role="alert"

@@ -1,11 +1,17 @@
-import type { PageOrientation, PrintSizeId } from '@/lib/printSizes'
+import type {
+  PageOrientation,
+  PrintPageLayout,
+  PrintPageOrigin,
+  PrintSizeId,
+} from '@/lib/printSizes'
 import {
   DEFAULT_ORIENTATION,
+  DEFAULT_PRINT_PAGE_LAYOUT,
   DEFAULT_PRINT_SIZE_ID,
   resolvePagePixels,
 } from '@/lib/printSizes'
 
-export type { PageOrientation, PrintSizeId }
+export type { PageOrientation, PrintPageLayout, PrintPageOrigin, PrintSizeId }
 
 export type Subject =
   | 'mathematics'
@@ -137,6 +143,64 @@ export const DEFAULT_MARGINS: PrintMargins = {
   left: 48,
 }
 
+/**
+ * Where the canvas grid is drawn / snapped.
+ * - board: one continuous grid over the free workspace
+ * - page: independent grid inside each full print page frame
+ * - printable: independent grid inside each page’s margin box only
+ */
+export type GridExtent = 'board' | 'page' | 'printable'
+
+export const DEFAULT_GRID_EXTENT: GridExtent = 'page'
+
+export function normalizeGridExtent(v: unknown): GridExtent {
+  if (v === 'board' || v === 'page' || v === 'printable') return v
+  return DEFAULT_GRID_EXTENT
+}
+
+/**
+ * Max grid line alpha (Canvas2D).
+ * Full slider travel 0–100% maps onto 0…this value (not 0…1).
+ * So the bar is not “used up” by ~25%.
+ */
+export const GRID_OPACITY_CSS_MAX = 0.3
+
+/** Slider is always 0–100 (percent of the soft grid range). */
+export const GRID_OPACITY_PERCENT_MAX = 100
+
+/** Default: mid-low on the soft scale (α 0.09 ≈ 30% of bar). */
+export const DEFAULT_GRID_OPACITY = 0.09
+
+/** Clamp stored grid opacity to the 0…GRID_OPACITY_CSS_MAX range. */
+export function clampGridOpacity(
+  n: unknown,
+  fallback = DEFAULT_GRID_OPACITY,
+): number {
+  const v = typeof n === 'number' && Number.isFinite(n) ? n : fallback
+  return Math.min(GRID_OPACITY_CSS_MAX, Math.max(0, v))
+}
+
+/**
+ * Stored alpha → slider position (0–100).
+ * α 0 → 0%, α 0.15 → 50%, α 0.30 → 100%.
+ */
+export function gridOpacityToPercent(cssOpacity: number): number {
+  const a = clampGridOpacity(cssOpacity)
+  if (GRID_OPACITY_CSS_MAX <= 0) return 0
+  return Math.round((a / GRID_OPACITY_CSS_MAX) * 100)
+}
+
+/**
+ * Slider position (0–100) → stored alpha (0…0.3).
+ * 0% → 0, 50% → 0.15, 100% → 0.30.
+ * (Not 1:1 with CSS 0–1 — that crushed the useful range into ~0–30% of the bar.)
+ */
+export function percentToGridOpacity(pct: number): number {
+  if (!Number.isFinite(pct)) return DEFAULT_GRID_OPACITY
+  const t = Math.min(100, Math.max(0, pct)) / 100
+  return clampGridOpacity(t * GRID_OPACITY_CSS_MAX)
+}
+
 export interface SheetCanvas {
   /**
    * Full workspace board size (always large enough for free placement).
@@ -150,14 +214,37 @@ export interface SheetCanvas {
   snapToGrid: boolean
   /** Grid cell size in px (default 24 — aligns with 0.5″ / 48px margins). */
   gridSpacing: number
-  /** Grid line opacity 0–1 (default 0.10). */
+  /**
+   * Grid line alpha 0–0.3.
+   * UI slider 0–100% spans this full range (100% → 0.3, not 1.0).
+   */
   gridOpacity: number
+  /**
+   * Grid coverage: continuous board vs per-page full page vs per-page printable.
+   * Default `page` — each print frame has its own grid starting at (0,0) of that page.
+   */
+  gridExtent?: GridExtent
   /** Print page preset (letter default). */
   printSizeId: PrintSizeId
   orientation: PageOrientation
   /** When true, draw the print page frame + margins. Does not resize workspace. */
   showPrintArea: boolean
-  /** Content-safe margins inside the print page. */
+  /**
+   * Number of print page frames to show. Default 1.
+   * Clamped 1–20. Lets you lay out multi-page cheat sheets on one board.
+   */
+  printPageCount?: number
+  /**
+   * How page frames are arranged on the free board.
+   * vertical | horizontal | grid | free (drag-and-place).
+   */
+  printPageLayout?: PrintPageLayout
+  /**
+   * Absolute board positions for each page when layout is `free`.
+   * Length should match printPageCount; missing entries fall back to vertical.
+   */
+  printPagePositions?: PrintPageOrigin[]
+  /** Content-safe margins inside each print page. */
   margins: PrintMargins
 }
 
@@ -206,10 +293,14 @@ export const DEFAULT_CANVAS: SheetCanvas = {
   showGrid: true,
   snapToGrid: false,
   gridSpacing: 24,
-  gridOpacity: 0.1,
+  gridOpacity: DEFAULT_GRID_OPACITY,
+  gridExtent: DEFAULT_GRID_EXTENT,
   printSizeId: DEFAULT_PRINT_SIZE_ID,
   orientation: DEFAULT_ORIENTATION,
   showPrintArea: true,
+  printPageCount: 1,
+  printPageLayout: DEFAULT_PRINT_PAGE_LAYOUT,
+  printPagePositions: [],
   margins: { ...DEFAULT_MARGINS },
 }
 

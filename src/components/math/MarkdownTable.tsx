@@ -5,6 +5,28 @@ interface MarkdownTableProps {
   fitContent?: boolean
 }
 
+/** Parse GitHub-style pipe tables into row arrays (header separator stripped). */
+export function parsePipeTable(markdown: string): string[][] {
+  const text = markdown.trim()
+  if (!text) return []
+  return text
+    .split('\n')
+    .map((line) =>
+      line
+        .trim()
+        .replace(/^\|/, '')
+        .replace(/\|$/, '')
+        .split('|')
+        .map((c) => c.trim()),
+    )
+    .filter(
+      (r) =>
+        r.length > 0 &&
+        !(r.length === 1 && r[0] === '') &&
+        !r.every((c) => /^[-:]*$/.test(c)),
+    )
+}
+
 /**
  * Pipe-table renderer for library/canvas tables.
  *
@@ -16,18 +38,7 @@ export function MarkdownTable({
   className = '',
   fitContent = false,
 }: MarkdownTableProps) {
-  const rows = markdown
-    .trim()
-    .split('\n')
-    .map((line) =>
-      line
-        .trim()
-        .replace(/^\|/, '')
-        .replace(/\|$/, '')
-        .split('|')
-        .map((c) => c.trim()),
-    )
-    .filter((r) => r.length > 0 && !r.every((c) => /^[-:]+$/.test(c)))
+  const rows = parsePipeTable(markdown)
 
   if (rows.length === 0) {
     return <div className="text-[0.85em] text-zinc-500">Empty table</div>

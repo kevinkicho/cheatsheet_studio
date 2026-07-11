@@ -1,44 +1,23 @@
 import { useEffect } from 'react'
+import { handleCanvasKeyDown } from '@/lib/keyboardShortcuts'
 import { useCanvasStore } from '@/stores/canvasStore'
 import { useUiStore } from '@/stores/uiStore'
 
 export function useKeyboardShortcuts() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null
-      const tag = target?.tagName?.toLowerCase()
-      if (
-        tag === 'input' ||
-        tag === 'textarea' ||
-        target?.isContentEditable
-      ) {
-        return
-      }
-
-      const { selectedIds, removeItems, select } = useCanvasStore.getState()
-      const { setCanvasTool } = useUiStore.getState()
-
-      if (
-        (e.key === 'Delete' || e.key === 'Backspace') &&
-        selectedIds.length > 0
-      ) {
-        e.preventDefault()
-        removeItems(selectedIds)
-      }
-      if (e.key === 'Escape') {
-        select(null)
-      }
-      // Tool shortcuts (no modifiers)
-      if (!e.metaKey && !e.ctrlKey && !e.altKey) {
-        if (e.key === 'v' || e.key === 'V') {
-          e.preventDefault()
-          setCanvasTool('select')
-        }
-        if (e.key === 'h' || e.key === 'H') {
-          e.preventDefault()
-          setCanvasTool('pan')
-        }
-      }
+      const state = useCanvasStore.getState()
+      const result = handleCanvasKeyDown(e, {
+        undo: () => state.undo(),
+        redo: () => state.redo(),
+        removeItems: (ids) => state.removeItems(ids),
+        select: (id) => state.select(id),
+        setCanvasTool: (tool) => useUiStore.getState().setCanvasTool(tool),
+        pastLength: state.past.length,
+        futureLength: state.future.length,
+        selectedIds: state.selectedIds,
+      })
+      if (result.handled) e.preventDefault()
     }
 
     window.addEventListener('keydown', onKey)

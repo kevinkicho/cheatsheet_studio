@@ -1,8 +1,42 @@
 import type { ReactNode } from 'react'
 import { Scan, Trash2 } from 'lucide-react'
-import type { BorderStroke, CanvasItem, ItemStyle, TitleAlign } from '@/types'
+import type {
+  BorderStroke,
+  CanvasItem,
+  GridExtent,
+  ItemStyle,
+  TitleAlign,
+} from '@/types'
+import {
+  GRID_OPACITY_CSS_MAX,
+  gridOpacityToPercent,
+  normalizeGridExtent,
+  percentToGridOpacity,
+} from '@/types'
 import { useCanvasStore } from '@/stores/canvasStore'
 import { LatexView } from '@/components/math/LatexView'
+
+const GRID_EXTENT_OPTIONS: {
+  id: GridExtent
+  label: string
+  hint: string
+}[] = [
+  {
+    id: 'page',
+    label: 'Full page',
+    hint: 'Each page frame has its own grid from the page corner',
+  },
+  {
+    id: 'printable',
+    label: 'Printable area',
+    hint: 'Grid only inside margins (green box) on each page',
+  },
+  {
+    id: 'board',
+    label: 'Whole board',
+    hint: 'One continuous grid across the free workspace',
+  },
+]
 
 function commonValue<T>(
   items: CanvasItem[],
@@ -80,7 +114,44 @@ export function PropertiesPanel() {
           <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
             Grid settings
           </p>
-          <label className="mt-2 flex flex-col gap-1">
+          <p className="mt-1 text-[10px] leading-snug text-zinc-600">
+            With the print frame on, Full page / Printable area draw a{' '}
+            <span className="text-zinc-400">separate grid on every page</span>{' '}
+            (not one grid continuing across the board).
+          </p>
+
+          <p className="mt-2.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+            Grid covers
+          </p>
+          <div className="mt-1.5 flex flex-col gap-1">
+            {GRID_EXTENT_OPTIONS.map((opt) => {
+              const active =
+                normalizeGridExtent(canvas.gridExtent) === opt.id
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => {
+                    setCanvas({ gridExtent: opt.id, showGrid: true })
+                  }}
+                  className={`rounded-md border px-2 py-1.5 text-left transition ${
+                    active
+                      ? 'border-indigo-500/50 bg-indigo-500/15 text-indigo-100'
+                      : 'border-zinc-800 bg-zinc-950/40 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200'
+                  }`}
+                >
+                  <span className="block text-[11px] font-medium leading-tight">
+                    {opt.label}
+                  </span>
+                  <span className="mt-0.5 block text-[9px] leading-snug text-zinc-500">
+                    {opt.hint}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+
+          <label className="mt-2.5 flex flex-col gap-1">
             <span className="text-[10px] text-zinc-500">
               Spacing · {canvas.gridSpacing ?? 24}px
             </span>
@@ -98,16 +169,33 @@ export function PropertiesPanel() {
           </label>
           <label className="mt-2 flex flex-col gap-1">
             <span className="text-[10px] text-zinc-500">
-              Opacity · {Math.round((canvas.gridOpacity ?? 0.1) * 100)}%
+              Opacity · {gridOpacityToPercent(canvas.gridOpacity ?? 0.09)}% of
+              soft range → α{' '}
+              {Math.min(
+                GRID_OPACITY_CSS_MAX,
+                Math.max(0, canvas.gridOpacity ?? 0.09),
+              ).toFixed(2)}{' '}
+              (0–100% bar = α 0–{GRID_OPACITY_CSS_MAX})
             </span>
             <input
               type="range"
-              min={0.05}
-              max={0.8}
-              step={0.01}
-              value={canvas.gridOpacity ?? 0.1}
+              min={0}
+              max={100}
+              step={1}
+              value={gridOpacityToPercent(canvas.gridOpacity ?? 0.09)}
+              onInput={(e) =>
+                setCanvas({
+                  gridOpacity: percentToGridOpacity(
+                    Number((e.target as HTMLInputElement).value),
+                  ),
+                  showGrid: true,
+                })
+              }
               onChange={(e) =>
-                setCanvas({ gridOpacity: Number(e.target.value) })
+                setCanvas({
+                  gridOpacity: percentToGridOpacity(Number(e.target.value)),
+                  showGrid: true,
+                })
               }
               className="w-full"
             />

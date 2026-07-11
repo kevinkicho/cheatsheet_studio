@@ -72,7 +72,19 @@ function fig(
 }
 
 /** Static catalog: offline fallback and Admin seed source. */
-export const SEED_LIBRARY: LibraryItem[] = [
+/** Keep first occurrence when catalog appends re-use an id. */
+function uniqueById(items: LibraryItem[]): LibraryItem[] {
+  const seen = new Set<string>()
+  const out: LibraryItem[] = []
+  for (const item of items) {
+    if (seen.has(item.id)) continue
+    seen.add(item.id)
+    out.push(item)
+  }
+  return out
+}
+
+const SEED_LIBRARY_RAW: LibraryItem[] = [
   // ═══════════════════════════════════════════════════════════
   // Mathematics
   // ═══════════════════════════════════════════════════════════
@@ -1346,6 +1358,307 @@ export const SEED_LIBRARY: LibraryItem[] = [
   ),
 
   // ═══════════════════════════════════════════════════════════
+  // Extra named formulas (catalog browse / Create Equation insert)
+  // ═══════════════════════════════════════════════════════════
+  eq(
+    'math-pythag-id',
+    'Pythagorean Identity',
+    'mathematics',
+    'Trigonometry',
+    '\\sin^2\\theta + \\cos^2\\theta = 1',
+    ['trig', 'identity'],
+    'Fundamental trig identity.',
+  ),
+  eq(
+    'math-double-angle-sin',
+    'Double-Angle (sin)',
+    'mathematics',
+    'Trigonometry',
+    '\\sin 2\\theta = 2\\sin\\theta\\cos\\theta',
+    ['trig'],
+    'Sine of twice an angle.',
+  ),
+  eq(
+    'math-double-angle-cos',
+    'Double-Angle (cos)',
+    'mathematics',
+    'Trigonometry',
+    '\\cos 2\\theta = \\cos^2\\theta - \\sin^2\\theta',
+    ['trig'],
+    'Cosine of twice an angle.',
+  ),
+  eq(
+    'math-law-sines',
+    'Law of Sines',
+    'mathematics',
+    'Trigonometry',
+    '\\frac{a}{\\sin A} = \\frac{b}{\\sin B} = \\frac{c}{\\sin C}',
+    ['triangles'],
+    'Side / opposite-angle ratios in a triangle.',
+  ),
+  eq(
+    'math-law-cosines',
+    'Law of Cosines',
+    'mathematics',
+    'Trigonometry',
+    'c^2 = a^2 + b^2 - 2ab\\cos C',
+    ['triangles'],
+    'Generalizes Pythagoras to any triangle.',
+  ),
+  eq(
+    'math-dot-product',
+    'Dot Product',
+    'mathematics',
+    'Linear Algebra',
+    '\\mathbf{a}\\cdot\\mathbf{b} = |\\mathbf{a}||\\mathbf{b}|\\cos\\theta = \\sum_i a_i b_i',
+    ['vectors'],
+    'Scalar product of two vectors.',
+  ),
+  eq(
+    'math-cross-product-mag',
+    'Cross Product Magnitude',
+    'mathematics',
+    'Linear Algebra',
+    '|\\mathbf{a}\\times\\mathbf{b}| = |\\mathbf{a}||\\mathbf{b}|\\sin\\theta',
+    ['vectors'],
+    'Area of parallelogram spanned by a, b.',
+  ),
+  eq(
+    'math-matrix-2x2-det',
+    '2×2 Determinant',
+    'mathematics',
+    'Linear Algebra',
+    '\\det\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix} = ad - bc',
+    ['matrices'],
+    'Determinant of a 2×2 matrix.',
+  ),
+  eq(
+    'math-eigen',
+    'Eigenvalue Equation',
+    'mathematics',
+    'Linear Algebra',
+    'A\\mathbf{v} = \\lambda\\mathbf{v}',
+    ['eigen'],
+    'Eigenvector v with eigenvalue λ.',
+  ),
+  eq(
+    'math-sep-vars',
+    'Separable DE',
+    'mathematics',
+    'Differential Equations',
+    '\\frac{dy}{dx} = g(x)h(y) \\quad\\Rightarrow\\quad \\int\\frac{dy}{h(y)} = \\int g(x)\\,dx',
+    ['ode'],
+    'Separate and integrate both sides.',
+  ),
+  eq(
+    'math-binom-pmf',
+    'Binomial PMF',
+    'mathematics',
+    'Probability',
+    'P(X=k) = \\binom{n}{k} p^k (1-p)^{n-k}',
+    ['probability', 'discrete'],
+    'Probability of k successes in n Bernoulli trials.',
+  ),
+  eq(
+    'math-normal-pdf',
+    'Normal PDF',
+    'mathematics',
+    'Probability',
+    'f(x) = \\frac{1}{\\sigma\\sqrt{2\\pi}}\\, e^{-\\frac{(x-\\mu)^2}{2\\sigma^2}}',
+    ['probability', 'gaussian'],
+    'Gaussian density with mean μ and sd σ.',
+  ),
+  eq(
+    'phys-hooke',
+    "Hooke's Law",
+    'physics',
+    'Mechanics',
+    'F = -kx',
+    ['spring', 'elastic'],
+    'Restoring force of an ideal spring.',
+  ),
+  eq(
+    'phys-kinetic',
+    'Kinetic Energy',
+    'physics',
+    'Mechanics',
+    'K = \\frac{1}{2}mv^2',
+    ['energy'],
+    'Translational kinetic energy.',
+  ),
+  eq(
+    'phys-grav-pe',
+    'Gravitational PE (near Earth)',
+    'physics',
+    'Mechanics',
+    'U = mgh',
+    ['energy', 'gravity'],
+    'Potential energy with constant g.',
+  ),
+  eq(
+    'phys-coulomb',
+    "Coulomb's Law",
+    'physics',
+    'Electricity & Magnetism',
+    'F = k_e \\frac{q_1 q_2}{r^2}',
+    ['electrostatics'],
+    'Force between two point charges.',
+  ),
+  eq(
+    'phys-maxwell-gauss-e',
+    "Gauss's Law (E)",
+    'physics',
+    'Electricity & Magnetism',
+    '\\nabla\\cdot\\mathbf{E} = \\frac{\\rho}{\\varepsilon_0}',
+    ['maxwell'],
+    'Divergence of electric field from charge density.',
+  ),
+  eq(
+    'phys-maxwell-gauss-b',
+    "Gauss's Law (B)",
+    'physics',
+    'Electricity & Magnetism',
+    '\\nabla\\cdot\\mathbf{B} = 0',
+    ['maxwell'],
+    'No magnetic monopoles.',
+  ),
+  eq(
+    'phys-maxwell-faraday',
+    'Faraday–Maxwell',
+    'physics',
+    'Electricity & Magnetism',
+    '\\nabla\\times\\mathbf{E} = -\\frac{\\partial\\mathbf{B}}{\\partial t}',
+    ['maxwell', 'induction'],
+    'Induced electric field from changing B.',
+  ),
+  eq(
+    'phys-maxwell-ampere',
+    'Ampère–Maxwell',
+    'physics',
+    'Electricity & Magnetism',
+    '\\nabla\\times\\mathbf{B} = \\mu_0\\mathbf{J} + \\mu_0\\varepsilon_0\\frac{\\partial\\mathbf{E}}{\\partial t}',
+    ['maxwell'],
+    'Magnetic field from currents and changing E.',
+  ),
+  eq(
+    'phys-wave',
+    '1D Wave Equation',
+    'physics',
+    'Waves',
+    '\\frac{\\partial^2 y}{\\partial x^2} = \\frac{1}{v^2}\\frac{\\partial^2 y}{\\partial t^2}',
+    ['waves', 'pde'],
+    'Traveling waves at speed v.',
+  ),
+  eq(
+    'chem-ph',
+    'pH Definition',
+    'chemistry',
+    'Acids & Bases',
+    '\\mathrm{pH} = -\\log_{10}[\\mathrm{H}^+]',
+    ['acids'],
+    'Acidity scale from hydrogen ion concentration.',
+  ),
+  eq(
+    'chem-kw',
+    'Water Ion Product',
+    'chemistry',
+    'Acids & Bases',
+    'K_w = [\\mathrm{H}^+][\\mathrm{OH}^-] = 1.0\\times 10^{-14}\\ (25^\\circ\\mathrm{C})',
+    ['equilibrium'],
+    'Autoionization of water at 25 °C.',
+  ),
+  eq(
+    'chem-arrhenius',
+    'Arrhenius Equation',
+    'chemistry',
+    'Kinetics',
+    'k = A e^{-E_a/(RT)}',
+    ['kinetics', 'temperature'],
+    'Rate constant vs activation energy and T.',
+  ),
+  eq(
+    'chem-ideal-gas',
+    'Ideal Gas Law',
+    'chemistry',
+    'Gases',
+    'PV = nRT',
+    ['gases', 'thermo'],
+    'Ideal gas equation of state.',
+  ),
+  eq(
+    'bio-hardy-weinberg',
+    'Hardy–Weinberg',
+    'biology',
+    'Genetics',
+    'p^2 + 2pq + q^2 = 1',
+    ['genetics', 'equilibrium'],
+    'Genotype frequencies under HW assumptions.',
+  ),
+  eq(
+    'bio-exponential-growth',
+    'Exponential Growth',
+    'biology',
+    'Population',
+    'N(t) = N_0 e^{rt}',
+    ['population'],
+    'Unlimited population growth at rate r.',
+  ),
+  eq(
+    'bio-logistic',
+    'Logistic Growth',
+    'biology',
+    'Population',
+    '\\frac{dN}{dt} = rN\\left(1 - \\frac{N}{K}\\right)',
+    ['population'],
+    'Growth with carrying capacity K.',
+  ),
+  eq(
+    'bio-michaelis',
+    'Michaelis–Menten',
+    'biology',
+    'Enzymes',
+    'v = \\frac{V_{\\max}[S]}{K_m + [S]}',
+    ['enzymes', 'kinetics'],
+    'Enzyme rate vs substrate concentration.',
+  ),
+  eq(
+    'econ-gdp-exp',
+    'GDP (expenditure)',
+    'economics',
+    'Macroeconomics',
+    'Y = C + I + G + (X - M)',
+    ['gdp'],
+    'Expenditure approach to national income.',
+  ),
+  eq(
+    'econ-elasticity',
+    'Price Elasticity of Demand',
+    'economics',
+    'Microeconomics',
+    'E_d = \\frac{\\%\\Delta Q_d}{\\%\\Delta P}',
+    ['elasticity'],
+    'Responsiveness of quantity to price.',
+  ),
+  eq(
+    'fin-npv',
+    'Net Present Value',
+    'finance',
+    'Capital Budgeting',
+    'NPV = \\sum_{t=0}^{n} \\frac{C_t}{(1+r)^t}',
+    ['npv', 'discounting'],
+    'Sum of discounted project cash flows.',
+  ),
+  eq(
+    'fin-irr',
+    'Internal Rate of Return',
+    'finance',
+    'Capital Budgeting',
+    '0 = \\sum_{t=0}^{n} \\frac{C_t}{(1+\\mathrm{IRR})^t}',
+    ['irr'],
+    'Discount rate that sets NPV to zero.',
+  ),
+
+  // ═══════════════════════════════════════════════════════════
   // Figures (inline SVG)
   // ═══════════════════════════════════════════════════════════
   fig(
@@ -1513,3 +1826,5 @@ export const SEED_LIBRARY: LibraryItem[] = [
     'Annuity cash-flow timeline.',
   ),
 ]
+
+export const SEED_LIBRARY: LibraryItem[] = uniqueById(SEED_LIBRARY_RAW)

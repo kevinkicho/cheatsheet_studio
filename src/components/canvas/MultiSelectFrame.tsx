@@ -78,6 +78,7 @@ export function MultiSelectFrame({
         if (!it.locked) origins[it.id] = { x: it.x, y: it.y }
       }
       if (Object.keys(origins).length === 0) return
+      useCanvasStore.getState().beginHistoryBatch()
       ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
       dragRef.current = {
         mode: 'move',
@@ -103,6 +104,7 @@ export function MultiSelectFrame({
           sizes[it.id] = { width: it.width, height: it.height }
       }
       if (Object.keys(sizes).length === 0) return
+      useCanvasStore.getState().beginHistoryBatch()
       ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
       dragRef.current = {
         mode: 'resize',
@@ -144,6 +146,7 @@ export function MultiSelectFrame({
     }
     dragRef.current = null
     setDragging(false)
+    useCanvasStore.getState().endHistoryBatch()
   }, [])
 
   if (!bounds || selected.length < 2) return null

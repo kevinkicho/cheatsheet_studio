@@ -1,56 +1,539 @@
-import { useState } from 'react'
-import { Plus } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  ArrowDownAZ,
+  ArrowDownWideNarrow,
+  ChevronDown,
+  ChevronRight,
+  Plus,
+  Search,
+  X,
+} from 'lucide-react'
+import { SUBJECTS, type LibraryItem, type Subject } from '@/types'
 import { useCanvasStore } from '@/stores/canvasStore'
+import { useLibraryStore } from '@/stores/libraryStore'
+import { FitContent } from '@/components/math/FitContent'
 import { LatexView } from '@/components/math/LatexView'
 
+type SortKey = 'title' | 'topic' | 'subject'
+
+const SORT_LABELS: Record<SortKey, string> = {
+  title: 'Name',
+  topic: 'Topic',
+  subject: 'Subject',
+}
+
+function cmpStr(a: string, b: string): number {
+  return a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true })
+}
+
+function isEquationItem(i: LibraryItem): boolean {
+  const hasLatex = Boolean(i.latex && String(i.latex).trim())
+  if (!hasLatex) return false
+  if (i.type === 'equation') return true
+  // Cloud rows sometimes omit type — treat latex-only as equation
+  if (!i.tableMarkdown && !i.imageUrl) return true
+  return false
+}
+
+/**
+ * Create a custom equation card.
+ * Catalog: detail list with working filter + sort, bottom preview,
+ * “Append to field” adds KaTeX below existing text (never replaces).
+ */
 export function CreateEquationPanel() {
   const addCustomEquation = useCanvasStore((s) => s.addCustomEquation)
+  const libraryItems = useLibraryStore((s) => s.items)
+
   const [latex, setLatex] = useState('E = mc^2')
   const [title, setTitle] = useState('Custom equation')
+  const [catalogOpen, setCatalogOpen] = useState(true)
+
+  const [catSubject, setCatSubject] = useState<Subject | 'all'>('all')
+  const [catTopic, setCatTopic] = useState<string>('all')
+  const [catSearch, setCatSearch] = useState('')
+  const [sortKey, setSortKey] = useState<SortKey>('title')
+  const [sortAsc, setSortAsc] = useState(true)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [appendFlash, setAppendFlash] = useState(false)
+
+  const listRef = useRef<HTMLDivElement>(null)
+
+  const allEquations = useMemo(
+    () => libraryItems.filter(isEquationItem),
+    [libraryItems],
+  )
+
+  const topicOptions = useMemo(() => {
+    const pool =
+      catSubject === 'all'
+        ? allEquations
+        : allEquations.filter(
+            (i) => (i.subject ?? '').toLowerCase() === catSubject.toLowerCase(),
+          )
+    const topics = new Set<string>()
+    for (const i of pool) {
+      const t = (i.topic ?? '').trim()
+      if (t) topics.add(t)
+    }
+    return Array.from(topics).sort(cmpStr)
+  }, [allEquations, catSubject])
+
+  const equations = useMemo(() => {
+    const q = catSearch.trim().toLowerCase()
+    const subjFilter =
+      catSubject === 'all' ? null : catSubject.toLowerCase()
+    const topicFilter =
+      catTopic === 'all' ? null : catTopic.toLowerCase()
+
+    const filtered = allEquations.filter((i) => {
+      const subj = (i.subject ?? '').toLowerCase()
+      const topic = (i.topic ?? '').toLowerCase()
+      if (subjFilter && subj !== subjFilter) return false
+      if (topicFilter && topic !== topicFilter) return false
+      if (!q) return true
+      const title = (i.title ?? '').toLowerCase()
+      const latexStr = (i.latex ?? '').toLowerCase()
+      const desc = (i.description ?? '').toLowerCase()
+      const tags = Array.isArray(i.tags) ? i.tags : []
+      return (
+        title.includes(q) ||
+        topic.includes(q) ||
+        subj.includes(q) ||
+        latexStr.includes(q) ||
+        desc.includes(q) ||
+        tags.some((t) => String(t).toLowerCase().includes(q))
+      )
+    })
+
+    const dir = sortAsc ? 1 : -1
+    filtered.sort((a, b) => {
+      let cmp = 0
+      if (sortKey === 'title') {
+        cmp = cmpStr(a.title ?? '', b.title ?? '')
+      } else if (sortKey === 'topic') {
+        cmp = cmpStr(a.topic ?? '', b.topic ?? '')
+        if (cmp === 0) cmp = cmpStr(a.title ?? '', b.title ?? '')
+      } else {
+        // subject: sort by display label so order matches what user sees
+        const la =
+          SUBJECTS.find((s) => s.id === a.subject)?.label ?? a.subject ?? ''
+        const lb =
+          SUBJECTS.find((s) => s.id === b.subject)?.label ?? b.subject ?? ''
+        cmp = cmpStr(la, lb)
+        if (cmp === 0) cmp = cmpStr(a.topic ?? '', b.topic ?? '')
+        if (cmp === 0) cmp = cmpStr(a.title ?? '', b.title ?? '')
+      }
+      return cmp * dir
+    })
+
+    return filtered
+  }, [allEquations, catSubject, catTopic, catSearch, sortKey, sortAsc])
+
+  // Scroll list to top when filter/sort changes so re-order is obvious
+  useEffect(() => {
+    listRef.current?.scrollTo({ top: 0 })
+  }, [catSubject, catTopic, catSearch, sortKey, sortAsc])
+
+  // Drop invalid topic when subject changes
+  useEffect(() => {
+    if (catTopic !== 'all' && !topicOptions.includes(catTopic)) {
+      setCatTopic('all')
+    }
+  }, [catTopic, topicOptions])
+
+  const selected: LibraryItem | null = useMemo(() => {
+    if (!selectedId) return null
+    return (
+      equations.find((e) => e.id === selectedId) ??
+      allEquations.find((e) => e.id === selectedId) ??
+      null
+    )
+  }, [equations, allEquations, selectedId])
+
+  // Keep / restore selection when the filtered list changes
+  useEffect(() => {
+    if (equations.length === 0) {
+      if (selectedId) setSelectedId(null)
+      return
+    }
+    if (!selectedId || !equations.some((e) => e.id === selectedId)) {
+      setSelectedId(equations[0]!.id)
+    }
+  }, [equations, selectedId])
+
+  const appendSelected = () => {
+    if (!selected?.latex) return
+    const piece = selected.latex.trim()
+    setLatex((prev) => {
+      const cur = prev.trimEnd()
+      if (!cur) return piece
+      return `${cur}\n${piece}`
+    })
+    setTitle((t) =>
+      t === 'Custom equation' || t === 'E = mc^2' || !t.trim()
+        ? selected.title
+        : t,
+    )
+    setAppendFlash(true)
+    window.setTimeout(() => setAppendFlash(false), 1400)
+  }
+
+  const subjectLabel = (id: string) =>
+    SUBJECTS.find((s) => s.id === id)?.label ?? id
+
+  const setSort = (key: SortKey) => {
+    if (key === sortKey) {
+      setSortAsc((a) => !a)
+    } else {
+      setSortKey(key)
+      setSortAsc(true)
+    }
+  }
+
+  const clearFilters = () => {
+    setCatSubject('all')
+    setCatTopic('all')
+    setCatSearch('')
+  }
+
+  const hasActiveFilters =
+    catSubject !== 'all' || catTopic !== 'all' || catSearch.trim().length > 0
 
   return (
-    <div className="flex flex-col gap-3 p-3">
-      <p className="text-xs text-zinc-500">
-        Write LaTeX and add it to the canvas. Preview updates live via KaTeX.
-      </p>
-      <label className="flex flex-col gap-1">
-        <span className="text-[10px] font-medium uppercase text-zinc-500">
-          Title
-        </span>
-        <input
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          className="field-input"
-        />
-      </label>
-      <label className="flex flex-col gap-1">
-        <span className="text-[10px] font-medium uppercase text-zinc-500">
-          LaTeX
-        </span>
-        <textarea
-          value={latex}
-          onChange={(e) => setLatex(e.target.value)}
-          rows={5}
-          className="field-input font-mono text-[11px]"
-          spellCheck={false}
-          placeholder="e.g. \int_a^b f(x)\,dx"
-        />
-      </label>
-      <div className="rounded-md border border-zinc-800 bg-zinc-950 p-2">
-        <p className="mb-1 text-[10px] uppercase text-zinc-500">Preview</p>
-        <LatexView latex={latex} className="text-sm text-zinc-100" />
+    <div className="flex h-full min-h-0 flex-col">
+      {/* Editor strip — keep compact so catalog has room */}
+      <div className="flex shrink-0 flex-col gap-1.5 border-b border-zinc-800 p-2.5">
+        <p className="text-[10px] leading-snug text-zinc-500">
+          Edit LaTeX or pick from the catalog (Append adds below existing text).
+        </p>
+        <label className="flex flex-col gap-0.5">
+          <span className="text-[9px] font-medium uppercase text-zinc-500">
+            Title
+          </span>
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className="field-input py-1 text-[11px]"
+          />
+        </label>
+        <label className="flex flex-col gap-0.5">
+          <span className="text-[9px] font-medium uppercase text-zinc-500">
+            LaTeX
+          </span>
+          <textarea
+            value={latex}
+            onChange={(e) => setLatex(e.target.value)}
+            rows={2}
+            className="field-input font-mono text-[11px]"
+            spellCheck={false}
+            placeholder="e.g. \int_a^b f(x)\,dx"
+          />
+        </label>
+        <div
+          className="grid h-16 w-full shrink-0 overflow-hidden rounded-md border border-zinc-800 bg-zinc-950"
+          data-card-preview-viewport
+          style={{ gridTemplate: '1fr / 1fr' }}
+        >
+          <div
+            className="min-h-0 min-w-0 overflow-hidden p-1.5"
+            style={{ gridArea: '1 / 1' }}
+          >
+            <FitContent
+              mode="scale"
+              fitMethod="transform"
+              minScale={0.1}
+              maxScale={1}
+              baseFontSize={15}
+              contentKey={latex}
+              className="h-full w-full"
+            >
+              <LatexView
+                latex={latex}
+                className="text-zinc-100 [&_.katex-display]:m-0"
+              />
+            </FitContent>
+          </div>
+          <div
+            className="pointer-events-none select-none self-start justify-self-start px-1.5 pt-1 text-[9px] font-medium uppercase tracking-wide text-zinc-200"
+            style={{ gridArea: '1 / 1', opacity: 0.5, zIndex: 2 }}
+            aria-hidden
+          >
+            Card preview
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            if (!latex.trim()) return
+            addCustomEquation(latex.trim(), title.trim() || 'Custom equation')
+          }}
+          className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-indigo-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-400"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Add to canvas
+        </button>
       </div>
-      <button
-        type="button"
-        onClick={() => {
-          if (!latex.trim()) return
-          addCustomEquation(latex.trim(), title.trim() || 'Custom equation')
-        }}
-        className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-indigo-500 px-3 py-2 text-xs font-medium text-white hover:bg-indigo-400"
-      >
-        <Plus className="h-3.5 w-3.5" />
-        Add to canvas
-      </button>
+
+      {/* Catalog */}
+      <div className="flex min-h-0 flex-1 flex-col">
+        <button
+          type="button"
+          onClick={() => setCatalogOpen((o) => !o)}
+          className="flex shrink-0 items-center gap-1.5 border-b border-zinc-800 bg-zinc-900/80 px-3 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-zinc-300 hover:bg-zinc-900"
+        >
+          {catalogOpen ? (
+            <ChevronDown className="h-3.5 w-3.5 text-zinc-500" />
+          ) : (
+            <ChevronRight className="h-3.5 w-3.5 text-zinc-500" />
+          )}
+          Insert from catalog
+          <span className="ml-auto font-normal normal-case tracking-normal text-zinc-600">
+            {allEquations.length} formulas
+          </span>
+        </button>
+
+        {catalogOpen && (
+          <>
+            {/* Toolbar: search + filters + sort */}
+            <div className="flex shrink-0 flex-col gap-1.5 border-b border-zinc-800 bg-[#1a1a1a] px-2 py-2">
+              <div className="flex items-center gap-1.5">
+                <Search className="h-3 w-3 shrink-0 text-zinc-600" />
+                <input
+                  value={catSearch}
+                  onChange={(e) => setCatSearch(e.target.value)}
+                  placeholder="Filter by name, topic, tag…"
+                  className="min-w-0 flex-1 bg-transparent text-[11px] text-zinc-200 outline-none placeholder:text-zinc-600"
+                  autoComplete="off"
+                />
+                {catSearch && (
+                  <button
+                    type="button"
+                    title="Clear search"
+                    onClick={() => setCatSearch('')}
+                    className="rounded p-0.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+                <span className="shrink-0 tabular-nums text-[10px] text-zinc-500">
+                  {equations.length}/{allEquations.length}
+                </span>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-1.5">
+                <select
+                  value={catSubject}
+                  onChange={(e) => {
+                    const v = e.target.value as Subject | 'all'
+                    setCatSubject(v)
+                    setCatTopic('all')
+                  }}
+                  className="max-w-[40%] cursor-pointer rounded border border-zinc-700 bg-zinc-900 px-1.5 py-1 text-[10px] text-zinc-200 outline-none focus:border-indigo-500/50"
+                  title="Filter by subject"
+                >
+                  <option value="all">All subjects</option>
+                  {SUBJECTS.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.label}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  value={catTopic}
+                  onChange={(e) => setCatTopic(e.target.value)}
+                  className="min-w-0 flex-1 cursor-pointer rounded border border-zinc-700 bg-zinc-900 px-1.5 py-1 text-[10px] text-zinc-200 outline-none focus:border-indigo-500/50"
+                  title="Filter by topic"
+                >
+                  <option value="all">All topics</option>
+                  {topicOptions.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+
+                {hasActiveFilters && (
+                  <button
+                    type="button"
+                    onClick={clearFilters}
+                    className="shrink-0 rounded border border-zinc-700 px-1.5 py-1 text-[9px] text-zinc-400 hover:border-zinc-600 hover:text-zinc-200"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-1">
+                <ArrowDownAZ className="h-3 w-3 text-zinc-600" />
+                <span className="text-[9px] uppercase text-zinc-600">Sort</span>
+                {(['title', 'topic', 'subject'] as SortKey[]).map((key) => {
+                  const active = sortKey === key
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setSort(key)}
+                      className={`rounded px-2 py-0.5 text-[10px] font-medium transition ${
+                        active
+                          ? 'bg-indigo-500/30 text-indigo-100 ring-1 ring-indigo-400/40'
+                          : 'bg-zinc-900 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300'
+                      }`}
+                    >
+                      {SORT_LABELS[key]}
+                      {active ? (sortAsc ? ' ↑' : ' ↓') : ''}
+                    </button>
+                  )
+                })}
+                <button
+                  type="button"
+                  title="Toggle sort direction"
+                  onClick={() => setSortAsc((a) => !a)}
+                  className="ml-auto rounded border border-zinc-700 p-1 text-zinc-500 hover:text-zinc-300"
+                >
+                  <ArrowDownWideNarrow
+                    className={`h-3 w-3 transition ${sortAsc ? '' : 'rotate-180'}`}
+                  />
+                </button>
+              </div>
+            </div>
+
+            {/* Column headers (also sort) */}
+            <div className="flex shrink-0 items-center gap-2 border-b border-zinc-800 bg-[#222] px-2 py-1 text-[9px] font-semibold uppercase tracking-wide text-zinc-600">
+              {(
+                [
+                  ['title', 'Name', 'min-w-0 flex-[1.4]'],
+                  ['topic', 'Topic', 'w-[28%] shrink-0'],
+                  ['subject', 'Subject', 'w-[22%] shrink-0'],
+                ] as const
+              ).map(([key, label, cls]) => (
+                <button
+                  key={key}
+                  type="button"
+                  className={`${cls} text-left transition hover:text-zinc-300 ${
+                    sortKey === key ? 'text-indigo-300' : ''
+                  }`}
+                  onClick={() => setSort(key)}
+                >
+                  {label}
+                  {sortKey === key ? (sortAsc ? ' ↑' : ' ↓') : ''}
+                </button>
+              ))}
+            </div>
+
+            {/* Rows */}
+            <div
+              ref={listRef}
+              className="min-h-[6rem] flex-1 overflow-y-auto"
+            >
+              {equations.length === 0 ? (
+                <p className="px-3 py-6 text-center text-[11px] text-zinc-600">
+                  No formulas match
+                  {hasActiveFilters ? ' these filters' : ''}.
+                  {hasActiveFilters && (
+                    <>
+                      {' '}
+                      <button
+                        type="button"
+                        onClick={clearFilters}
+                        className="text-indigo-400 underline hover:text-indigo-300"
+                      >
+                        Clear filters
+                      </button>
+                    </>
+                  )}
+                </p>
+              ) : (
+                <ul
+                  key={`list-${sortKey}-${sortAsc}-${catSubject}-${catTopic}-${catSearch}`}
+                  className="divide-y divide-zinc-800/80"
+                >
+                  {equations.map((item, index) => {
+                    const active = item.id === selectedId
+                    return (
+                      <li key={`${item.id}-${index}`}>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedId(item.id)}
+                          className={`flex w-full items-start gap-2 px-2 py-1.5 text-left transition ${
+                            active
+                              ? 'bg-indigo-500/20 ring-1 ring-inset ring-indigo-500/35'
+                              : 'hover:bg-zinc-900/80'
+                          }`}
+                        >
+                          <span
+                            className={`min-w-0 flex-[1.4] truncate text-[11px] font-medium ${
+                              active ? 'text-white' : 'text-zinc-200'
+                            }`}
+                          >
+                            {item.title}
+                          </span>
+                          <span className="w-[28%] shrink-0 truncate text-[10px] text-zinc-500">
+                            {item.topic}
+                          </span>
+                          <span className="w-[22%] shrink-0 truncate text-[10px] text-zinc-600">
+                            {subjectLabel(item.subject)}
+                          </span>
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </div>
+
+            {/* Bottom preview + append */}
+            <div className="flex shrink-0 flex-col border-t border-zinc-700 bg-[#161616]">
+              <div className="flex items-center justify-between gap-2 border-b border-zinc-800 px-2 py-1">
+                <span className="truncate text-[10px] font-medium text-zinc-400">
+                  {selected ? selected.title : 'Select a formula'}
+                </span>
+                {selected && (
+                  <span className="shrink-0 text-[9px] text-zinc-600">
+                    {selected.topic}
+                  </span>
+                )}
+              </div>
+              <div className="max-h-[6.5rem] min-h-[3.5rem] overflow-auto px-2 py-2">
+                {selected?.latex ? (
+                  <div className="space-y-1">
+                    <LatexView
+                      latex={selected.latex}
+                      className="text-sm text-zinc-100 [&_.katex-display]:m-0"
+                    />
+                    {selected.description && (
+                      <p className="text-[10px] leading-snug text-zinc-500">
+                        {selected.description}
+                      </p>
+                    )}
+                    <p className="break-all font-mono text-[9px] leading-snug text-zinc-600">
+                      {selected.latex}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="py-2 text-center text-[11px] text-zinc-600">
+                    Choose a row above to preview KaTeX here.
+                  </p>
+                )}
+              </div>
+              <div className="border-t border-zinc-800 px-2 py-2">
+                <button
+                  type="button"
+                  disabled={!selected?.latex}
+                  onClick={appendSelected}
+                  className={`inline-flex w-full items-center justify-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                    appendFlash
+                      ? 'bg-emerald-600 text-white'
+                      : 'bg-indigo-500 text-white hover:bg-indigo-400'
+                  }`}
+                >
+                  {appendFlash ? 'Appended' : 'Append to field'}
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   )
 }

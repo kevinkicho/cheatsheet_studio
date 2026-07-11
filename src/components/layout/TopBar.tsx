@@ -9,7 +9,9 @@ import {
   PanelBottom,
   PanelLeft,
   PanelRight,
+  Redo2,
   Save,
+  Undo2,
 } from 'lucide-react'
 import { useAuthStore } from '@/stores/authStore'
 import { useCanvasStore } from '@/stores/canvasStore'
@@ -23,6 +25,10 @@ export function TopBar() {
   const title = useCanvasStore((s) => s.title)
   const dirty = useCanvasStore((s) => s.dirty)
   const setTitle = useCanvasStore((s) => s.setTitle)
+  const pastLen = useCanvasStore((s) => s.past.length)
+  const futureLen = useCanvasStore((s) => s.future.length)
+  const undo = useCanvasStore((s) => s.undo)
+  const redo = useCanvasStore((s) => s.redo)
   const sheets = useSheetsStore((s) => s.sheets)
   const activeSheetId = useSheetsStore((s) => s.activeSheetId)
   const cloudAvailable = useSheetsStore((s) => s.cloudAvailable)
@@ -151,6 +157,27 @@ export function TopBar() {
               {isLocalSheet ? 'Sync' : 'Save'}
             </span>
           </button>
+
+          <div className="ml-0.5 flex items-center gap-0.5">
+            <button
+              type="button"
+              title="Undo (Ctrl+Z)"
+              disabled={pastLen === 0}
+              onClick={() => undo()}
+              className="inline-flex items-center justify-center rounded-md border border-zinc-800 p-1.5 text-zinc-300 hover:bg-zinc-900 disabled:cursor-not-allowed disabled:opacity-35"
+            >
+              <Undo2 className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              title="Redo (Ctrl+Shift+Z / Ctrl+Y)"
+              disabled={futureLen === 0}
+              onClick={() => redo()}
+              className="inline-flex items-center justify-center rounded-md border border-zinc-800 p-1.5 text-zinc-300 hover:bg-zinc-900 disabled:cursor-not-allowed disabled:opacity-35"
+            >
+              <Redo2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
 
           <div className="relative ml-1 min-w-[7.5rem] max-w-[11rem]">
             <select

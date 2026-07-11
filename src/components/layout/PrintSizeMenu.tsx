@@ -1,9 +1,22 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Check, ChevronDown, Eye, EyeOff, Printer, RotateCw } from 'lucide-react'
+import {
+  Check,
+  ChevronDown,
+  Columns3,
+  Eye,
+  EyeOff,
+  LayoutGrid,
+  Move,
+  Printer,
+  RotateCw,
+  Rows3,
+} from 'lucide-react'
 import {
   formatPageSizeLabel,
+  normalizePrintPageLayout,
   PRINT_SIZE_PRESETS,
+  type PrintPageLayout,
   type PrintSizeId,
 } from '@/lib/printSizes'
 import { DEFAULT_MARGINS } from '@/types'
@@ -11,6 +24,38 @@ import { useCanvasStore } from '@/stores/canvasStore'
 
 const INCH = 96 // px @ 96dpi
 const PRESET_INCHES = [0.25, 0.5, 0.75, 1] as const
+
+const LAYOUT_OPTIONS: {
+  id: PrintPageLayout
+  label: string
+  hint: string
+  icon: typeof Rows3
+}[] = [
+  {
+    id: 'vertical',
+    label: 'Vertical',
+    hint: 'Stack pages top → bottom',
+    icon: Rows3,
+  },
+  {
+    id: 'horizontal',
+    label: 'Horizontal',
+    hint: 'Place pages left → right',
+    icon: Columns3,
+  },
+  {
+    id: 'grid',
+    label: 'Grid',
+    hint: 'Near-square multi-column grid',
+    icon: LayoutGrid,
+  },
+  {
+    id: 'free',
+    label: 'Drag & place',
+    hint: 'Drag each page frame freely',
+    icon: Move,
+  },
+]
 
 export function PrintSizeMenu() {
   const canvas = useCanvasStore((s) => s.canvas)
@@ -20,7 +65,10 @@ export function PrintSizeMenu() {
   const setShowPrintArea = useCanvasStore((s) => s.setShowPrintArea)
   const setMargins = useCanvasStore((s) => s.setMargins)
   const setUniformMargin = useCanvasStore((s) => s.setUniformMargin)
+  const setPrintPageCount = useCanvasStore((s) => s.setPrintPageCount)
+  const setPrintPageLayout = useCanvasStore((s) => s.setPrintPageLayout)
   const [open, setOpen] = useState(false)
+  const [pageCountDraft, setPageCountDraft] = useState('1')
   const rootRef = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0 })
@@ -28,8 +76,14 @@ export function PrintSizeMenu() {
   const printSizeId = (canvas.printSizeId ?? 'letter') as PrintSizeId
   const orientation = canvas.orientation ?? 'portrait'
   const showPrintArea = canvas.showPrintArea !== false
+  const printPageCount = Math.max(1, Math.min(20, canvas.printPageCount ?? 1))
+  const printPageLayout = normalizePrintPageLayout(canvas.printPageLayout)
   const sizeLabel = formatPageSizeLabel(printSizeId, orientation)
   const margins = { ...DEFAULT_MARGINS, ...canvas.margins }
+
+  useEffect(() => {
+    setPageCountDraft(String(printPageCount))
+  }, [printPageCount])
   const uniform =
     margins.top === margins.right &&
     margins.right === margins.bottom &&
@@ -176,6 +230,120 @@ export function PrintSizeMenu() {
             })}
           </ul>
 
+          <div className="border-t border-zinc-800 px-3 py-2">
+            <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+              Pages
+            </p>
+            <p className="mt-0.5 text-[10px] leading-snug text-zinc-600">
+              Multiple page frames on the board so you can layout a multi-page
+              cheat sheet at once (1–20).
+            </p>
+            <div className="mt-2 flex items-center gap-2">
+              <button
+                type="button"
+                title="Fewer pages"
+                disabled={printPageCount <= 1}
+                onClick={() => setPrintPageCount(printPageCount - 1)}
+                className="rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-900 disabled:opacity-40"
+              >
+                −
+              </button>
+              <input
+                type="number"
+                min={1}
+                max={20}
+                value={pageCountDraft}
+                onChange={(e) => setPageCountDraft(e.target.value)}
+                onBlur={() => {
+                  const n = Number(pageCountDraft)
+                  setPrintPageCount(n)
+                  setPageCountDraft(
+                    String(Math.max(1, Math.min(20, Math.round(n) || 1))),
+                  )
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    ;(e.target as HTMLInputElement).blur()
+                  }
+                }}
+                className="w-14 rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-center text-xs text-zinc-100 outline-none focus:border-indigo-500"
+                title="Number of pages"
+                aria-label="Number of print pages"
+              />
+              <button
+                type="button"
+                title="More pages"
+                disabled={printPageCount >= 20}
+                onClick={() => setPrintPageCount(printPageCount + 1)}
+                className="rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-900 disabled:opacity-40"
+              >
+                +
+              </button>
+              <span className="text-[10px] text-zinc-500">
+                {printPageCount === 1
+                  ? '1 page frame'
+                  : `${printPageCount} page frames`}
+              </span>
+            </div>
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              {[1, 2, 3, 4, 6, 8].map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setPrintPageCount(n)}
+                  className={`rounded px-2 py-0.5 text-[10px] ${
+                    printPageCount === n
+                      ? 'bg-indigo-500/20 text-indigo-200 ring-1 ring-indigo-500/40'
+                      : 'bg-zinc-900 text-zinc-500 hover:text-zinc-300'
+                  }`}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+
+            <p className="mt-3 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+              Page layout on board
+            </p>
+            <p className="mt-0.5 text-[10px] leading-snug text-zinc-600">
+              How page frames are arranged in the viewport. Fit-print zooms to
+              the full layout. Drag &amp; place lets you move frames freely.
+            </p>
+            <div className="mt-2 grid grid-cols-2 gap-1">
+              {LAYOUT_OPTIONS.map((opt) => {
+                const active = printPageLayout === opt.id
+                const Icon = opt.icon
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    title={opt.hint}
+                    onClick={() => setPrintPageLayout(opt.id)}
+                    className={`flex items-start gap-1.5 rounded-md border px-2 py-1.5 text-left transition ${
+                      active
+                        ? 'border-indigo-500/50 bg-indigo-500/15 text-indigo-100'
+                        : 'border-zinc-800 bg-zinc-900/60 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200'
+                    }`}
+                  >
+                    <Icon
+                      className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${
+                        active ? 'text-indigo-300' : 'text-zinc-500'
+                      }`}
+                    />
+                    <span className="min-w-0">
+                      <span className="block text-[11px] font-medium leading-tight">
+                        {opt.label}
+                      </span>
+                      <span className="mt-0.5 block text-[9px] leading-snug text-zinc-500">
+                        {opt.hint}
+                      </span>
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
           <div className="flex items-center gap-2 border-t border-zinc-800 px-3 py-2">
             <span className="text-[10px] font-medium uppercase text-zinc-500">
               Orientation
@@ -320,7 +488,20 @@ export function PrintSizeMenu() {
         ) : (
           <EyeOff className="h-3.5 w-3.5 shrink-0" />
         )}
-        <span className="max-w-[6.5rem] truncate font-medium">{sizeLabel}</span>
+        <span className="max-w-[8.5rem] truncate font-medium">
+          {sizeLabel}
+          {printPageCount > 1
+            ? ` · ${printPageCount}p · ${
+                printPageLayout === 'free'
+                  ? 'free'
+                  : printPageLayout === 'horizontal'
+                    ? 'row'
+                    : printPageLayout === 'grid'
+                      ? 'grid'
+                      : 'stack'
+              }`
+            : ''}
+        </span>
         {!showPrintArea && (
           <span className="hidden text-[10px] text-zinc-600 sm:inline">off</span>
         )}

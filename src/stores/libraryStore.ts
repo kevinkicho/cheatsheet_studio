@@ -26,22 +26,33 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       const snap = await getDocs(q)
       if (!snap.empty) {
         const items = snap.docs.map((d) => {
-          const data = d.data()
+          const data = d.data() as Record<string, unknown>
+          const latex = data.latex as string | undefined
+          const tableMarkdown = data.tableMarkdown as string | undefined
+          const imageUrl = data.imageUrl as string | undefined
+          let type = data.type as LibraryItem['type'] | undefined
+          // Infer type for older cloud docs missing `type`
+          if (!type) {
+            if (latex) type = 'equation'
+            else if (tableMarkdown) type = 'table'
+            else if (imageUrl) type = 'figure'
+            else type = 'equation'
+          }
           return {
             id: d.id,
-            type: data.type,
-            title: data.title,
-            subject: data.subject,
-            topic: data.topic,
-            tags: data.tags ?? [],
-            latex: data.latex,
-            tableMarkdown: data.tableMarkdown,
-            imageUrl: data.imageUrl,
-            imagePath: data.imagePath,
-            description: data.description,
-            source: data.source,
-            isSystem: data.isSystem ?? false,
-            createdBy: data.createdBy,
+            type,
+            title: (data.title as string) ?? 'Untitled',
+            subject: (data.subject as LibraryItem['subject']) ?? 'mathematics',
+            topic: (data.topic as string) ?? 'General',
+            tags: Array.isArray(data.tags) ? (data.tags as string[]) : [],
+            latex,
+            tableMarkdown,
+            imageUrl,
+            imagePath: data.imagePath as string | undefined,
+            description: data.description as string | undefined,
+            source: data.source as string | undefined,
+            isSystem: (data.isSystem as boolean) ?? false,
+            createdBy: data.createdBy as string | undefined,
           } as LibraryItem
         })
         set({ items, source: 'firestore', loading: false })

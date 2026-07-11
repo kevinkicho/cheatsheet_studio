@@ -518,7 +518,7 @@ export function LayersPanel() {
             onDelete={() => {
               if (
                 window.confirm(
-                  `Delete folder “${folder.name}”? Nested folders promote one level; items stay on the sheet.`,
+                  `Delete folder “${folder.name}”? Nested folders promote one level (order kept); items stay on the sheet with the same layering (z-order).`,
                 )
               ) {
                 deleteFolder(folder.id)

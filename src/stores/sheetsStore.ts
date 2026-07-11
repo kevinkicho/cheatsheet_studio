@@ -13,11 +13,9 @@ import {
   Timestamp,
 } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
-import {
-  formatFirestoreError,
-  stripUndefined,
-} from '@/lib/firestoreSanitize'
+import { formatFirestoreError } from '@/lib/firestoreSanitize'
 import { promoteLocalImagesForCloud } from '@/lib/promoteLocalImages'
+import { buildSheetPayload } from '@/lib/sheetPayload'
 import {
   DEFAULT_CANVAS,
   type CanvasItem,
@@ -65,27 +63,6 @@ function openLocalSheet(title = 'Local sheet (offline)') {
     items: [],
   })
   return id
-}
-
-function buildSheetPayload(
-  uid: string,
-  title: string,
-  canvas: SheetCanvas,
-  items: CanvasItem[],
-  now: number,
-  includeCreatedAt: boolean,
-  folders: OutlinerFolder[] = [],
-) {
-  const base = {
-    ownerId: uid,
-    title,
-    updatedAt: now,
-    canvas,
-    items,
-    folders,
-    ...(includeCreatedAt ? { createdAt: now } : {}),
-  }
-  return stripUndefined(base)
 }
 
 export const useSheetsStore = create<SheetsState>((set, get) => ({

@@ -1,23 +1,42 @@
 import { create } from 'zustand'
 import {
+  createUserWithEmailAndPassword,
   getRedirectResult,
   onAuthStateChanged,
+  signInWithEmailAndPassword,
   signInWithPopup,
   signInWithRedirect,
   signOut as firebaseSignOut,
   type User,
 } from 'firebase/auth'
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'
-import { auth, db, googleProvider, logFirebaseSetup } from '@/lib/firebase'
+import {
+  auth,
+  connectFirebaseEmulatorsIfNeeded,
+  db,
+  googleProvider,
+  isFirebaseEmulatorMode,
+  logFirebaseSetup,
+} from '@/lib/firebase'
 import { formatAuthError } from '@/lib/authErrors'
 
 interface AuthState {
   user: User | null
   loading: boolean
   error: string | null
+  /** True when app is wired to local Firebase emulators. */
+  emulatorMode: boolean
   init: () => () => void
   signInWithGoogle: () => Promise<User | null>
   signInWithGoogleRedirect: () => Promise<void>
+  /**
+   * Email/password sign-in for emulator E2E (and local dev only).
+   * Creates the user if they do not exist yet.
+   */
+  signInWithEmailPassword: (
+    email: string,
+    password: string,
+  ) => Promise<User | null>
   signOut: () => Promise<void>
   clearError: () => void
 }
@@ -75,8 +94,10 @@ export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   loading: true,
   error: null,
+  emulatorMode: isFirebaseEmulatorMode,
 
   init: () => {
+    connectFirebaseEmulatorsIfNeeded()
     logFirebaseSetup()
 
     void getRedirectResult(auth)
@@ -137,6 +158,45 @@ export const useAuthStore = create<AuthState>((set) => ({
     } catch (e) {
       console.error('[auth] signInWithRedirect failed', e)
       set({ error: formatAuthError(e) })
+    }
+  },
+
+  signInWithEmailPassword: async (email, password) => {
+    if (!isFirebaseEmulatorMode) {
+      set({
+        error:
+          'Email/password sign-in is only enabled when Firebase emulators are on (VITE_USE_FIREBASE_EMULATORS=true).',
+      })
+      return null
+    }
+    set({ error: null })
+    connectFirebaseEmulatorsIfNeeded()
+    try {
+      let result
+      try {
+        result = await signInWithEmailAndPassword(auth, email, password)
+      } catch (e) {
+        const code =
+          e && typeof e === 'object' && 'code' in e
+            ? String((e as { code: string }).code)
+            : ''
+        if (
+          code === 'auth/user-not-found' ||
+          code === 'auth/invalid-credential' ||
+          code === 'auth/invalid-login-credentials'
+        ) {
+          result = await createUserWithEmailAndPassword(auth, email, password)
+        } else {
+          throw e
+        }
+      }
+      set({ user: result.user, loading: false, error: null })
+      void ensureUserProfile(result.user)
+      return result.user
+    } catch (e) {
+      console.error('[auth] email/password failed', e)
+      set({ error: formatAuthError(e) })
+      return null
     }
   },
 

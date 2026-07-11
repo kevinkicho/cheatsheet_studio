@@ -190,6 +190,9 @@ export function CanvasItemView({
         return
       }
 
+      // One undo step for the whole drag
+      useCanvasStore.getState().beginHistoryBatch()
+
       const hitTitle = Boolean(
         (e.target as HTMLElement).closest('[data-card-title]'),
       )
@@ -255,6 +258,7 @@ export function CanvasItemView({
       if (e.button !== 0) return
       e.stopPropagation()
       e.preventDefault()
+      useCanvasStore.getState().beginHistoryBatch()
       const state = useCanvasStore.getState()
       // Ensure this card is selected; keep multi-selection if already in it
       if (!state.selectedIds.includes(item.id)) {
@@ -376,6 +380,10 @@ export function CanvasItemView({
           height: Math.max(48, item.height - TITLE_BAND),
           contentFitKey: (item.contentFitKey ?? 0) + 1,
         })
+      }
+
+      if (d) {
+        useCanvasStore.getState().endHistoryBatch()
       }
 
       dragRef.current = null
@@ -518,7 +526,10 @@ export function CanvasItemView({
         <div className="pointer-events-none min-h-0 w-full flex-1">
           {asFigure && item.imageUrl ? (
             // Vector/bitmap at container size — no transform upscale blur
-            <FigureView src={item.imageUrl} alt={item.title ?? 'figure'} />
+            <FigureView
+              src={item.imageUrl}
+              alt={item.title ?? 'figure'}
+            />
           ) : (
             <FitContent
               mode="scale"

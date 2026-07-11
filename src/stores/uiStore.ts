@@ -28,6 +28,8 @@ interface UiState {
   libraryHoverPreview: boolean
   /** Group library cards under topic headings (Algebra, Calculus, …). */
   libraryGroupByTopic: boolean
+  /** When true, library shows equation cards only (hide tables/figures). */
+  libraryEquationsOnly: boolean
   /** Canvas viewport zoom (1 = 100%). */
   canvasZoom: number
   /** Active canvas tool: select (marquee / cards) or pan (hand). */
@@ -46,6 +48,8 @@ interface UiState {
   toggleLibraryHoverPreview: () => void
   setLibraryGroupByTopic: (group: boolean) => void
   toggleLibraryGroupByTopic: () => void
+  setLibraryEquationsOnly: (only: boolean) => void
+  toggleLibraryEquationsOnly: () => void
   setCanvasZoom: (zoom: number) => void
   setCanvasTool: (tool: CanvasTool) => void
   zoomIn: () => void
@@ -66,6 +70,7 @@ export const useUiStore = create<UiState>()(
       libraryLabelsOnly: false,
       libraryHoverPreview: true,
       libraryGroupByTopic: true,
+      libraryEquationsOnly: false,
       canvasZoom: 1,
       canvasTool: 'select',
       setView: (view) => set({ view }),
@@ -87,6 +92,10 @@ export const useUiStore = create<UiState>()(
         set({ libraryGroupByTopic }),
       toggleLibraryGroupByTopic: () =>
         set({ libraryGroupByTopic: !get().libraryGroupByTopic }),
+      setLibraryEquationsOnly: (libraryEquationsOnly) =>
+        set({ libraryEquationsOnly }),
+      toggleLibraryEquationsOnly: () =>
+        set({ libraryEquationsOnly: !get().libraryEquationsOnly }),
       setCanvasZoom: (zoom) => set({ canvasZoom: clampZoom(zoom) }),
       setCanvasTool: (canvasTool) => set({ canvasTool }),
       zoomIn: () => set({ canvasZoom: clampZoom(get().canvasZoom + ZOOM_STEP) }),
@@ -95,11 +104,15 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: 'cheatsheet-ui',
-      version: 3,
+      version: 4,
       migrate: (persisted) => {
         const p = (persisted ?? {}) as Record<string, unknown>
         const { canvasZoom: _drop, ...rest } = p
-        return { ...rest, canvasTool: (p.canvasTool as string) === 'pan' ? 'pan' : 'select' }
+        return {
+          ...rest,
+          canvasTool: (p.canvasTool as string) === 'pan' ? 'pan' : 'select',
+          libraryEquationsOnly: Boolean(p.libraryEquationsOnly),
+        }
       },
       partialize: (s) => ({
         leftOpen: s.leftOpen,
@@ -109,6 +122,7 @@ export const useUiStore = create<UiState>()(
         libraryLabelsOnly: s.libraryLabelsOnly,
         libraryHoverPreview: s.libraryHoverPreview,
         libraryGroupByTopic: s.libraryGroupByTopic,
+        libraryEquationsOnly: s.libraryEquationsOnly,
         canvasTool: s.canvasTool,
       }),
     },

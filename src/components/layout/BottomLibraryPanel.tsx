@@ -4,6 +4,7 @@ import {
   List,
   MessageSquareText,
   Search,
+  Sigma,
 } from 'lucide-react'
 import { SUBJECTS, type Subject } from '@/types'
 import { useLibraryStore } from '@/stores/libraryStore'
@@ -37,10 +38,15 @@ export function BottomLibraryPanel() {
   const toggleLibraryGroupByTopic = useUiStore(
     (s) => s.toggleLibraryGroupByTopic,
   )
+  const equationsOnly = useUiStore((s) => s.libraryEquationsOnly)
+  const toggleLibraryEquationsOnly = useUiStore(
+    (s) => s.toggleLibraryEquationsOnly,
+  )
   const hover = useLibraryHoverPreview()
 
   const filtered = items.filter((item) => {
     if (item.subject !== librarySubject) return false
+    if (equationsOnly && item.type !== 'equation') return false
     if (!librarySearch.trim()) return true
     const q = librarySearch.toLowerCase()
     return (
@@ -132,6 +138,24 @@ export function BottomLibraryPanel() {
 
         <button
           type="button"
+          onClick={toggleLibraryEquationsOnly}
+          title={
+            equationsOnly
+              ? 'Show all library items (equations, tables, figures)'
+              : 'Show equations only — browse named formulas'
+          }
+          className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-medium transition ${
+            equationsOnly
+              ? 'border-indigo-500/40 bg-indigo-500/15 text-indigo-200'
+              : 'border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:bg-zinc-900 hover:text-zinc-200'
+          }`}
+        >
+          <Sigma className="h-3.5 w-3.5" />
+          Equations
+        </button>
+
+        <button
+          type="button"
           onClick={toggleLibraryHoverPreview}
           title={
             hoverPreview
@@ -153,7 +177,7 @@ export function BottomLibraryPanel() {
           <input
             value={librarySearch}
             onChange={(e) => setLibrarySearch(e.target.value)}
-            placeholder="Search equations, topics…"
+            placeholder="Search formula name, topic…"
             className="w-full bg-transparent text-xs text-zinc-200 outline-none placeholder:text-zinc-600"
           />
         </div>
@@ -178,7 +202,10 @@ export function BottomLibraryPanel() {
 
       <div className="flex-1 overflow-y-auto p-3">
         {filtered.length === 0 ? (
-          <p className="text-center text-sm text-zinc-500">No items match.</p>
+          <p className="text-center text-sm text-zinc-500">
+            No items match. Browse subjects above, search a formula name, or
+            turn off “Equations” filter.
+          </p>
         ) : groupByTopic ? (
           <div className="space-y-4">
             {topics.map((topic) => (

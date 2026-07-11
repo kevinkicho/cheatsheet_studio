@@ -9,6 +9,7 @@ import {
 } from 'react'
 import { useDroppable } from '@dnd-kit/core'
 import {
+  ChevronUp,
   Focus,
   Grid3x3,
   Hand,
@@ -17,15 +18,56 @@ import {
   Maximize2,
   Minus,
   MousePointer2,
+  Move,
   Plus,
   Scan,
 } from 'lucide-react'
-import { formatPageSizeLabel, getPrintPageSize } from '@/lib/printSizes'
-import { DEFAULT_MARGINS } from '@/types'
+import {
+  clampPrintPageCount,
+  computePrintPageOrigins,
+  formatPageSizeLabel,
+  getPrintPageSize,
+  multiPageLayoutBounds,
+  normalizePrintPageLayout,
+  PRINT_PAGE_STACK_GAP,
+} from '@/lib/printSizes'
+import {
+  clampGridOpacity,
+  DEFAULT_MARGINS,
+  GRID_OPACITY_CSS_MAX,
+  gridOpacityToPercent,
+  normalizeGridExtent,
+  percentToGridOpacity,
+  type GridExtent,
+} from '@/types'
+import { resolveGridCoverage, resolvePageGridRect } from '@/lib/gridCoverage'
 import { useCanvasStore } from '@/stores/canvasStore'
 import { useUiStore, ZOOM_MAX, ZOOM_MIN, ZOOM_STEP } from '@/stores/uiStore'
+import { CanvasGridLayer } from './CanvasGridLayer'
 import { CanvasItemView } from './CanvasItemView'
 import { MultiSelectFrame } from './MultiSelectFrame'
+
+const GRID_EXTENT_OPTIONS: {
+  id: GridExtent
+  label: string
+  hint: string
+}[] = [
+  {
+    id: 'page',
+    label: 'Full page',
+    hint: 'Own grid inside each page frame',
+  },
+  {
+    id: 'printable',
+    label: 'Printable area',
+    hint: 'Own grid inside each margin box',
+  },
+  {
+    id: 'board',
+    label: 'Whole board',
+    hint: 'One continuous grid on the free board',
+  },
+]
 
 function clampZoom(z: number) {
   return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(z * 100) / 100))
@@ -73,6 +115,10 @@ export function MainCanvas() {
   const select = useCanvasStore((s) => s.select)
   const setSelectedIds = useCanvasStore((s) => s.setSelectedIds)
   const canvas = useCanvasStore((s) => s.canvas)
+  // Dedicated selectors so opacity/spacing updates always re-render this view
+  const gridOpacityRaw = useCanvasStore((s) => s.canvas.gridOpacity)
+  const gridSpacingRaw = useCanvasStore((s) => s.canvas.gridSpacing)
+  const showGrid = useCanvasStore((s) => s.canvas.showGrid)
   const autoOrganize = useCanvasStore((s) => s.autoOrganize)
   const toggleGrid = useCanvasStore((s) => s.toggleGrid)
   const toggleSnapToGrid = useCanvasStore((s) => s.toggleSnapToGrid)
@@ -86,8 +132,20 @@ export function MainCanvas() {
     canvas.printSizeId ?? 'letter',
     canvas.orientation ?? 'portrait',
   )
-  const gridSpacing = Math.max(4, Math.min(128, canvas.gridSpacing ?? 24))
-  const gridOpacity = Math.min(1, Math.max(0.05, canvas.gridOpacity ?? 0.1))
+  const printPageCount = clampPrintPageCount(canvas.printPageCount ?? 1)
+  const printPageLayout = normalizePrintPageLayout(canvas.printPageLayout)
+  const printPageOrigins = computePrintPageOrigins(
+    printPage,
+    printPageCount,
+    printPageLayout,
+    canvas.printPagePositions,
+  )
+  const setPrintPagePosition = useCanvasStore((s) => s.setPrintPagePosition)
+  const gridSpacing = Math.max(4, Math.min(128, gridSpacingRaw ?? 24))
+  // Stored CSS opacity 0–0.3; slider shows 0–100% of that range.
+  const gridOpacity = clampGridOpacity(gridOpacityRaw)
+  const gridOpacityPct = gridOpacityToPercent(gridOpacity)
+  const gridExtent = normalizeGridExtent(canvas.gridExtent)
 
   const viewportRef = useRef<HTMLDivElement>(null)
   const surfaceRef = useRef<HTMLDivElement | null>(null)
@@ -102,6 +160,20 @@ export function MainCanvas() {
     scrollTop: number
     didMove: boolean
   } | null>(null)
+  /** Drag a free-layout print page frame. */
+  const pageDragRef = useRef<{
+    pointerId: number
+    pageIndex: number
+    startClientX: number
+    startClientY: number
+    originX: number
+    originY: number
+  } | null>(null)
+  const [draggingPageIndex, setDraggingPageIndex] = useState<number | null>(
+    null,
+  )
+  const [gridMenuOpen, setGridMenuOpen] = useState(false)
+  const gridMenuRef = useRef<HTMLDivElement>(null)
   /** Marquee drag-select in canvas coordinates (select tool only). */
   const [marquee, setMarquee] = useState<{
     x0: number
@@ -135,8 +207,64 @@ export function MainCanvas() {
     const el = target as HTMLElement | null
     if (!el) return false
     if (el.closest('[data-canvas-item]')) return false
+    if (el.closest('[data-print-page-handle]')) return false
     if (el.closest('button, input, textarea, a, [role="button"]')) return false
     return true
+  }
+
+  const onPrintPageHandlePointerDown = (
+    e: ReactPointerEvent<HTMLDivElement>,
+    pageIndex: number,
+  ) => {
+    if (e.button !== 0) return
+    if (printPageLayout !== 'free') return
+    e.stopPropagation()
+    e.preventDefault()
+    const origin = printPageOrigins[pageIndex]
+    if (!origin) return
+    useCanvasStore.getState().beginHistoryBatch()
+    pageDragRef.current = {
+      pointerId: e.pointerId,
+      pageIndex,
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      originX: origin.x,
+      originY: origin.y,
+    }
+    setDraggingPageIndex(pageIndex)
+    e.currentTarget.setPointerCapture(e.pointerId)
+  }
+
+  const onPrintPageHandlePointerMove = (
+    e: ReactPointerEvent<HTMLDivElement>,
+  ) => {
+    const drag = pageDragRef.current
+    if (!drag || drag.pointerId !== e.pointerId) return
+    const z = zoomRef.current > 0.01 ? zoomRef.current : 1
+    const dx = (e.clientX - drag.startClientX) / z
+    const dy = (e.clientY - drag.startClientY) / z
+    let x = Math.max(0, drag.originX + dx)
+    let y = Math.max(0, drag.originY + dy)
+    // Snap free page frames to board grid (keeps multi-page layouts tidy)
+    if (canvas.snapToGrid) {
+      const g = gridSpacing
+      x = Math.max(0, Math.round(x / g) * g)
+      y = Math.max(0, Math.round(y / g) * g)
+    }
+    setPrintPagePosition(drag.pageIndex, { x, y })
+  }
+
+  const endPrintPageDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = pageDragRef.current
+    if (!drag || drag.pointerId !== e.pointerId) return
+    pageDragRef.current = null
+    setDraggingPageIndex(null)
+    useCanvasStore.getState().endHistoryBatch()
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId)
+    } catch {
+      /* already released */
+    }
   }
 
   /** Client → canvas coords (accounts for CSS scale on the surface). */
@@ -333,9 +461,9 @@ export function MainCanvas() {
   }, [zoomFromViewportCenter])
 
   /**
-   * Fit the *print page* when the frame is on; otherwise the free workspace.
-   * Never use full free-board size while Letter/A4 frame is visible (that
-   * incorrectly zoomed out to ~30%).
+   * Fit print page frame(s) when visible — uses the full multi-page layout
+   * bounds (vertical / horizontal / grid / free), not only page 1.
+   * When print frame is off, fit the free workspace.
    */
   const zoomFitViewport = useCallback(() => {
     const vp = viewportRef.current
@@ -344,22 +472,52 @@ export function MainCanvas() {
     const availW = Math.max(vp.clientWidth - pad, 80)
     const availH = Math.max(vp.clientHeight - pad, 80)
     const showPrint = canvas.showPrintArea !== false
-    const fitW = showPrint ? printPage.width : canvas.width
-    const fitH = showPrint ? printPage.height : canvas.height
+
+    if (!showPrint) {
+      const scale = Math.min(
+        availW / canvas.width,
+        availH / canvas.height,
+        2,
+      )
+      setCanvasZoom(scale)
+      requestAnimationFrame(() => {
+        viewportRef.current?.scrollTo({ left: 0, top: 0, behavior: 'smooth' })
+      })
+      return
+    }
+
+    const bounds = multiPageLayoutBounds(
+      printPage,
+      printPageCount,
+      printPageLayout,
+      canvas.printPagePositions,
+    )
+    const fitW = Math.max(bounds.width, 40)
+    const fitH = Math.max(bounds.height, 40)
     const scale = Math.min(availW / fitW, availH / fitH, 2)
     setCanvasZoom(scale)
     requestAnimationFrame(() => {
-      if (viewportRef.current) {
-        // Print page lives at origin
-        viewportRef.current.scrollTo({ left: 0, top: 0, behavior: 'smooth' })
-      }
+      const el = viewportRef.current
+      if (!el) return
+      // Center the full page layout in the viewport
+      const left = Math.max(
+        0,
+        bounds.minX * scale - (el.clientWidth - fitW * scale) / 2,
+      )
+      const top = Math.max(
+        0,
+        bounds.minY * scale - (el.clientHeight - fitH * scale) / 2,
+      )
+      el.scrollTo({ left, top, behavior: 'smooth' })
     })
   }, [
     canvas.width,
     canvas.height,
     canvas.showPrintArea,
-    printPage.width,
-    printPage.height,
+    canvas.printPagePositions,
+    printPage,
+    printPageCount,
+    printPageLayout,
     setCanvasZoom,
   ])
 
@@ -418,6 +576,24 @@ export function MainCanvas() {
     })
   }, [items, setCanvasZoom, zoomFitViewport])
 
+  // Close grid settings popover on outside click / Escape
+  useEffect(() => {
+    if (!gridMenuOpen) return
+    const onDoc = (e: globalThis.MouseEvent) => {
+      if (gridMenuRef.current?.contains(e.target as Node)) return
+      setGridMenuOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setGridMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [gridMenuOpen])
+
   // Default zoom is 100%. Fit print page / content only via toolbar buttons
   // (auto fit-to-letter was landing at ~40–45% and felt like a zoom-out on drop).
 
@@ -442,28 +618,12 @@ export function MainCanvas() {
     return () => vp.removeEventListener('wheel', onWheel)
   }, [setCanvasZoom])
 
-  // Tunable grid: opacity + spacing (works on dark boards)
-  // Major lines every 2 cells (48px when spacing=24) → lines up with 0.5″ margins
-  const buildGridStyle = (spacing: number, opacity: number) => {
-    const minor = Math.min(1, opacity)
-    const major = Math.min(1, opacity * 1.8)
-    const majorSize = spacing * 2
-    return {
-      backgroundImage: `
-        linear-gradient(to right, rgba(165, 180, 252, ${minor}) 1px, transparent 1px),
-        linear-gradient(to bottom, rgba(165, 180, 252, ${minor}) 1px, transparent 1px),
-        linear-gradient(to right, rgba(199, 210, 254, ${major}) 1px, transparent 1px),
-        linear-gradient(to bottom, rgba(199, 210, 254, ${major}) 1px, transparent 1px)
-      `,
-      backgroundSize: `${spacing}px ${spacing}px, ${spacing}px ${spacing}px, ${majorSize}px ${majorSize}px, ${majorSize}px ${majorSize}px`,
-    } as const
-  }
-
-  const gridStyle = canvas.showGrid
-    ? buildGridStyle(gridSpacing, gridOpacity)
-    : undefined
-
   const showPrint = canvas.showPrintArea !== false
+  const { useBoardGrid, usePerPageGrid } = resolveGridCoverage({
+    showGrid,
+    showPrintArea: showPrint,
+    gridExtent,
+  })
 
   const cursorClass =
     canvasTool === 'pan'
@@ -512,60 +672,151 @@ export function MainCanvas() {
             }}
           >
             {/*
-              Single grid layer only — painted once on the workspace surface
-              so it aligns with snap/auto-organize and does not double up.
+              Print page chrome first (frames only). Grids are painted AFTER
+              so they are never dimmed under the page fill — that made Whole
+              board look softer than Full page / Printable for the same α.
             */}
-            {canvas.showGrid && gridStyle && (
-              <div
-                className="pointer-events-none absolute inset-0 z-0"
-                style={gridStyle}
-                aria-hidden
+            {showPrint &&
+              printPageOrigins.map((origin, pageIndex) => {
+                const left = origin.x
+                const top = origin.y
+                const contentW = Math.max(
+                  0,
+                  printPage.width - margins.left - margins.right,
+                )
+                const contentH = Math.max(
+                  0,
+                  printPage.height - margins.top - margins.bottom,
+                )
+                const isDragging = draggingPageIndex === pageIndex
+                const freeMode = printPageLayout === 'free'
+                return (
+                  <div key={`print-page-chrome-${pageIndex}`}>
+                    <div
+                      className={`pointer-events-none absolute z-[1] box-border border-2 border-dashed ${
+                        isDragging
+                          ? 'border-indigo-400/80'
+                          : 'border-indigo-400/50'
+                      }`}
+                      style={{
+                        left,
+                        top,
+                        width: printPage.width,
+                        height: printPage.height,
+                        // Keep fill very light so it never “eats” grid contrast
+                        background: isDragging
+                          ? 'rgba(99, 102, 241, 0.08)'
+                          : 'transparent',
+                      }}
+                    />
+                    <div
+                      className="pointer-events-none absolute z-[1] box-border border border-dashed border-emerald-400/55"
+                      style={{
+                        left: left + margins.left,
+                        top: top + margins.top,
+                        width: contentW,
+                        height: contentH,
+                      }}
+                    />
+                    {/* Label + free-mode drag handle */}
+                    <div
+                      data-print-page-handle={freeMode ? 'true' : undefined}
+                      className={`absolute z-[2] flex items-center gap-1 rounded bg-zinc-950/90 px-1.5 py-0.5 text-[10px] font-medium text-zinc-300 ring-1 ring-zinc-600/80 ${
+                        freeMode
+                          ? 'pointer-events-auto cursor-grab select-none active:cursor-grabbing hover:ring-indigo-400/60'
+                          : 'pointer-events-none'
+                      } ${isDragging ? 'ring-indigo-400/80' : ''}`}
+                      style={{ left: left + 8, top: top + 8 }}
+                      title={
+                        freeMode
+                          ? 'Drag to place this page frame'
+                          : undefined
+                      }
+                      onPointerDown={
+                        freeMode
+                          ? (e) => onPrintPageHandlePointerDown(e, pageIndex)
+                          : undefined
+                      }
+                      onPointerMove={
+                        freeMode ? onPrintPageHandlePointerMove : undefined
+                      }
+                      onPointerUp={freeMode ? endPrintPageDrag : undefined}
+                      onPointerCancel={freeMode ? endPrintPageDrag : undefined}
+                    >
+                      {freeMode && (
+                        <Move className="h-3 w-3 shrink-0 text-indigo-300" />
+                      )}
+                      {printPageCount > 1 && (
+                        <span className="mr-0.5 text-indigo-300">
+                          Page {pageIndex + 1}/{printPageCount}
+                        </span>
+                      )}
+                      {formatPageSizeLabel(
+                        canvas.printSizeId ?? 'letter',
+                        canvas.orientation ?? 'portrait',
+                      )}{' '}
+                      · {printPage.width}×{printPage.height}
+                      <span className="text-zinc-500">
+                        {' '}
+                        · m {margins.top}/{margins.right}/{margins.bottom}/
+                        {margins.left}
+                      </span>
+                    </div>
+                    {printPageCount > 1 &&
+                      printPageLayout === 'vertical' &&
+                      pageIndex < printPageCount - 1 && (
+                        <div
+                          className="pointer-events-none absolute z-[1] border-t border-dashed border-zinc-600/40"
+                          style={{
+                            left,
+                            top: top + printPage.height,
+                            width: printPage.width,
+                            height: PRINT_PAGE_STACK_GAP,
+                          }}
+                          aria-hidden
+                        />
+                      )}
+                  </div>
+                )
+              })}
+
+            {/*
+              Grids AFTER page chrome. Every extent uses the same tile bitmap
+              + CSS `opacity: α` (not rgba-in-gradient), so Whole board /
+              Full page / Printable stay the same brightness for one slider value.
+            */}
+            {useBoardGrid && (
+              <CanvasGridLayer
+                key={`grid-board-${gridSpacing}-${gridOpacity}`}
+                left={0}
+                top={0}
+                width={canvas.width}
+                height={canvas.height}
+                spacing={gridSpacing}
+                opacity={gridOpacity}
               />
             )}
-
-            {/* Print page frame at origin — overlay only; does not own the grid */}
-            {showPrint && (
-              <>
-                <div
-                  className="pointer-events-none absolute z-[1] box-border border-2 border-dashed border-indigo-400/50"
-                  style={{
-                    left: 0,
-                    top: 0,
-                    width: printPage.width,
-                    height: printPage.height,
-                    // Light wash so the frame reads; grid still shows through
-                    background: 'rgba(15, 17, 21, 0.15)',
-                  }}
-                />
-                <div
-                  className="pointer-events-none absolute z-[1] box-border border border-dashed border-emerald-400/45"
-                  style={{
-                    left: margins.left,
-                    top: margins.top,
-                    width: Math.max(
-                      0,
-                      printPage.width - margins.left - margins.right,
-                    ),
-                    height: Math.max(
-                      0,
-                      printPage.height - margins.top - margins.bottom,
-                    ),
-                  }}
-                />
-                <div className="pointer-events-none absolute left-2 top-2 z-[2] rounded bg-zinc-950/90 px-1.5 py-0.5 text-[10px] font-medium text-zinc-300 ring-1 ring-zinc-600/80">
-                  {formatPageSizeLabel(
-                    canvas.printSizeId ?? 'letter',
-                    canvas.orientation ?? 'portrait',
-                  )}{' '}
-                  · {printPage.width}×{printPage.height}
-                  <span className="text-zinc-500">
-                    {' '}
-                    · m {margins.top}/{margins.right}/{margins.bottom}/
-                    {margins.left}
-                  </span>
-                </div>
-              </>
-            )}
+            {usePerPageGrid &&
+              printPageOrigins.map((origin, pageIndex) => {
+                const rect = resolvePageGridRect(
+                  gridExtent,
+                  origin,
+                  printPage,
+                  margins,
+                )
+                if (!rect) return null
+                return (
+                  <CanvasGridLayer
+                    key={`grid-${gridExtent}-${pageIndex}-${gridSpacing}-${gridOpacity}`}
+                    left={rect.left}
+                    top={rect.top}
+                    width={rect.width}
+                    height={rect.height}
+                    spacing={gridSpacing}
+                    opacity={gridOpacity}
+                  />
+                )
+              })}
 
             {items.length === 0 && (
               <div className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-center">
@@ -651,7 +902,9 @@ export function MainCanvas() {
         <ZoomBtn
           title={
             canvas.showPrintArea !== false
-              ? 'Fit print page to viewport'
+              ? printPageCount > 1
+                ? `Fit all ${printPageCount} print pages (${printPageLayout}) to viewport`
+                : 'Fit print page to viewport'
               : 'Fit free workspace to viewport'
           }
           onClick={zoomFitViewport}
@@ -711,18 +964,149 @@ export function MainCanvas() {
           <Focus className="h-3.5 w-3.5" />
         </ZoomBtn>
         <div className="mx-0.5 h-4 w-px bg-zinc-700" />
-        <ZoomBtn
-          title={
-            canvas.showGrid
-              ? 'Hide background grid'
-              : 'Show background grid across the viewport'
-          }
-          onClick={() => toggleGrid()}
-        >
-          <Grid3x3
-            className={`h-3.5 w-3.5 ${canvas.showGrid ? 'text-indigo-300' : ''}`}
-          />
-        </ZoomBtn>
+        <div className="relative flex items-center" ref={gridMenuRef}>
+          <ZoomBtn
+            title={
+              showGrid
+                ? `Hide grid (opacity ${gridOpacityPct}% / α ${gridOpacity.toFixed(2)}, max ${GRID_OPACITY_CSS_MAX})`
+                : 'Show grid (per page or whole board — open ▴ for settings)'
+            }
+            onClick={() => toggleGrid()}
+          >
+            <Grid3x3
+              className={`h-3.5 w-3.5 ${showGrid ? 'text-indigo-300' : ''}`}
+            />
+          </ZoomBtn>
+          {showGrid && (
+            <span
+              className="select-none px-0.5 text-[9px] tabular-nums text-zinc-500"
+              title={`Grid opacity: ${gridOpacityPct}% maps to CSS α ${gridOpacity.toFixed(2)} (max ${GRID_OPACITY_CSS_MAX})`}
+            >
+              {gridOpacityPct}%
+            </span>
+          )}
+          <button
+            type="button"
+            title="Grid settings — where the grid appears"
+            aria-expanded={gridMenuOpen}
+            aria-haspopup="menu"
+            onClick={() => setGridMenuOpen((v) => !v)}
+            className={`rounded p-1 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 ${
+              gridMenuOpen ? 'bg-zinc-800 text-indigo-300' : ''
+            }`}
+          >
+            <ChevronUp
+              className={`h-3 w-3 transition ${gridMenuOpen ? '' : 'rotate-180'}`}
+            />
+          </button>
+          {gridMenuOpen && (
+            <div
+              role="menu"
+              className="absolute bottom-full right-0 z-30 mb-2 w-60 overflow-hidden rounded-lg border border-zinc-700 bg-zinc-950 p-2 shadow-2xl"
+            >
+              <p className="px-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
+                Grid covers
+              </p>
+              <p className="mt-0.5 px-1 text-[10px] leading-snug text-zinc-600">
+                Full page / Printable = separate grid on each page. Whole board
+                = one continuous grid.
+              </p>
+              <div className="mt-2 flex flex-col gap-1">
+                {GRID_EXTENT_OPTIONS.map((opt) => {
+                  const active = gridExtent === opt.id
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={active}
+                      onClick={() => {
+                        setCanvas({
+                          gridExtent: opt.id,
+                          showGrid: true,
+                        })
+                      }}
+                      className={`rounded-md border px-2 py-1.5 text-left transition ${
+                        active
+                          ? 'border-indigo-500/50 bg-indigo-500/15 text-indigo-100'
+                          : 'border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200'
+                      }`}
+                    >
+                      <span className="block text-[11px] font-medium">
+                        {opt.label}
+                      </span>
+                      <span className="mt-0.5 block text-[9px] text-zinc-500">
+                        {opt.hint}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+              <div className="mt-2 border-t border-zinc-800 pt-2">
+                <label className="flex flex-col gap-1 px-1">
+                  <span className="text-[10px] text-zinc-500">
+                    Spacing · {gridSpacing}px
+                  </span>
+                  <input
+                    type="range"
+                    min={8}
+                    max={64}
+                    step={4}
+                    value={gridSpacing}
+                    onChange={(e) =>
+                      setCanvas({
+                        gridSpacing: Number(e.target.value),
+                        showGrid: true,
+                      })
+                    }
+                    className="w-full"
+                  />
+                </label>
+                <label className="mt-2 flex flex-col gap-1 px-1">
+                  <span className="text-[10px] text-zinc-500">
+                    Opacity · {gridOpacityPct}% of soft range → α{' '}
+                    {gridOpacity.toFixed(2)}
+                    <span className="ml-1 text-zinc-600">
+                      (bar 0–100% = α 0–{GRID_OPACITY_CSS_MAX})
+                    </span>
+                  </span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={gridOpacityPct}
+                    onInput={(e) => {
+                      const next = percentToGridOpacity(
+                        Number((e.target as HTMLInputElement).value),
+                      )
+                      setCanvas({
+                        gridOpacity: next,
+                        showGrid: true,
+                      })
+                    }}
+                    onChange={(e) => {
+                      const next = percentToGridOpacity(Number(e.target.value))
+                      setCanvas({
+                        gridOpacity: next,
+                        showGrid: true,
+                      })
+                    }}
+                    className="w-full"
+                  />
+                  <span className="text-[9px] leading-snug text-zinc-600">
+                    Full bar travel: 0% = invisible, 50% = α{' '}
+                    {(GRID_OPACITY_CSS_MAX / 2).toFixed(2)}, 100% = α{' '}
+                    {GRID_OPACITY_CSS_MAX} (not CSS 1.0).
+                  </span>
+                </label>
+              </div>
+              <p className="mt-2 px-1 text-[9px] text-zinc-600">
+                Also in left Properties panel when no card is selected.
+              </p>
+            </div>
+          )}
+        </div>
         <ZoomBtn
           title={
             canvas.snapToGrid
@@ -739,7 +1123,7 @@ export function MainCanvas() {
           title="Auto-organize: pack cards on the print-page grid inside margins"
           onClick={() => {
             if (items.length === 0) return
-            if (!canvas.showGrid) setCanvas({ showGrid: true })
+            if (!showGrid) setCanvas({ showGrid: true })
             autoOrganize()
           }}
         >

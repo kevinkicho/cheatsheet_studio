@@ -1,6 +1,12 @@
-import { useCallback, useRef } from 'react'
+import {
+  useCallback,
+  useRef,
+  useState,
+  type MouseEvent,
+  type PointerEvent,
+} from 'react'
 import { useDraggable } from '@dnd-kit/core'
-import { ImageIcon, Sigma, Table2 } from 'lucide-react'
+import { Check, Copy, ImageIcon, Sigma, Table2 } from 'lucide-react'
 import type { LibraryItem } from '@/types'
 import { FitContent } from '@/components/math/FitContent'
 import { FigureView } from '@/components/math/FigureView'
@@ -35,6 +41,7 @@ export function LibraryItemCard({
   const cardRef = useRef<HTMLDivElement | null>(null)
   const localHover = useLibraryHoverPreview()
   const useLocal = hoverPreviewEnabled && !hover
+  const [copied, setCopied] = useState(false)
 
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `lib-${item.id}`,
@@ -56,6 +63,20 @@ export function LibraryItemCard({
     item.type === 'table' ? Table2 : item.type === 'figure' ? ImageIcon : Sigma
 
   const previewH = compact ? 'h-[4.5rem]' : 'h-24'
+  const canCopyLatex = Boolean(item.latex)
+
+  const copyLatex = async (e: MouseEvent | PointerEvent) => {
+    e.stopPropagation()
+    e.preventDefault()
+    if (!item.latex) return
+    try {
+      await navigator.clipboard.writeText(item.latex)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1400)
+    } catch {
+      /* clipboard may be blocked */
+    }
+  }
 
   const handleEnter = () => {
     if (!hoverPreviewEnabled || isDragging) return
@@ -98,7 +119,7 @@ export function LibraryItemCard({
               {item.title}
             </h4>
             {/* Topic in top-right (was under the title) */}
-            <span className="max-w-[40%] shrink-0 truncate text-right text-[10px] leading-4 text-zinc-400/50">
+            <span className="max-w-[36%] shrink-0 truncate text-right text-[10px] leading-4 text-zinc-400/50">
               {item.topic}
             </span>
           </div>
@@ -135,6 +156,29 @@ export function LibraryItemCard({
               </FitContent>
             ))}
         </div>
+
+        {/* Copy KaTeX — interactive island (does not start drag) */}
+        {canCopyLatex && (
+          <button
+            type="button"
+            title="Copy KaTeX to clipboard"
+            onPointerDown={(e) => {
+              e.stopPropagation()
+            }}
+            onClick={(e) => {
+              void copyLatex(e)
+            }}
+            className={`absolute bottom-1 right-1 z-10 flex h-6 w-6 items-center justify-center rounded-md border border-zinc-700/80 bg-zinc-950/90 text-zinc-400 opacity-0 shadow transition hover:border-indigo-500/50 hover:text-indigo-200 group-hover:opacity-100 ${
+              copied ? 'opacity-100 border-emerald-500/40 text-emerald-300' : ''
+            }`}
+          >
+            {copied ? (
+              <Check className="h-3 w-3" />
+            ) : (
+              <Copy className="h-3 w-3" />
+            )}
+          </button>
+        )}
       </div>
 
       {useLocal &&
