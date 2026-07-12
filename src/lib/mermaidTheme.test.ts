@@ -4,6 +4,7 @@ import {
   STUDIO_DARK,
   applyStudioPaintToSvgString,
   mermaidInitOptions,
+  mermaidSourceSupportsClassDef,
   prepareStudioDarkSource,
   usesStudioDarkVariables,
 } from './mermaidTheme'
@@ -49,6 +50,36 @@ flowchart TD
     const beforeFlow = out.slice(0, out.indexOf('flowchart'))
     expect((beforeFlow.match(/^---/gm) || []).length).toBe(2)
     expect((beforeFlow.match(/config:/g) || []).length).toBe(1)
+  })
+
+  it('classDef only for flowchart/graph — not sequence or state', () => {
+    expect(mermaidSourceSupportsClassDef('flowchart TD\n  A-->B')).toBe(true)
+    expect(mermaidSourceSupportsClassDef('graph LR\n  A-->B')).toBe(true)
+    expect(
+      mermaidSourceSupportsClassDef(`sequenceDiagram
+    A->>B: hi`),
+    ).toBe(false)
+    expect(
+      mermaidSourceSupportsClassDef(`stateDiagram-v2
+    [*] --> A`),
+    ).toBe(false)
+
+    const seq = prepareStudioDarkSource(`sequenceDiagram
+    actor User
+    User->>UI: hi`)
+    expect(seq).toContain('---')
+    expect(seq).toContain('sequenceDiagram')
+    expect(seq).not.toMatch(/classDef/)
+
+    const state = prepareStudioDarkSource(`stateDiagram-v2
+    [*] --> Draft
+    Draft --> [*]`)
+    expect(state).toContain('stateDiagram-v2')
+    expect(state).not.toMatch(/classDef/)
+
+    const flow = prepareStudioDarkSource(`flowchart TD
+    A --> B`)
+    expect(flow).toMatch(/classDef default/)
   })
 
   it('hard paint rewrites pale fills like verify-v5', () => {

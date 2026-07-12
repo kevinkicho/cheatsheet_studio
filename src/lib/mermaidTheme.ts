@@ -134,9 +134,31 @@ export function mermaidInitOptions(
 // ── Source prep (verify-app-stack method) ────────────────────────────────────
 
 /**
- * Prepend official frontmatter + classDef default — same as
- * scripts/verify-studio-theme-screenshot.mjs (produced STUDIO_DARK_OK).
- * Skips if source already has frontmatter or classDef default.
+ * True when Mermaid source is a flowchart/graph (only family that accepts
+ * `classDef` syntax). Sequence, state, class, ER, pie, mindmap reject it.
+ */
+export function mermaidSourceSupportsClassDef(source: string): boolean {
+  // Strip YAML frontmatter if present
+  let body = source.trim()
+  if (/^---\s*\r?\n/.test(body)) {
+    const end = body.indexOf('\n---', 3)
+    if (end !== -1) {
+      body = body.slice(end + 4).trim()
+    }
+  }
+  // Skip blank / comment lines
+  const first = body
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .find((l) => l && !l.startsWith('%%'))
+  if (!first) return false
+  return /^(flowchart|graph)\b/i.test(first)
+}
+
+/**
+ * Prepend official frontmatter (+ flowchart-only classDef default).
+ * classDef is flowchart/graph syntax only — never append for sequence/state/etc.
+ * (User errors: state "DEFAULT_CLASSDEF_ID", sequence "got 'TXT'".)
  */
 export function prepareStudioDarkSource(
   source: string,
@@ -170,7 +192,11 @@ config:
     text = fm + text
   }
 
-  if (!/classDef\s+default\b/i.test(text)) {
+  // Flowchart/graph only — classDef breaks sequence, state, class, ER, pie, mindmap
+  if (
+    mermaidSourceSupportsClassDef(text) &&
+    !/classDef\s+default\b/i.test(text)
+  ) {
     text += `\n    classDef default fill:${colors.nodeFill},stroke:${colors.nodeStroke},color:${colors.nodeText}`
   }
 
