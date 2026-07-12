@@ -3,6 +3,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react'
@@ -25,6 +26,18 @@ import {
   applyHandleToRect,
   type ResizeHandle,
 } from '@/lib/resizeHandles'
+import {
+  getPrintAwareSnapOrigin,
+  ORGANIZE_GRID,
+  snapToGridValue,
+} from '@/lib/autoOrganize'
+import {
+  clearLiveCanvasDrag,
+  getLiveCanvasDrag,
+  liveRectForItem,
+  setLiveCanvasDrag,
+  subscribeLiveCanvasDrag,
+} from '@/lib/liveCanvasDrag'
 
 interface CanvasItemViewProps {
   item: CanvasItem
@@ -37,6 +50,10 @@ interface CanvasItemViewProps {
 const MAX_AUTO_W = 520
 const MAX_AUTO_H = 420
 const DRAG_THRESHOLD_PX = 3
+/** Title row in card chrome: h-4 (16px) + mb-0.5 (2px). Reserved in flow, not overlay. */
+const TITLE_BAND_PX = 18
+/** Minimal chrome slack when snugging autoFit cards (avoid oversized height). */
+const AUTOFIT_SLACK_PX = 2
 
 /** Natural-size measure target for autoFit (unscaled). */
 function NaturalBody({ item }: { item: CanvasItem }) {
@@ -110,8 +127,50 @@ export function CanvasItemView({
   } | null>(null)
   const lastFitRef = useRef({ w: 0, h: 0 })
   const [dragging, setDragging] = useState(false)
-  /** Bumps FitContent contentKey when Mermaid finishes async render. */
-  const [mermaidReadyKey, setMermaidReadyKey] = useState(0)
+  const snapToGrid = useCanvasStore((s) => s.canvas.snapToGrid === true)
+  const gridSpacing = useCanvasStore((s) => s.canvas.gridSpacing ?? ORGANIZE_GRID)
+  /**
+   * Shared live drag (multi-select siblings) — only selected cards subscribe
+   * so the rest of the sheet does not re-render every pointer move.
+   */
+  const liveDrag = useSyncExternalStore(
+    selected ? subscribeLiveCanvasDrag : () => () => {},
+    getLiveCanvasDrag,
+    getLiveCanvasDrag,
+  )
+
+  /** Snap live coords so UI matches store snap (was broken by local-only paint). */
+  const snapLive = useCallback(
+    (x: number, y: number, w: number, h: number) => {
+      const g = Math.max(4, gridSpacing)
+      if (!snapToGrid) {
+        return {
+          x: Math.round(x),
+          y: Math.round(y),
+          w: Math.round(w),
+          h: Math.round(h),
+        }
+      }
+      // Read canvas at call time — avoid re-creating snapLive on every canvas field change
+      const canvas = useCanvasStore.getState().canvas
+      const { ox, oy } = getPrintAwareSnapOrigin(x, y, canvas)
+      return {
+        x: snapToGridValue(x, g, ox),
+        y: snapToGridValue(y, g, oy),
+        w: Math.max(g, snapToGridValue(w, g)),
+        h: Math.max(g, snapToGridValue(h, g)),
+      }
+    },
+    [snapToGrid, gridSpacing],
+  )
+  /** Pending store commit — written only on pointer-up (not every frame). */
+  const pendingGeomRef = useRef<{
+    mode: 'move' | 'resize'
+    rects: Record<string, { x: number; y: number; width: number; height: number }>
+    groupOrigins?: Record<string, { x: number; y: number }>
+    dx?: number
+    dy?: number
+  } | null>(null)
 
   const autoFit = item.autoFit === true
   const showTitle = item.showTitle !== false && Boolean(item.title)
@@ -119,12 +178,17 @@ export function CanvasItemView({
   useLayoutEffect(() => {
     if (!autoFit || !naturalRef.current) return
 
+    let settled = false
+
     const measure = () => {
       const body = naturalRef.current
       if (!body) return
 
       const style = item.style ?? {}
       const pad = (style.padding ?? CARD_DEFAULTS.padding) * 2
+      // Title sits in normal flow above the body — reserve its band so the body
+      // height equals content height (no forced shrink / grow gutters).
+      const titleBand = showTitle ? TITLE_BAND_PX : 0
 
       const contentW = Math.ceil(
         Math.max(body.scrollWidth, body.offsetWidth, 1),
@@ -134,17 +198,29 @@ export function CanvasItemView({
       )
       if (contentW < 2 && contentH < 2) return
 
-      // Natural content size only — title overlays; no reserved chrome gutters.
-      const nextW = Math.min(MAX_AUTO_W, Math.max(120, contentW + pad + 2))
-      const nextH = Math.min(MAX_AUTO_H, Math.max(48, contentH + pad + 2))
+      // Snug: natural content + title chrome only (minimal slack).
+      const nextW = Math.min(
+        MAX_AUTO_W,
+        Math.max(80, contentW + pad + AUTOFIT_SLACK_PX),
+      )
+      const nextH = Math.min(
+        MAX_AUTO_H,
+        Math.max(40, contentH + pad + titleBand + AUTOFIT_SLACK_PX),
+      )
 
       const prev = lastFitRef.current
-      if (Math.abs(prev.w - nextW) < 2 && Math.abs(prev.h - nextH) < 2) return
-      if (
-        Math.abs(item.width - nextW) < 2 &&
-        Math.abs(item.height - nextH) < 2
-      ) {
+      const sizeStable =
+        Math.abs(prev.w - nextW) < 2 && Math.abs(prev.h - nextH) < 2
+      const alreadySized =
+        Math.abs(item.width - nextW) < 2 && Math.abs(item.height - nextH) < 2
+
+      if (sizeStable || alreadySized) {
         lastFitRef.current = { w: nextW, h: nextH }
+        // Freeze autoFit once snug so contentFill may grow on user free-transform
+        if (!settled && alreadySized) {
+          settled = true
+          updateItem(item.id, { autoFit: false })
+        }
         return
       }
 
@@ -155,13 +231,24 @@ export function CanvasItemView({
     measure()
     const ro = new ResizeObserver(() => requestAnimationFrame(measure))
     ro.observe(naturalRef.current)
-    const t = window.setTimeout(measure, 80)
+    // KaTeX / fonts settle after mount
+    const t1 = window.setTimeout(measure, 50)
+    const t2 = window.setTimeout(measure, 150)
+    const t3 = window.setTimeout(measure, 350)
+    if (document.fonts?.ready) {
+      void document.fonts.ready.then(() => {
+        if (!settled) measure()
+      })
+    }
     return () => {
       ro.disconnect()
-      window.clearTimeout(t)
+      window.clearTimeout(t1)
+      window.clearTimeout(t2)
+      window.clearTimeout(t3)
     }
   }, [
     autoFit,
+    showTitle,
     item.id,
     item.latex,
     item.tableMarkdown,
@@ -174,6 +261,7 @@ export function CanvasItemView({
     item.width,
     item.height,
     resizeItem,
+    updateItem,
   ])
 
   const beginMove = useCallback(
@@ -293,6 +381,17 @@ export function CanvasItemView({
         resizeHandle: handle,
         shiftToggle: false,
       }
+      setLiveCanvasDrag({
+        type: 'resize',
+        rects: {
+          [item.id]: {
+            x: item.x,
+            y: item.y,
+            width: item.width,
+            height: item.height,
+          },
+        },
+      })
       setDragging(true)
     },
     [
@@ -306,6 +405,39 @@ export function CanvasItemView({
       interactive,
     ],
   )
+
+  /** One store write at gesture end — keeps drag smooth. */
+  const commitPendingGeom = useCallback(() => {
+    const p = pendingGeomRef.current
+    pendingGeomRef.current = null
+    clearLiveCanvasDrag()
+    if (!p) return
+    if (p.mode === 'move') {
+      if (
+        p.groupOrigins &&
+        p.dx != null &&
+        p.dy != null &&
+        Object.keys(p.groupOrigins).length > 1
+      ) {
+        moveItemsBy(p.groupOrigins, p.dx, p.dy)
+        return
+      }
+      const entries = Object.entries(p.rects)
+      if (entries.length > 0) {
+        for (const [id, r] of entries) {
+          moveItem(id, r.x, r.y)
+        }
+        return
+      }
+      if (p.groupOrigins && p.dx != null && p.dy != null) {
+        moveItemsBy(p.groupOrigins, p.dx, p.dy)
+      }
+      return
+    }
+    if (p.mode === 'resize') {
+      applyItemRects(p.rects, { manual: true })
+    }
+  }, [moveItem, moveItemsBy, applyItemRects])
 
   const onPointerMove = useCallback(
     (e: ReactPointerEvent) => {
@@ -328,17 +460,36 @@ export function CanvasItemView({
       const dx = rawDx / z
       const dy = rawDy / z
       if (d.mode === 'move') {
-        if (d.groupOrigins && Object.keys(d.groupOrigins).length > 1) {
-          moveItemsBy(d.groupOrigins, dx, dy)
-        } else {
-          const nx = d.origX + dx
-          const ny = d.origY + dy
-          if (Number.isFinite(nx) && Number.isFinite(ny)) {
-            moveItem(item.id, nx, ny)
+        // Paint via shared live drag (no Zustand items write until pointer-up)
+        const s = snapLive(d.origX + dx, d.origY + dy, d.origW, d.origH)
+        const sdx = s.x - d.origX
+        const sdy = s.y - d.origY
+        if (d.groupOrigins && Object.keys(d.groupOrigins).length > 0) {
+          setLiveCanvasDrag({
+            type: 'move',
+            origins: d.groupOrigins,
+            dx: sdx,
+            dy: sdy,
+          })
+          pendingGeomRef.current = {
+            mode: 'move',
+            rects:
+              Object.keys(d.groupOrigins).length === 1
+                ? {
+                    [item.id]: {
+                      x: s.x,
+                      y: s.y,
+                      width: s.w,
+                      height: s.h,
+                    },
+                  }
+                : {},
+            groupOrigins: d.groupOrigins,
+            dx: sdx,
+            dy: sdy,
           }
         }
       } else {
-        // Free-transform from active handle (single card: 4 corners + 4 edges)
         const handle = d.resizeHandle ?? 'se'
         const next = applyHandleToRect(
           { x: d.origX, y: d.origY, w: d.origW, h: d.origH },
@@ -346,27 +497,24 @@ export function CanvasItemView({
           dx,
           dy,
         )
-        applyItemRects(
-          {
-            [item.id]: {
-              x: next.x,
-              y: next.y,
-              width: next.w,
-              height: next.h,
-            },
-          },
-          { manual: true },
-        )
+        const s = snapLive(next.x, next.y, next.w, next.h)
+        const rect = {
+          x: s.x,
+          y: s.y,
+          width: s.w,
+          height: s.h,
+        }
+        setLiveCanvasDrag({
+          type: 'resize',
+          rects: { [item.id]: rect },
+        })
+        pendingGeomRef.current = {
+          mode: 'resize',
+          rects: { [item.id]: rect },
+        }
       }
     },
-    [
-      item.id,
-      moveItem,
-      moveItemsBy,
-      applyItemRects,
-      zoom,
-      interactive,
-    ],
+    [item.id, zoom, interactive, snapLive],
   )
 
   const endPointer = useCallback(
@@ -383,7 +531,13 @@ export function CanvasItemView({
         })
       }
 
-      if (d) {
+      // Single store commit at end of gesture
+      commitPendingGeom()
+
+      if (d && (d.active || d.mode === 'resize')) {
+        useCanvasStore.getState().endHistoryBatch()
+      } else if (d) {
+        // Click without drag — still close history batch opened in beginMove
         useCanvasStore.getState().endHistoryBatch()
       }
 
@@ -398,7 +552,7 @@ export function CanvasItemView({
         }
       }
     },
-    [item.id, item.contentFitKey, updateItem, interactive],
+    [item.id, item.contentFitKey, updateItem, interactive, commitPendingGeom],
   )
 
   /**
@@ -423,10 +577,24 @@ export function CanvasItemView({
 
   const style = item.style ?? {}
   const pad = style.padding ?? CARD_DEFAULTS.padding
-  const safeW = Math.max(80, item.width || 80)
-  const safeH = Math.max(48, item.height || 48)
-  const left = Number.isFinite(item.x) ? item.x : 0
-  const top = Number.isFinite(item.y) ? item.y : 0
+  const liveRect = liveRectForItem(
+    item.id,
+    {
+      x: item.x,
+      y: item.y,
+      width: item.width,
+      height: item.height,
+    },
+    liveDrag,
+  )
+  const geomX = liveRect?.x ?? item.x
+  const geomY = liveRect?.y ?? item.y
+  const geomW = liveRect?.width ?? item.width
+  const geomH = liveRect?.height ?? item.height
+  const safeW = Math.max(40, geomW || 80)
+  const safeH = Math.max(32, geomH || 48)
+  const left = Number.isFinite(geomX) ? geomX : 0
+  const top = Number.isFinite(geomY) ? geomY : 0
   const asFigure = isFigureLike(item)
   // Background fill ON unless user set transparentBackground: true
   // (figures and equations share the same solid panel default)
@@ -529,6 +697,9 @@ export function CanvasItemView({
             style={{
               width: 'max-content',
               maxWidth: MAX_AUTO_W - pad * 2,
+              // Match card body base font so autoFit width ≈ FitContent natural size
+              fontSize: style.fontSize ?? 18,
+              color: style.color ?? '#e8eaed',
             }}
           >
             <div ref={naturalRef}>
@@ -541,10 +712,8 @@ export function CanvasItemView({
         <div className="pointer-events-none relative min-h-0 w-full flex-1">
           <CanvasCardBody
             item={item}
-            showBadge={selected}
-            mermaidReadyKey={mermaidReadyKey}
-            onMermaidRendered={() => setMermaidReadyKey((k) => k + 1)}
-            paintZoom={zoom}
+            showBadge={selected && !dragging}
+            interactiveFast={dragging}
           />
         </div>
       </div>

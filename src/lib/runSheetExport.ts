@@ -19,7 +19,13 @@ import {
   canvasToBlob,
   triggerBlobDownload,
 } from '@/lib/exportCapture'
-import type { ExportColorMode, ExportFormat } from '@/lib/exportFormats'
+import type {
+  ExportBackgroundMode,
+  ExportColorMode,
+  ExportFormat,
+  ExportPackageMode,
+  ExportPageArrangement,
+} from '@/lib/exportFormats'
 import { exportFormatMeta } from '@/lib/exportFormats'
 
 export type SheetExportProgress = {
@@ -44,6 +50,20 @@ export type SheetExportOptions = {
   pageIndices?: number[]
   /** Color treatment after capture (default color). */
   colorMode?: ExportColorMode
+  /** Draw sheet grid in export (default false). */
+  showGrid?: boolean
+  /** Page fill: transparent (default) or board background. */
+  backgroundMode?: ExportBackgroundMode
+  /**
+   * How pages are ordered in a combined raster stitch / preview.
+   * PDF multi-page always one page per print frame.
+   */
+  pageArrangement?: ExportPageArrangement
+  /**
+   * combined = one file (PDF multi-page or stitched image).
+   * separate = one file per page.
+   */
+  packageMode?: ExportPackageMode
 }
 
 /** Normalize and clamp selected page indices against total page count. */
@@ -78,6 +98,10 @@ export async function runSheetExport(
   const scale = options.scale ?? 2
   const jpegQuality = options.jpegQuality ?? 0.92
   const colorMode = options.colorMode ?? 'color'
+  const showGrid = options.showGrid === true
+  const backgroundMode = options.backgroundMode ?? 'transparent'
+  const packageMode = options.packageMode ?? 'combined'
+  const pageArrangement = options.pageArrangement ?? 'vertical'
 
   const allRects = getExportPageRects(canvas)
   if (allRects.length === 0) {
@@ -95,7 +119,6 @@ export async function runSheetExport(
     items: itemsForPage(items, page),
   }))
 
-  // Preserve original page numbers in data attribute for labeling
   const originalIndices = selected
 
   const itemCount = new Set(models.flatMap((m) => m.items.map((i) => i.id)))
@@ -107,6 +130,20 @@ export async function runSheetExport(
       'No cards are on the selected print page(s). Move cards onto the dashed page frame, or select different pages.',
     )
   }
+
+  // Export canvas clone: grid + background modes
+  const exportCanvas: SheetCanvas = {
+    ...canvas,
+    showGrid,
+    background:
+      backgroundMode === 'transparent'
+        ? 'transparent'
+        : canvas.background || '#0f1115',
+  }
+  const captureBg: string | null =
+    backgroundMode === 'transparent'
+      ? null
+      : exportCanvas.background || '#0f1115'
 
   onProgress?.({
     phase: 'prepare',
@@ -138,7 +175,7 @@ export async function runSheetExport(
       root!.render(
         createElement(PdfExportPages, {
           pages: models,
-          canvas,
+          canvas: exportCanvas,
         }),
       )
     })
@@ -151,7 +188,6 @@ export async function runSheetExport(
       throw new Error('Export pages failed to render')
     }
 
-    // Pair DOM pages with board rects + original 1-based labels
     const jobs = pageEls.map((el, i) => ({
       el,
       rect: pageRects[i]!,
@@ -159,7 +195,16 @@ export async function runSheetExport(
     }))
 
     if (format === 'pdf') {
-      await writePdf(jobs, title, itemCount, scale, colorMode, onProgress)
+      await writePdf(
+        jobs,
+        title,
+        itemCount,
+        scale,
+        colorMode,
+        captureBg,
+        packageMode,
+        onProgress,
+      )
     } else {
       await writeImages(
         jobs,
@@ -169,6 +214,9 @@ export async function runSheetExport(
         scale,
         jpegQuality,
         colorMode,
+        captureBg,
+        packageMode,
+        pageArrangement,
         onProgress,
       )
     }
@@ -200,26 +248,106 @@ type PageJob = {
   label: number
 }
 
+async function captureJob(
+  job: PageJob,
+  i: number,
+  scale: number,
+  colorMode: ExportColorMode,
+  backgroundColor: string | null,
+): Promise<HTMLCanvasElement> {
+  return capturePageElement(
+    job.el,
+    {
+      index: i,
+      x: 0,
+      y: 0,
+      width: job.rect.width,
+      height: job.rect.height,
+    },
+    {
+      scale,
+      colorMode,
+      backgroundColor,
+    },
+  )
+}
+
 async function writePdf(
   jobs: PageJob[],
   title: string,
   itemCount: number,
   scale: number,
   colorMode: ExportColorMode,
+  backgroundColor: string | null,
+  packageMode: ExportPackageMode,
   onProgress?: (p: SheetExportProgress) => void,
 ) {
-  const first = jobs[0]!.rect
-  const landscape = first.width > first.height
   const pxToPt = 0.75
+  // PDF uses JPEG pages — transparent bg becomes dark; use board if transparent
+  const bg = backgroundColor === null ? '#0f1115' : backgroundColor
+
+  if (packageMode === 'separate') {
+    const saved: string[] = []
+    for (let i = 0; i < jobs.length; i++) {
+      const { rect, label } = jobs[i]!
+      onProgress?.({
+        phase: 'capture',
+        page: i + 1,
+        totalPages: jobs.length,
+        itemCount,
+        format: 'pdf',
+        message: `Capturing page ${i + 1} of ${jobs.length}…`,
+      })
+      const canvasEl = await captureJob(jobs[i]!, i, scale, colorMode, bg)
+      let img: string
+      try {
+        img = canvasEl.toDataURL('image/jpeg', 0.92)
+      } catch {
+        throw new Error(
+          'PDF capture was blocked by the browser (cross-origin image). Re-import figures or use local images.',
+        )
+      }
+      const wPt = rect.width * pxToPt
+      const hPt = rect.height * pxToPt
+      const pdf = new jsPDF({
+        orientation: wPt > hPt ? 'landscape' : 'portrait',
+        unit: 'pt',
+        format: [wPt, hPt],
+        compress: true,
+      })
+      pdf.addImage(img, 'JPEG', 0, 0, wPt, hPt, undefined, 'FAST')
+      const filename =
+        jobs.length > 1
+          ? sanitizeExportFilename(title, 'pdf', label)
+          : sanitizeExportFilename(title, 'pdf')
+      triggerBlobDownload(pdf.output('blob'), filename)
+      saved.push(filename)
+      if (i < jobs.length - 1) await new Promise((r) => setTimeout(r, 150))
+    }
+    onProgress?.({
+      phase: 'done',
+      totalPages: jobs.length,
+      itemCount,
+      format: 'pdf',
+      message:
+        saved.length === 1
+          ? doneMessage(saved[0]!, itemCount, 1)
+          : `Saved ${saved.length} PDF files — check Downloads`,
+    })
+    return
+  }
+
+  // Combined multi-page PDF
+  const first = jobs[0]!.rect
   const pdf = new jsPDF({
-    orientation: landscape ? 'landscape' : 'portrait',
+    orientation: first.width > first.height ? 'landscape' : 'portrait',
     unit: 'pt',
     format: [first.width * pxToPt, first.height * pxToPt],
     compress: true,
   })
 
   for (let i = 0; i < jobs.length; i++) {
-    const { el, rect } = jobs[i]!
+    const { rect } = jobs[i]!
     onProgress?.({
       phase: 'capture',
       page: i + 1,
@@ -229,23 +357,7 @@ async function writePdf(
       message: `Capturing page ${i + 1} of ${jobs.length}…`,
     })
 
-    const canvasEl = await capturePageElement(
-      el,
-      {
-        index: i,
-        x: 0,
-        y: 0,
-        width: rect.width,
-        height: rect.height,
-      },
-      {
-        scale,
-        colorMode,
-        // Match studio board (not forced white paper)
-        backgroundColor: el.style.background || undefined,
-      },
-    )
-
+    const canvasEl = await captureJob(jobs[i]!, i, scale, colorMode, bg)
     let img: string
     try {
       img = canvasEl.toDataURL('image/jpeg', 0.92)
@@ -291,14 +403,20 @@ async function writeImages(
   scale: number,
   jpegQuality: number,
   colorMode: ExportColorMode,
+  backgroundColor: string | null,
+  packageMode: ExportPackageMode,
+  pageArrangement: ExportPageArrangement,
   onProgress?: (p: SheetExportProgress) => void,
 ) {
   const mime = format === 'png' ? 'image/png' : 'image/jpeg'
-  const multi = jobs.length > 1
-  const saved: string[] = []
+  // JPEG has no alpha — transparent falls back to board
+  const bg =
+    format === 'jpeg' && backgroundColor === null
+      ? '#0f1115'
+      : backgroundColor
 
+  const captured: HTMLCanvasElement[] = []
   for (let i = 0; i < jobs.length; i++) {
-    const { el, rect, label } = jobs[i]!
     onProgress?.({
       phase: 'capture',
       page: i + 1,
@@ -307,24 +425,34 @@ async function writeImages(
       format,
       message: `Capturing page ${i + 1} of ${jobs.length}…`,
     })
+    captured.push(await captureJob(jobs[i]!, i, scale, colorMode, bg))
+  }
 
-    const canvasEl = await capturePageElement(
-      el,
-      {
-        index: i,
-        x: 0,
-        y: 0,
-        width: rect.width,
-        height: rect.height,
-      },
-      {
-        scale,
-        colorMode,
-        // Match studio board (not forced white paper)
-        backgroundColor: el.style.background || undefined,
-      },
-    )
+  if (packageMode === 'combined' && jobs.length > 1) {
+    onProgress?.({
+      phase: 'write',
+      totalPages: jobs.length,
+      itemCount,
+      format,
+      message: 'Stitching pages…',
+    })
+    const stitched = stitchCanvases(captured, jobs, pageArrangement, bg)
+    const blob = await canvasToBlob(stitched, mime, jpegQuality)
+    const filename = sanitizeExportFilename(title, format)
+    triggerBlobDownload(blob, filename)
+    onProgress?.({
+      phase: 'done',
+      totalPages: jobs.length,
+      itemCount,
+      format,
+      message: doneMessage(filename, itemCount, jobs.length),
+    })
+    return
+  }
 
+  const saved: string[] = []
+  for (let i = 0; i < captured.length; i++) {
+    const { label } = jobs[i]!
     onProgress?.({
       phase: 'write',
       page: i + 1,
@@ -333,17 +461,15 @@ async function writeImages(
       format,
       message: `Saving page ${i + 1}…`,
     })
-
-    const blob = await canvasToBlob(canvasEl, mime, jpegQuality)
-    // Use original page numbers in multi-file names when not exporting all sequentially
-    const filename = multi
-      ? sanitizeExportFilename(title, format, label)
-      : sanitizeExportFilename(title, format)
+    const blob = await canvasToBlob(captured[i]!, mime, jpegQuality)
+    const filename =
+      jobs.length > 1
+        ? sanitizeExportFilename(title, format, label)
+        : sanitizeExportFilename(title, format)
     triggerBlobDownload(blob, filename)
     saved.push(filename)
-
-    if (multi && i < jobs.length - 1) {
-      await new Promise((r) => setTimeout(r, 200))
+    if (i < captured.length - 1) {
+      await new Promise((r) => setTimeout(r, 150))
     }
   }
 
@@ -357,6 +483,59 @@ async function writeImages(
         ? doneMessage(saved[0]!, itemCount, 1)
         : `Saved ${saved.length} ${format.toUpperCase()} files — check Downloads`,
   })
+}
+
+/** Stitch page captures into one image (vertical stack or sheet layout). */
+function stitchCanvases(
+  pages: HTMLCanvasElement[],
+  jobs: PageJob[],
+  arrangement: ExportPageArrangement,
+  backgroundColor: string | null,
+): HTMLCanvasElement {
+  if (pages.length === 1) return pages[0]!
+
+  if (arrangement === 'vertical') {
+    const w = Math.max(...pages.map((p) => p.width))
+    const h = pages.reduce((s, p) => s + p.height, 0)
+    const out = document.createElement('canvas')
+    out.width = w
+    out.height = h
+    const ctx = out.getContext('2d')!
+    if (backgroundColor) {
+      ctx.fillStyle = backgroundColor
+      ctx.fillRect(0, 0, w, h)
+    }
+    let y = 0
+    for (const p of pages) {
+      ctx.drawImage(p, 0, y)
+      y += p.height
+    }
+    return out
+  }
+
+  // asSheet: place pages at relative board positions
+  const minX = Math.min(...jobs.map((j) => j.rect.x))
+  const minY = Math.min(...jobs.map((j) => j.rect.y))
+  const maxX = Math.max(...jobs.map((j) => j.rect.x + j.rect.width))
+  const maxY = Math.max(...jobs.map((j) => j.rect.y + j.rect.height))
+  const boardW = maxX - minX
+  const boardH = maxY - minY
+  const scale = pages[0]!.width / jobs[0]!.rect.width
+  const out = document.createElement('canvas')
+  out.width = Math.max(1, Math.round(boardW * scale))
+  out.height = Math.max(1, Math.round(boardH * scale))
+  const ctx = out.getContext('2d')!
+  if (backgroundColor) {
+    ctx.fillStyle = backgroundColor
+    ctx.fillRect(0, 0, out.width, out.height)
+  }
+  for (let i = 0; i < pages.length; i++) {
+    const j = jobs[i]!
+    const dx = Math.round((j.rect.x - minX) * scale)
+    const dy = Math.round((j.rect.y - minY) * scale)
+    ctx.drawImage(pages[i]!, dx, dy)
+  }
+  return out
 }
 
 function doneMessage(filename: string, itemCount: number, pages: number) {

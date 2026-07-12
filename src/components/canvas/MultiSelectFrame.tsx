@@ -1,4 +1,10 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import {
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import { useCanvasStore } from '@/stores/canvasStore'
 import {
@@ -12,6 +18,18 @@ import {
   type ItemRect,
   type ResizeHandle,
 } from '@/lib/resizeHandles'
+import {
+  clearLiveCanvasDrag,
+  getLiveCanvasDrag,
+  liveRectForItem,
+  setLiveCanvasDrag,
+  subscribeLiveCanvasDrag,
+} from '@/lib/liveCanvasDrag'
+import {
+  getPrintAwareSnapOrigin,
+  ORGANIZE_GRID,
+  snapToGridValue,
+} from '@/lib/autoOrganize'
 
 const PAD = 6
 const MIN_W = 80
@@ -22,6 +40,9 @@ const MIN_H = 48
  * high z-index so move/resize stay above everything else (including print
  * overlays). Appears when 2+ items are selected.
  * Free-transform via 4 corners + 4 edge midpoints.
+ *
+ * During drag/resize, geometry is painted via liveCanvasDrag (no per-frame
+ * Zustand item writes). Store commits once on pointer-up.
  */
 export function MultiSelectFrame({
   zoom,
@@ -34,12 +55,19 @@ export function MultiSelectFrame({
   const selectedIds = useCanvasStore((s) => s.selectedIds)
   const moveItemsBy = useCanvasStore((s) => s.moveItemsBy)
   const applyItemRects = useCanvasStore((s) => s.applyItemRects)
+  const snapToGrid = useCanvasStore((s) => s.canvas.snapToGrid === true)
+  const gridSpacing = useCanvasStore(
+    (s) => s.canvas.gridSpacing ?? ORGANIZE_GRID,
+  )
+
+  const liveDrag = useSyncExternalStore(
+    subscribeLiveCanvasDrag,
+    getLiveCanvasDrag,
+    getLiveCanvasDrag,
+  )
 
   const selected = useMemo(
-    () =>
-      items.filter(
-        (i) => selectedIds.includes(i.id) && !i.hidden,
-      ),
+    () => items.filter((i) => selectedIds.includes(i.id) && !i.hidden),
     [items, selectedIds],
   )
 
@@ -50,10 +78,16 @@ export function MultiSelectFrame({
     let maxX = -Infinity
     let maxY = -Infinity
     for (const it of selected) {
-      minX = Math.min(minX, it.x)
-      minY = Math.min(minY, it.y)
-      maxX = Math.max(maxX, it.x + it.width)
-      maxY = Math.max(maxY, it.y + it.height)
+      const r =
+        liveRectForItem(
+          it.id,
+          { x: it.x, y: it.y, width: it.width, height: it.height },
+          liveDrag,
+        ) ?? { x: it.x, y: it.y, width: it.width, height: it.height }
+      minX = Math.min(minX, r.x)
+      minY = Math.min(minY, r.y)
+      maxX = Math.max(maxX, r.x + r.width)
+      maxY = Math.max(maxY, r.y + r.height)
     }
     if (!Number.isFinite(minX)) return null
     return {
@@ -62,7 +96,7 @@ export function MultiSelectFrame({
       w: maxX - minX + PAD * 2,
       h: maxY - minY + PAD * 2,
     }
-  }, [selected])
+  }, [selected, liveDrag])
 
   const maxItemZ = useMemo(
     () => selected.reduce((m, i) => Math.max(m, i.zIndex), 1),
@@ -78,6 +112,14 @@ export function MultiSelectFrame({
     origins: Record<string, { x: number; y: number }>
     itemRects: Record<string, ItemRect>
     groupBounds: { x: number; y: number; w: number; h: number }
+  } | null>(null)
+
+  const pendingRef = useRef<{
+    mode: 'move' | 'resize'
+    origins?: Record<string, { x: number; y: number }>
+    dx?: number
+    dy?: number
+    rects?: Record<string, ItemRect>
   } | null>(null)
 
   const [dragging, setDragging] = useState(false)
@@ -150,36 +192,84 @@ export function MultiSelectFrame({
       const d = dragRef.current
       if (!d || d.pointerId !== e.pointerId) return
       const z = zoom > 0.01 ? zoom : 1
-      const dx = (e.clientX - d.startX) / z
-      const dy = (e.clientY - d.startY) / z
+      let dx = (e.clientX - d.startX) / z
+      let dy = (e.clientY - d.startY) / z
+
       if (d.mode === 'move') {
-        moveItemsBy(d.origins, dx, dy)
-        return
+        // Snap group delta from first origin (same grid as single-card drag)
+        if (snapToGrid) {
+          const firstId = Object.keys(d.origins)[0]
+          const o = firstId ? d.origins[firstId] : null
+          if (o) {
+            const g = Math.max(4, gridSpacing)
+            const canvas = useCanvasStore.getState().canvas
+            const nx = o.x + dx
+            const ny = o.y + dy
+            const { ox, oy } = getPrintAwareSnapOrigin(nx, ny, canvas)
+            dx = snapToGridValue(nx, g, ox) - o.x
+            dy = snapToGridValue(ny, g, oy) - o.y
+          }
+        } else {
+          dx = Math.round(dx)
+          dy = Math.round(dy)
+        }
+        setLiveCanvasDrag({ type: 'move', origins: d.origins, dx, dy })
+        pendingRef.current = { mode: 'move', origins: d.origins, dx, dy }
+      } else {
+        if (!d.handle) return
+        const newBounds = applyHandleToRect(d.groupBounds, d.handle, dx, dy)
+        let mapped = mapItemsToNewBounds(
+          d.itemRects,
+          d.groupBounds,
+          newBounds,
+        )
+        if (snapToGrid) {
+          const g = Math.max(4, gridSpacing)
+          const canvas = useCanvasStore.getState().canvas
+          const next: Record<string, ItemRect> = {}
+          for (const [id, r] of Object.entries(mapped)) {
+            const { ox, oy } = getPrintAwareSnapOrigin(r.x, r.y, canvas)
+            next[id] = {
+              x: snapToGridValue(r.x, g, ox),
+              y: snapToGridValue(r.y, g, oy),
+              width: Math.max(g, snapToGridValue(r.width, g)),
+              height: Math.max(g, snapToGridValue(r.height, g)),
+            }
+          }
+          mapped = next
+        }
+        setLiveCanvasDrag({ type: 'resize', rects: mapped })
+        pendingRef.current = { mode: 'resize', rects: mapped }
       }
-      if (!d.handle) return
-      const newBounds = applyHandleToRect(d.groupBounds, d.handle, dx, dy)
-      const mapped = mapItemsToNewBounds(
-        d.itemRects,
-        d.groupBounds,
-        newBounds,
-      )
-      applyItemRects(mapped, { manual: true })
     },
-    [zoom, moveItemsBy, applyItemRects],
+    [zoom, snapToGrid, gridSpacing],
   )
 
-  const endPointer = useCallback((e: ReactPointerEvent) => {
-    const d = dragRef.current
-    if (!d || d.pointerId !== e.pointerId) return
-    try {
-      ;(e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId)
-    } catch {
-      /* ignore */
-    }
-    dragRef.current = null
-    setDragging(false)
-    useCanvasStore.getState().endHistoryBatch()
-  }, [])
+  const endPointer = useCallback(
+    (e: ReactPointerEvent) => {
+      const d = dragRef.current
+      if (!d || d.pointerId !== e.pointerId) return
+      const p = pendingRef.current
+      pendingRef.current = null
+      clearLiveCanvasDrag()
+      if (p) {
+        if (p.mode === 'move' && p.origins && p.dx != null && p.dy != null) {
+          moveItemsBy(p.origins, p.dx, p.dy)
+        } else if (p.mode === 'resize' && p.rects) {
+          applyItemRects(p.rects, { manual: true })
+        }
+      }
+      try {
+        ;(e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId)
+      } catch {
+        /* ignore */
+      }
+      dragRef.current = null
+      setDragging(false)
+      useCanvasStore.getState().endHistoryBatch()
+    },
+    [moveItemsBy, applyItemRects],
+  )
 
   if (!bounds || selected.length < 2) return null
 

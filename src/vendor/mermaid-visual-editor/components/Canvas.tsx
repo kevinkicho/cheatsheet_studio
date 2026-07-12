@@ -4,12 +4,23 @@ import {
   BackgroundVariant,
   ConnectionMode,
   useReactFlow,
+  type Connection,
+  type Edge,
   type Node,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+} from 'react'
 
-import { useFlowStore, type FlowNodeData } from '../lib/store'
+import { fitViewPaddingForChrome } from '../lib/chromeLayout'
+import { reconcileEdgeHandles } from '../lib/portLayout'
+import { useFlowStore, type FlowEdgeData, type FlowNodeData } from '../lib/store'
 import { FlowNode } from './NodeTypes/FlowNode'
 import { MindmapNode } from './NodeTypes/MindmapNode'
 import { FlowEdge } from './EdgeTypes/FlowEdge'
@@ -25,7 +36,7 @@ interface CanvasInnerProps {
 function CanvasInner({ onOpenPalette }: CanvasInnerProps) {
   const {
     nodes, edges,
-    onNodesChange, onEdgesChange, onConnect,
+    onNodesChange, onEdgesChange, onConnect, onReconnect, removeEdgeById,
     addNode, addNodeAtPosition,
     undo, redo, duplicateSelected, copySelected, pasteClipboard,
     pushHistory, assignToSubgraph,
@@ -37,31 +48,193 @@ function CanvasInner({ onOpenPalette }: CanvasInnerProps) {
     addMindmapSibling,
     promoteMindmapNodes,
   } = useFlowStore()
-  const { screenToFlowPosition, fitView } = useReactFlow()
+  const { screenToFlowPosition, fitView, getViewport, setViewport } =
+    useReactFlow()
   const panMode = !drawingShape && interactionMode === 'pan'
   const isMindmap = diagramKind === 'mindmap'
 
-  // After Auto Layout / Layout tree, re-fit viewport so the radial map is visible
-  const lastLayoutEpoch = useRef(layoutEpoch)
-  useEffect(() => {
-    if (layoutEpoch === lastLayoutEpoch.current) return
-    lastLayoutEpoch.current = layoutEpoch
-    // Wait a frame so React Flow has new positions
-    const t = window.requestAnimationFrame(() => {
+  // Track failed edge re-plug so we can delete the connection
+  const edgeReconnectOk = useRef(true)
+
+  // After Auto Layout / Layout tree / mindmap import / add shape — fit whole diagram
+  const lastLayoutEpoch = useRef(-1)
+  const lastFocusToken = useRef(0)
+  const chromeLayout = useFlowStore((s) => s.chromeLayout)
+  const focusNodeRequest = useFlowStore((s) => s.focusNodeRequest)
+  const runFitView = useCallback(
+    (duration = 280) => {
       void fitView({
-        padding: 0.2,
-        duration: 280,
+        padding: fitViewPaddingForChrome(chromeLayout),
+        duration,
         minZoom: 0.05,
         maxZoom: 2.5,
       })
+    },
+    [fitView, chromeLayout],
+  )
+  useEffect(() => {
+    if (layoutEpoch === lastLayoutEpoch.current) return
+    lastLayoutEpoch.current = layoutEpoch
+    // Double rAF: wait until RF has measured node dimensions after import
+    let raf2 = 0
+    const raf1 = window.requestAnimationFrame(() => {
+      raf2 = window.requestAnimationFrame(() => runFitView(280))
     })
-    return () => window.cancelAnimationFrame(t)
-  }, [layoutEpoch, fitView])
+    return () => {
+      window.cancelAnimationFrame(raf1)
+      if (raf2) window.cancelAnimationFrame(raf2)
+    }
+  }, [layoutEpoch, runFitView])
+
+  // Entering the editor (or switching flowchart/mindmap): fit all content centered
+  useEffect(() => {
+    if (nodes.length === 0) return
+    lastLayoutEpoch.current = layoutEpoch
+    let cancelled = false
+    // Delay so RF has measured node sizes after import
+    const t = window.setTimeout(() => {
+      if (!cancelled) runFitView(280)
+    }, 60)
+    return () => {
+      cancelled = true
+      window.clearTimeout(t)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount / kind change only
+  }, [isMindmap, diagramKind])
+
+  // First time nodes appear after empty (e.g. late import) — one fit
+  const hadNodes = useRef(false)
+  useEffect(() => {
+    if (nodes.length === 0) {
+      hadNodes.current = false
+      return
+    }
+    if (hadNodes.current) return
+    hadNodes.current = true
+    let raf2 = 0
+    const raf1 = window.requestAnimationFrame(() => {
+      raf2 = window.requestAnimationFrame(() => runFitView(260))
+    })
+    return () => {
+      window.cancelAnimationFrame(raf1)
+      if (raf2) window.cancelAnimationFrame(raf2)
+    }
+  }, [nodes.length, runFitView])
+
+  // Newly added shape / group — zoom-fit entire diagram (not only the new object)
+  useEffect(() => {
+    if (!focusNodeRequest) return
+    if (focusNodeRequest.token === lastFocusToken.current) return
+    lastFocusToken.current = focusNodeRequest.token
+    let raf2 = 0
+    const raf1 = window.requestAnimationFrame(() => {
+      raf2 = window.requestAnimationFrame(() => runFitView(260))
+    })
+    return () => {
+      window.cancelAnimationFrame(raf1)
+      if (raf2) window.cancelAnimationFrame(raf2)
+    }
+  }, [focusNodeRequest, runFitView])
+
+  const handleReconnectStart = useCallback(() => {
+    edgeReconnectOk.current = false
+  }, [])
+
+  const handleReconnect = useCallback(
+    (oldEdge: Edge, newConnection: Connection) => {
+      edgeReconnectOk.current = true
+      onReconnect(oldEdge as Edge<FlowEdgeData>, newConnection)
+    },
+    [onReconnect],
+  )
+
+  const handleReconnectEnd = useCallback(
+    (_event: unknown, edge: Edge) => {
+      if (!edgeReconnectOk.current) {
+        removeEdgeById(edge.id)
+      }
+      edgeReconnectOk.current = true
+    },
+    [removeEdgeById],
+  )
+
+  /**
+   * Snap every edge endpoint onto a real `port-N` handle so paths meet the
+   * blue dots (import/layout often omit handles → RF used box midpoints).
+   */
+  const wiredEdges = useMemo(() => {
+    if (isMindmap) return edges
+    return reconcileEdgeHandles(nodes as Node<FlowNodeData>[], edges).map(
+      (e) => ({
+        ...e,
+        reconnectable: true,
+        // Keep selected styling from store
+      }),
+    )
+  }, [nodes, edges, isMindmap])
+
+  // Persist reconciled handles once when they differ (no render loop: only write if changed)
+  useEffect(() => {
+    if (isMindmap) return
+    const next = reconcileEdgeHandles(nodes as Node<FlowNodeData>[], edges)
+    let dirty = false
+    if (next.length !== edges.length) dirty = true
+    else {
+      for (let i = 0; i < next.length; i++) {
+        if (
+          next[i]!.sourceHandle !== edges[i]!.sourceHandle ||
+          next[i]!.targetHandle !== edges[i]!.targetHandle
+        ) {
+          dirty = true
+          break
+        }
+      }
+    }
+    if (!dirty) return
+    useFlowStore.setState({ edges: next })
+  }, [nodes, edges, isMindmap])
 
   // ── Draw-mode state ─────────────────────────────────────────────────────────
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null)
   const [dragCurrent, setDragCurrent] = useState<{ x: number; y: number } | null>(null)
   const wrapperRef = useRef<HTMLDivElement>(null)
+
+  /**
+   * Keep diagram center fixed when the Process panel (right rail) resizes.
+   * Extra width/height is split left+right / top+bottom.
+   */
+  useEffect(() => {
+    const el = wrapperRef.current
+    if (!el) return
+    let prevW = el.clientWidth
+    let prevH = el.clientHeight
+    const ro = new ResizeObserver(() => {
+      const w = el.clientWidth
+      const h = el.clientHeight
+      if (prevW < 8 || prevH < 8) {
+        prevW = w
+        prevH = h
+        return
+      }
+      const dw = w - prevW
+      const dh = h - prevH
+      prevW = w
+      prevH = h
+      if (Math.abs(dw) < 0.5 && Math.abs(dh) < 0.5) return
+      // Shift viewport so the world point under the previous center stays centered
+      const vp = getViewport()
+      setViewport(
+        {
+          x: vp.x + dw / 2,
+          y: vp.y + dh / 2,
+          zoom: vp.zoom,
+        },
+        { duration: 0 },
+      )
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [getViewport, setViewport])
 
   // ── Keyboard shortcuts ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -337,38 +510,78 @@ function CanvasInner({ onOpenPalette }: CanvasInnerProps) {
     >
       <ReactFlow
         nodes={nodes}
-        edges={edges}
+        edges={wiredEdges}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        onReconnect={isMindmap ? undefined : handleReconnect}
+        onReconnectStart={isMindmap ? undefined : handleReconnectStart}
+        onReconnectEnd={isMindmap ? undefined : handleReconnectEnd}
+        edgesReconnectable={!isMindmap && !drawingShape && !panMode}
+        // RF shifts grips by this amount along the edge. Keep ~0 so centers
+        // sit on the true endpoints; CSS sets equal visual r on both ends.
+        reconnectRadius={1}
+        defaultEdgeOptions={{
+          type: isMindmap ? 'mindmapEdge' : 'flowEdge',
+          reconnectable: !isMindmap,
+          interactionWidth: 20,
+          // Keep edges above node ports so re-plug grips receive clicks
+          zIndex: 5,
+        }}
+        elevateEdgesOnSelect
         onNodeDragStop={handleNodeDragStop}
-        fitView
-        // Allow zoom well below 50% (RF default minZoom is 0.5)
+        // Controlled fit via runFitView — avoid always-on fitView (causes jump/twitch)
         minZoom={0.05}
         maxZoom={2.5}
         deleteKeyCode={['Backspace', 'Delete']}
-        // Mindmap: loose center handles + radial edge clipping
-        connectionMode={
-          isMindmap ? ConnectionMode.Loose : ConnectionMode.Strict
-        }
+        // Loose: radial ports work as both source/target; mindmap uses center handles
+        connectionMode={ConnectionMode.Loose}
         // Draw: no pan. Pan mode: left-drag pans. Select: middle/right pan only.
         panOnDrag={drawingShape ? false : panMode ? true : [1, 2]}
         selectionOnDrag={!drawingShape && !panMode}
         multiSelectionKeyCode={['Shift', 'Control']}
         nodesDraggable={!drawingShape && !panMode}
         elementsSelectable={!drawingShape}
+        edgesFocusable={!drawingShape}
         panOnScroll
         zoomOnScroll
         style={{ background: 'var(--neu-bg)' }}
       >
         <Background
           variant={BackgroundVariant.Dots}
-          gap={24}
-          size={1.5}
-          color="var(--neu-dot, #3f3f46)"
+          gap={20}
+          size={1}
+          color="var(--neu-dot, #2a2d36)"
         />
+        {/* SVG filter for hand-drawn look on nodes (class rf-hand-drawn) */}
+        <svg width={0} height={0} style={{ position: 'absolute' }} aria-hidden>
+          <defs>
+            <filter
+              id="rf-hand-drawn-filter"
+              x="-8%"
+              y="-8%"
+              width="116%"
+              height="116%"
+            >
+              <feTurbulence
+                type="turbulence"
+                baseFrequency="0.035"
+                numOctaves="2"
+                seed="2"
+                result="noise"
+              />
+              <feDisplacementMap
+                in="SourceGraphic"
+                in2="noise"
+                scale="2.8"
+                xChannelSelector="R"
+                yChannelSelector="G"
+              />
+            </filter>
+          </defs>
+        </svg>
       </ReactFlow>
 
       {relativePreview && relativePreview.width > 4 && relativePreview.height > 4 && (
@@ -406,6 +619,32 @@ function CanvasInner({ onOpenPalette }: CanvasInnerProps) {
                   </>
                 )}
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* Draw-mode hint: bottom-center of canvas (not clipped by left chrome) */}
+      {drawingShape && (
+        <div
+          role="status"
+          className="pointer-events-none absolute inset-x-0 bottom-3 z-30 flex justify-center px-3"
+        >
+          <div
+            style={{
+              background: '#4F46E5',
+              color: 'white',
+              fontSize: 11,
+              fontWeight: 500,
+              padding: '6px 14px',
+              borderRadius: 50,
+              whiteSpace: 'nowrap',
+              maxWidth: '100%',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              boxShadow: '0 4px 16px rgba(79,70,229,0.45)',
+            }}
+          >
+            Drawing: {drawingShape} — drag on canvas — Esc to cancel
           </div>
         </div>
       )}

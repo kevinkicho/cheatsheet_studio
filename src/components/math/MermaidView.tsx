@@ -58,14 +58,17 @@ export function MermaidView({
     if (!text) {
       setMarkup('')
       setError(null)
+      setBusy(false)
       setNatural({ width: 0, height: 0 })
       return
     }
 
     const run = async () => {
       setBusy(true)
+      setError(null)
       try {
-        const id = `mmd-${reactId}-${Math.random().toString(36).slice(2, 9)}`
+        // Stable id per mount (reactId) — avoid random suffix remount storms
+        const id = `mmd-${reactId}`
         const { svg } = await renderMermaidSvg({
           id,
           source: text,
@@ -100,7 +103,6 @@ export function MermaidView({
             if (bb.width > 2 && bb.height > 2) {
               w = Math.ceil(bb.width + 8)
               h = Math.ceil(bb.height + 8)
-              // Expand viewBox slightly so scaled preview doesn't clip labels
               svgEl.setAttribute(
                 'viewBox',
                 `${bb.x - 4} ${bb.y - 4} ${bb.width + 8} ${bb.height + 8}`,
@@ -121,7 +123,6 @@ export function MermaidView({
           }
 
           if (fillContainer) {
-            // Vector fill: viewBox drives aspect; paint at host display size
             svgEl.removeAttribute('width')
             svgEl.removeAttribute('height')
             svgEl.setAttribute('width', '100%')

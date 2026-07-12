@@ -1,8 +1,8 @@
 import type { Edge, Node } from '@xyflow/react'
 import type {
-  ArrowType,
   CurveStyle,
   Direction,
+  EdgeMarkerKind,
   EdgeStyle,
   FlowEdgeData,
   FlowNodeData,
@@ -10,6 +10,7 @@ import type {
   NodeShape,
   Theme,
 } from './store'
+import { resolveEdgeMarkers } from './store'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -50,32 +51,62 @@ function shapeWrap(id: string, label: string, shape: NodeShape): string {
   return `${sid}${open}${lbl}${close}`
 }
 
-/** Build the Mermaid edge connector string based on style and arrow type */
-function edgeConnector(edgeStyle: EdgeStyle, arrowType: ArrowType): string {
+/** Mermaid start glyph for a marker kind */
+function startGlyph(kind: EdgeMarkerKind): string {
+  if (kind === 'arrow') return '<'
+  if (kind === 'circle') return 'o'
+  if (kind === 'cross') return 'x'
+  return ''
+}
+
+/** Mermaid end glyph for a marker kind */
+function endGlyph(kind: EdgeMarkerKind): string {
+  if (kind === 'arrow') return '>'
+  if (kind === 'circle') return 'o'
+  if (kind === 'cross') return 'x'
+  return ''
+}
+
+/**
+ * Build Mermaid edge connector from line style + independent end markers.
+ * e.g. none→arrow `-->`, arrow→arrow `<-->`, none→none `---`, none→circle `--o`
+ */
+function edgeConnector(
+  edgeStyle: EdgeStyle,
+  start: EdgeMarkerKind,
+  end: EdgeMarkerKind,
+): string {
+  const s = startGlyph(start)
+  const e = endGlyph(end)
   if (edgeStyle === 'dashed') {
-    switch (arrowType) {
-      case 'none':          return '-.-'
-      case 'bidirectional': return '<-.->'
-      case 'circle':        return '-.-o'
-      case 'cross':         return '-.-x'
-      default:              return '-.->'
-    }
+    if (!s && !e) return '-.-'
+    if (s === '<' && e === '>') return '<-.->'
+    if (!s && e === '>') return '-.->'
+    if (!s && e === 'o') return '-.-o'
+    if (!s && e === 'x') return '-.-x'
+    // fallback best-effort
+    return `${s === '<' ? '<' : ''}-.-${e || ''}`
   }
   if (edgeStyle === 'thick') {
-    switch (arrowType) {
-      case 'none':          return '==='
-      case 'bidirectional': return '<===>'
-      default:              return '==>'
-    }
+    if (!s && !e) return '==='
+    if (s === '<' && e === '>') return '<===>'
+    if (!s && e === '>') return '==>'
+    return `${s === '<' ? '<' : ''}===${e === '>' ? '>' : ''}`
   }
-  // solid (default)
-  switch (arrowType) {
-    case 'none':          return '---'
-    case 'bidirectional': return '<-->'
-    case 'circle':        return '--o'
-    case 'cross':         return '--x'
-    default:              return '-->'
-  }
+  // solid
+  if (!s && !e) return '---'
+  if (s === '<' && e === '>') return '<-->'
+  if (!s && e === '>') return '-->'
+  if (s === '<' && !e) return '<--'
+  if (!s && e === 'o') return '--o'
+  if (!s && e === 'x') return '--x'
+  if (s === 'o' && !e) return 'o--'
+  if (s === 'x' && !e) return 'x--'
+  if (s === 'o' && e === '>') return 'o-->'
+  if (s === 'x' && e === '>') return 'x-->'
+  if (s === 'o' && e === 'o') return 'o--o'
+  if (s === 'x' && e === 'x') return 'x--x'
+  return `${s}--${e || ''}`
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -156,8 +187,8 @@ export function serialize(
     const tgt = sanitizeId(edge.target)
     const label = typeof edge.label === 'string' ? edge.label : undefined
     const edgeStyle = (edge.data?.edgeStyle as EdgeStyle) ?? 'solid'
-    const arrowType = (edge.data?.arrowType as ArrowType) ?? 'arrow'
-    const connector = edgeConnector(edgeStyle, arrowType)
+    const { start, end } = resolveEdgeMarkers(edge.data as FlowEdgeData | undefined)
+    const connector = edgeConnector(edgeStyle, start, end)
 
     if (label?.trim()) {
       lines.push(`  ${src} ${connector}|"${escapeLabel(label)}"| ${tgt}`)

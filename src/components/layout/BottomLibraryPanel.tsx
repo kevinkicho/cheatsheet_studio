@@ -24,9 +24,10 @@ import { useLibraryHoverPreview } from '@/components/library/LibraryHoverPreview
 import { filterLibraryItems } from '@/lib/libraryFilter'
 
 function cardGridClass(labelsOnly: boolean) {
+  // items-start: keep fixed tile heights (do not stretch cards to the tallest row)
   return labelsOnly
-    ? 'grid grid-cols-1 gap-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5'
-    : 'grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5'
+    ? 'grid grid-cols-1 items-start gap-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5'
+    : 'grid grid-cols-1 items-start gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5'
 }
 
 function cmpStr(a: string, b: string): number {
@@ -117,15 +118,20 @@ export function BottomLibraryPanel() {
     libraryTypeFilter !== 'all' ||
     librarySearch.trim().length > 0
 
-  const hoverProps = hoverPreview
-    ? {
-        hoverPreviewEnabled: true as const,
-        hover: {
-          onEnter: hover.onEnter,
-          onLeave: hover.onLeave,
-        },
-      }
-    : { hoverPreviewEnabled: false as const }
+  // Stable hover handlers so memoized LibraryItemCard does not re-render on tooltip open
+  const hoverHandlers = useMemo(
+    () =>
+      hoverPreview
+        ? {
+            hoverPreviewEnabled: true as const,
+            hover: {
+              onEnter: hover.onEnter,
+              onLeave: hover.onLeave,
+            },
+          }
+        : { hoverPreviewEnabled: false as const },
+    [hoverPreview, hover.onEnter, hover.onLeave],
+  )
 
   const renderCard = (item: (typeof filtered)[0]) => (
     <LibraryItemCard
@@ -133,7 +139,7 @@ export function BottomLibraryPanel() {
       item={item}
       compact
       labelsOnly={labelsOnly}
-      {...hoverProps}
+      {...hoverHandlers}
     />
   )
 

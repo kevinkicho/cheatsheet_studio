@@ -1,6 +1,54 @@
-import { BaseEdge, EdgeLabelRenderer, getBezierPath, type EdgeProps } from '@xyflow/react'
+import {
+  BaseEdge,
+  EdgeLabelRenderer,
+  getSmoothStepPath,
+  MarkerType,
+  type EdgeProps,
+} from '@xyflow/react'
 import { useCallback, useState } from 'react'
-import { useFlowStore, type FlowEdgeData } from '../../lib/store'
+import {
+  resolveEdgeMarkers,
+  useFlowStore,
+  type EdgeMarkerKind,
+  type FlowEdgeData,
+} from '../../lib/store'
+
+function markerAttr(
+  kind: EdgeMarkerKind,
+  edgeId: string,
+  side: 'start' | 'end',
+  color: string,
+): string | { type: MarkerType; width: number; height: number; color: string } | undefined {
+  if (kind === 'none') return undefined
+  if (kind === 'arrow') {
+    return {
+      type: MarkerType.ArrowClosed,
+      width: 18,
+      height: 18,
+      color,
+    }
+  }
+  // circle / cross — custom SVG marker defined below
+  return `url(#${edgeId}-${side}-${kind})`
+}
+
+/** Midpoint of an absolute SVG path (average of coordinate pairs). */
+function pathCentroid(d: string): { x: number; y: number } | null {
+  const nums = [...d.matchAll(/-?\d*\.?\d+(?:e[-+]?\d+)?/gi)].map((m) =>
+    Number(m[0]),
+  )
+  if (nums.length < 4) return null
+  let sx = 0
+  let sy = 0
+  let n = 0
+  for (let i = 0; i + 1 < nums.length; i += 2) {
+    sx += nums[i]!
+    sy += nums[i + 1]!
+    n++
+  }
+  if (n === 0) return null
+  return { x: sx / n, y: sy / n }
+}
 
 export function FlowEdge({
   id,
@@ -11,18 +59,41 @@ export function FlowEdge({
   sourcePosition,
   targetPosition,
   label,
-  markerEnd,
-  markerStart,
   data,
+  selected,
 }: EdgeProps) {
-  const [edgePath, labelX, labelY] = getBezierPath({
+  const edgeData = data as FlowEdgeData | undefined
+  const mermaidPath = edgeData?.mermaidPath
+
+  // Prefer Mermaid's own edge geometry (matches sheet card). Fall back to
+  // smooth-step which tracks rank/file better than pure bezier.
+  const [smoothPath, smoothLabelX, smoothLabelY] = getSmoothStepPath({
     sourceX,
     sourceY,
     sourcePosition,
     targetX,
     targetY,
     targetPosition,
+    borderRadius: 12,
+    offset: 12,
   })
+
+  const edgePath = mermaidPath || smoothPath
+  let labelX = smoothLabelX
+  let labelY = smoothLabelY
+  if (
+    typeof edgeData?.mermaidLabelX === 'number' &&
+    typeof edgeData?.mermaidLabelY === 'number'
+  ) {
+    labelX = edgeData.mermaidLabelX
+    labelY = edgeData.mermaidLabelY
+  } else if (mermaidPath) {
+    const c = pathCentroid(mermaidPath)
+    if (c) {
+      labelX = c.x
+      labelY = c.y
+    }
+  }
 
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState((label as string) ?? '')
@@ -39,31 +110,76 @@ export function FlowEdge({
       if (e.key === 'Enter') commitLabel()
       if (e.key === 'Escape') setEditing(false)
     },
-    [commitLabel]
+    [commitLabel],
   )
 
-  const edgeData = data as FlowEdgeData | undefined
   const edgeStyle = edgeData?.edgeStyle ?? 'solid'
   const strokeColor = edgeData?.strokeColor ?? 'var(--edge-stroke, #a1a1aa)'
   const displayLabel = label as string | undefined
+  const { start, end } = resolveEdgeMarkers(edgeData)
 
-  // Edge visual style
   let strokeDasharray: string | undefined
-  let strokeWidth = 2
+  // Match Mermaid edge weight on sheet cards
+  let strokeWidth = selected ? 2 : 1.5
   if (edgeStyle === 'dashed') strokeDasharray = '7 4'
-  if (edgeStyle === 'thick') strokeWidth = 4
+  if (edgeStyle === 'thick') strokeWidth = selected ? 3.5 : 3
+
+  const stroke = selected
+    ? 'var(--neu-icon-active, #818cf8)'
+    : strokeColor
+
+  const markerStart = markerAttr(start, id, 'start', stroke)
+  const markerEnd = markerAttr(end, id, 'end', stroke)
 
   return (
     <>
+      {/* Custom circle / cross markers (RF only ships arrow types) */}
+      <defs>
+        {(['start', 'end'] as const).map((side) => {
+          const kind = side === 'start' ? start : end
+          if (kind !== 'circle' && kind !== 'cross') return null
+          const mid = side === 'start' ? 2 : 10
+          return (
+            <marker
+              key={`${side}-${kind}`}
+              id={`${id}-${side}-${kind}`}
+              markerWidth="12"
+              markerHeight="12"
+              refX={mid}
+              refY="6"
+              orient="auto"
+              markerUnits="strokeWidth"
+            >
+              {kind === 'circle' ? (
+                <circle
+                  cx="6"
+                  cy="6"
+                  r="3.5"
+                  fill="none"
+                  stroke={stroke}
+                  strokeWidth="1.5"
+                />
+              ) : (
+                <g stroke={stroke} strokeWidth="1.5" strokeLinecap="round">
+                  <line x1="2" y1="2" x2="10" y2="10" />
+                  <line x1="10" y1="2" x2="2" y2="10" />
+                </g>
+              )}
+            </marker>
+          )
+        })}
+      </defs>
+
       <BaseEdge
         id={id}
         path={edgePath}
-        markerEnd={markerEnd}
-        markerStart={markerStart}
+        markerStart={markerStart as never}
+        markerEnd={markerEnd as never}
+        interactionWidth={18}
         style={{
           strokeDasharray,
           strokeWidth,
-          stroke: strokeColor,
+          stroke,
         }}
       />
 

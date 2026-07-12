@@ -53,10 +53,25 @@ body {
 }
 
 /* Inline SVG figures / Mermaid fill paint crisply at layout size */
-[data-figure-vector='svg'] svg,
+[data-figure-vector='svg'] {
+  line-height: 0;
+}
+[data-figure-vector='svg'][data-figure-mode='fill'] svg {
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  display: block;
+}
+[data-figure-vector='svg'][data-figure-mode='intrinsic'] svg {
+  display: block;
+  /* width/height come from viewBox px attrs — FitContent scales the host */
+}
 .mermaid-host[data-mermaid-fill='true'] svg {
   max-width: 100%;
   max-height: 100%;
+  width: 100%;
+  height: 100%;
   display: block;
 }
 
@@ -77,6 +92,7 @@ body {
  * Used by Process panel interactive canvas (not print export).
  */
 .mermaid-visual-editor {
+  /* Match studio Mermaid card tokens (src/lib/mermaidTheme STUDIO_DARK) */
   --neu-bg: #12141a;
   --neu-surface: #1e2028;
   --neu-text: #e4e4e7;
@@ -84,12 +100,14 @@ body {
   --neu-icon: #a1a1aa;
   --neu-icon-active: #818cf8;
   --neu-border: #3f3f46;
-  --neu-dot: #3f3f46;
+  --neu-dot: #2a2d36;
   --neu-kbd-bg: #27272a;
   --node-fill: #27272a;
   --node-stroke: #71717a;
   --node-text: #f4f4f5;
   --edge-stroke: #a1a1aa;
+  --node-font: trebuchet ms, verdana, arial, sans-serif;
+  --node-font-size: 16px;
   --neu-shadow-raised:
     0 1px 2px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(63, 63, 70, 0.6);
   --neu-shadow-inset:
@@ -120,6 +138,71 @@ body {
 }
 .mermaid-visual-editor .react-flow__attribution {
   display: none;
+}
+/*
+ * Radial ports: --port-left / --port-top set on the element (calc, no transform).
+ * !important beats RF .handle-top { left:50%; top:-5px } so connection lines
+ * start at the real port center (getBoundingClientRect).
+ */
+.mermaid-visual-editor .react-flow__handle.flow-port {
+  position: absolute !important;
+  margin: 0 !important;
+  right: auto !important;
+  bottom: auto !important;
+  left: var(--port-left, 50%) !important;
+  top: var(--port-top, 50%) !important;
+  transform: none !important;
+  box-sizing: border-box !important;
+  /* Below edge re-plug grips so endpoints stay clickable */
+  z-index: 4 !important;
+  pointer-events: all !important;
+  padding: 0 !important;
+}
+/*
+ * Edge re-plug grips (RF EdgeAnchor):
+ * - Hidden until .selected (only then clickable)
+ * - reconnectRadius=0 so cx/cy sit on the true endpoints (no offset)
+ * - Fixed r so both ends match (source + target)
+ */
+.mermaid-visual-editor .react-flow__edgeupdater,
+.mermaid-visual-editor .react-flow__edgeupdater-source,
+.mermaid-visual-editor .react-flow__edgeupdater-target {
+  fill: transparent !important;
+  stroke: transparent !important;
+  pointer-events: none !important;
+  opacity: 0;
+  cursor: grab;
+  /* Same size both ends; attribute r is 0 from reconnectRadius — CSS wins */
+  r: 6px !important;
+}
+.mermaid-visual-editor .react-flow__edge.selected .react-flow__edgeupdater,
+.mermaid-visual-editor .react-flow__edge.selected .react-flow__edgeupdater-source,
+.mermaid-visual-editor .react-flow__edge.selected .react-flow__edgeupdater-target,
+.mermaid-visual-editor .react-flow__edge:focus .react-flow__edgeupdater {
+  pointer-events: all !important;
+  opacity: 1;
+  fill: #38bdf8 !important;
+  stroke: #ffffff !important;
+  stroke-width: 1.5px !important;
+  r: 6px !important;
+}
+.mermaid-visual-editor .react-flow__edge.selected .react-flow__edgeupdater:hover,
+.mermaid-visual-editor .react-flow__edge.selected .react-flow__edgeupdater-source:hover,
+.mermaid-visual-editor .react-flow__edge.selected .react-flow__edgeupdater-target:hover {
+  fill: #7dd3fc !important;
+}
+.mermaid-visual-editor .react-flow__edge.selected .react-flow__edgeupdater:active {
+  cursor: grabbing !important;
+}
+.mermaid-visual-editor .react-flow__edges {
+  z-index: 12 !important;
+}
+.mermaid-visual-editor .react-flow__edge-interaction {
+  pointer-events: stroke !important;
+}
+/* Hand-drawn look filter target */
+.mermaid-visual-editor .rf-hand-drawn {
+  filter: url(#rf-hand-drawn-filter);
 }
 .mermaid-visual-editor .react-flow__minimap {
   background: var(--neu-surface) !important;

@@ -225,6 +225,7 @@ export function CreateEquationPanel() {
               mode="scale"
               // Vector type: KaTeX reflows with font-size (docs/vector-graphics.md)
               fitMethod="fontSize"
+              align="center"
               minScale={0.1}
               maxScale={8}
               baseFontSize={15}

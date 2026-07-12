@@ -21,11 +21,12 @@ import { useEffect, useRef, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import {
   useFlowStore,
-  type ArrowType,
+  type EdgeMarkerKind,
   type EdgeStyle,
   type FlowEdgeData,
   type FlowNodeData,
   type NodeShape,
+  resolveEdgeMarkers,
 } from '../../lib/store'
 import { ColorPicker } from '@/components/ui/ColorPicker'
 import { FLOWCHART_SHAPES, ShapeIcon } from '../ShapeIcons'
@@ -35,6 +36,7 @@ import {
   mindmapChildrenOf,
   mindmapParentOf,
 } from '../../lib/mindmap'
+
 
 const NEU_BG = 'var(--neu-bg)'
 const TEXT = 'var(--neu-text, #e4e4e7)'
@@ -211,25 +213,6 @@ function NodeColorPalette({
             </button>
           )
         })}
-        <button
-          type="button"
-          title="Reset fill, border, and text to defaults"
-          onClick={onReset}
-          style={{
-            background: NEU_BG,
-            border: 'none',
-            borderRadius: 8,
-            boxShadow: 'var(--neu-shadow-raised)',
-            padding: '4px 8px',
-            fontSize: 10,
-            fontWeight: 500,
-            color: MUTED,
-            cursor: 'pointer',
-            marginLeft: 'auto',
-          }}
-        >
-          Reset
-        </button>
       </div>
       <ColorPicker
         key={`palette-${active}-${current ?? 'def'}`}
@@ -238,6 +221,27 @@ function NodeColorPalette({
         onChange={(hex) => apply[active](hex)}
         aria-label={`${COLOR_CHANNELS.find((c) => c.id === active)?.label} color`}
         compact
+        endAction={
+          <button
+            type="button"
+            title="Reset fill, border, and text to defaults"
+            onClick={onReset}
+            style={{
+              background: NEU_BG,
+              border: '1px solid var(--neu-border, #3f3f46)',
+              borderRadius: 8,
+              boxShadow: 'var(--neu-shadow-raised)',
+              padding: '4px 8px',
+              fontSize: 10,
+              fontWeight: 500,
+              color: MUTED,
+              cursor: 'pointer',
+              lineHeight: 1.2,
+            }}
+          >
+            Reset
+          </button>
+        }
       />
     </div>
   )
@@ -304,12 +308,12 @@ const EDGE_STYLES: { style: EdgeStyle; label: string; glyph: string }[] = [
   { style: 'thick', label: 'Thick', glyph: '━' },
 ]
 
-const ARROW_TYPES: { type: ArrowType; label: string; glyph: string }[] = [
-  { type: 'arrow', label: 'Arrow', glyph: '→' },
-  { type: 'none', label: 'None', glyph: '─' },
-  { type: 'bidirectional', label: 'Bidirectional', glyph: '↔' },
-  { type: 'circle', label: 'Circle', glyph: '○' },
-  { type: 'cross', label: 'Cross', glyph: '✕' },
+/** Per-side marker chips (start and end independently). */
+const MARKER_KINDS: { kind: EdgeMarkerKind; label: string; glyph: string }[] = [
+  { kind: 'none', label: 'None (plain connection)', glyph: '─' },
+  { kind: 'arrow', label: 'Arrow', glyph: '▶' },
+  { kind: 'circle', label: 'Circle', glyph: '○' },
+  { kind: 'cross', label: 'Cross', glyph: '✕' },
 ]
 
 function selectedNodeIds(): string[] {
@@ -425,8 +429,11 @@ export function ObjectSettingsSection() {
 
   const activeShape: NodeShape = firstNodeData?.shape ?? (isMindmap ? 'circle' : 'rounded')
   const activeEdgeStyle: EdgeStyle = firstEdgeData?.edgeStyle ?? 'solid'
-  const activeArrowType: ArrowType =
-    firstEdgeData?.arrowType ?? (isMindmap ? 'none' : 'arrow')
+  const activeMarkers = resolveEdgeMarkers(
+    isMindmap
+      ? { startMarker: 'none', endMarker: 'none' }
+      : firstEdgeData,
+  )
   const edgeLabel =
     firstEdge && typeof firstEdge.label === 'string' ? firstEdge.label : ''
 
@@ -924,7 +931,31 @@ export function ObjectSettingsSection() {
 
           {!isMindmap && (
             <>
-              <FieldLabel>Arrow</FieldLabel>
+              <FieldLabel>Start marker (source)</FieldLabel>
+              <div
+                style={{
+                  display: 'flex',
+                  gap: 6,
+                  marginBottom: 10,
+                  flexWrap: 'wrap',
+                }}
+              >
+                {MARKER_KINDS.map(({ kind, label, glyph }) => (
+                  <NeuBtn
+                    key={`start-${kind}`}
+                    onClick={() =>
+                      resolveEdgeIds().forEach((id) =>
+                        updateEdgeType(id, { startMarker: kind }),
+                      )
+                    }
+                    active={activeMarkers.start === kind}
+                    title={label}
+                  >
+                    {glyph}
+                  </NeuBtn>
+                ))}
+              </div>
+              <FieldLabel>End marker (target)</FieldLabel>
               <div
                 style={{
                   display: 'flex',
@@ -933,21 +964,32 @@ export function ObjectSettingsSection() {
                   flexWrap: 'wrap',
                 }}
               >
-                {ARROW_TYPES.map(({ type, label, glyph }) => (
+                {MARKER_KINDS.map(({ kind, label, glyph }) => (
                   <NeuBtn
-                    key={type}
+                    key={`end-${kind}`}
                     onClick={() =>
                       resolveEdgeIds().forEach((id) =>
-                        updateEdgeType(id, { arrowType: type }),
+                        updateEdgeType(id, { endMarker: kind }),
                       )
                     }
-                    active={activeArrowType === type}
+                    active={activeMarkers.end === kind}
                     title={label}
                   >
                     {glyph}
                   </NeuBtn>
                 ))}
               </div>
+              <p
+                style={{
+                  fontSize: 9,
+                  color: MUTED,
+                  lineHeight: 1.4,
+                  margin: '0 0 10px',
+                }}
+              >
+                ─ = no arrow (plain line). Set both ends to ─ for a connection
+                with no markers. Each side is independent.
+              </p>
             </>
           )}
 

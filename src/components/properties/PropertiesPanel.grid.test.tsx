@@ -14,9 +14,18 @@ describe('PropertiesPanel — sheet grid settings (no selection)', () => {
     cleanup()
   })
 
-  it('shows grid covers options when nothing selected', () => {
+  it('sheet properties and grid settings start collapsed', () => {
     render(<PropertiesPanel />)
     expect(screen.getByText('Sheet properties')).toBeInTheDocument()
+    expect(screen.getByText(/Grid settings/i)).toBeInTheDocument()
+    // Content hidden until expanded
+    expect(screen.queryByText('Full page')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/Show grid/i)).not.toBeInTheDocument()
+  })
+
+  it('shows grid covers options when grid settings expanded', () => {
+    render(<PropertiesPanel />)
+    fireEvent.click(screen.getByRole('button', { name: /Grid settings/i }))
     expect(screen.getByText('Full page')).toBeInTheDocument()
     expect(screen.getByText('Printable area')).toBeInTheDocument()
     expect(screen.getByText('Whole board')).toBeInTheDocument()
@@ -31,6 +40,7 @@ describe('PropertiesPanel — sheet grid settings (no selection)', () => {
     })
     const { container } = render(<PropertiesPanel />)
     const root = within(container)
+    fireEvent.click(root.getByRole('button', { name: /Grid settings/i }))
 
     fireEvent.click(root.getByRole('button', { name: /Printable area/i }))
     expect(useCanvasStore.getState().canvas.gridExtent).toBe('printable')
@@ -47,6 +57,9 @@ describe('PropertiesPanel — sheet grid settings (no selection)', () => {
 
   it('opacity range updates store via soft mapping', () => {
     const { container } = render(<PropertiesPanel />)
+    fireEvent.click(
+      within(container).getByRole('button', { name: /Grid settings/i }),
+    )
     const sliders = within(container).getAllByRole('slider')
     const opacitySlider = sliders[sliders.length - 1]!
     fireEvent.change(opacitySlider, { target: { value: '50' } })
@@ -59,6 +72,9 @@ describe('PropertiesPanel — sheet grid settings (no selection)', () => {
 
   it('show grid checkbox toggles canvas.showGrid', () => {
     const { container } = render(<PropertiesPanel />)
+    fireEvent.click(
+      within(container).getByRole('button', { name: /Grid settings/i }),
+    )
     const checkbox = within(container).getByRole('checkbox', {
       name: /Show grid/i,
     })

@@ -475,6 +475,17 @@ export function CreateProcessChartPanel() {
           onSourceChange={setSource}
           reloadToken={reloadToken}
           diagramKind={toEditorKind(kind)}
+          onReset={() => {
+            const tpl = mermaidTemplate(kind, direction)
+            setSource(tpl)
+            setReloadToken((t) => t + 1)
+            setActiveLibId(null)
+            flash(
+              kind === 'mindmap'
+                ? 'Mind map reset to default template'
+                : 'Flowchart reset to default template',
+            )
+          }}
           className="h-full min-h-[16rem]"
         />
       </div>

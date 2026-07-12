@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import {
   DEFAULT_COLOR_PALETTE,
   hexForColorInput,
@@ -17,6 +17,8 @@ type Props = {
   hideDefaults?: boolean
   /** Compact layout for tight inspector panels. */
   compact?: boolean
+  /** Right side of the selected-color row (e.g. Reset chip). */
+  endAction?: ReactNode
   'aria-label'?: string
 }
 
@@ -31,6 +33,7 @@ export function ColorPicker({
   className = '',
   hideDefaults = false,
   compact = false,
+  endAction,
   'aria-label': ariaLabel = 'Color',
 }: Props) {
   const hex = hexForColorInput(value, defaultValue)
@@ -99,6 +102,9 @@ export function ColorPicker({
         <span className="min-w-0 flex-1 truncate font-mono text-[10px] tabular-nums text-zinc-500">
           {hex}
         </span>
+        {endAction ? (
+          <span className="ml-auto shrink-0">{endAction}</span>
+        ) : null}
       </div>
 
       {/* Default option */}

@@ -9,10 +9,10 @@ import type { ExportColorMode } from '@/lib/exportFormats'
 export type CaptureOptions = {
   scale?: number
   /**
-   * Page fill behind transparent areas. Defaults to studio board (#0f1115)
-   * so export matches the main viewport (not white paper).
+   * Page fill behind transparent areas.
+   * Pass `null` for a fully transparent page (PNG). Defaults to studio board.
    */
-  backgroundColor?: string
+  backgroundColor?: string | null
   colorMode?: ExportColorMode
 }
 
@@ -75,13 +75,17 @@ export async function capturePageElement(
   options: CaptureOptions = {},
 ): Promise<HTMLCanvasElement> {
   const scale = options.scale ?? 2
-  const backgroundColor = options.backgroundColor ?? '#0f1115'
+  // null = transparent (html2canvas); undefined option falls back to board
+  const backgroundColor =
+    options.backgroundColor === null
+      ? null
+      : (options.backgroundColor ?? '#0f1115')
   const colorMode = options.colorMode ?? 'color'
 
   let canvas: HTMLCanvasElement
   try {
     canvas = await html2canvas(el, {
-      backgroundColor,
+      backgroundColor: backgroundColor as string | undefined,
       scale,
       useCORS: true,
       allowTaint: false,

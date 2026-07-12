@@ -15,9 +15,9 @@ sidebar **Process** tool and placed as canvas cards.
 2. Choose a **diagram type** chip:
    - **Flowchart** — nodes, edges, 14 shapes, inspector (fill / border / text)
    - **Mind map** — radial hierarchy, promote/demote, bang/cloud shapes
-3. Edit on the **dark** React Flow canvas (never a static Mermaid preview pane).
-   Toolbar: **Inspector**, **Select (V)**, **Pan (H)**, shapes, **zoom fit**
-   (min zoom ~5%).
+3. Edit on the **dark** React Flow canvas (never a static Mermaid preview pane —
+   the editor *is* the preview). Toolbar: **Inspector**, **Select (V)**,
+   **Pan (H)**, shapes, **zoom fit** (min zoom ~5%), diagram **Reset**.
 4. **Cloud library** (signed in): **Save new** / **Update saved** / **Load…**
    stores named Mermaid sources under the user’s `flowcharts` collection in
    Firestore. Load replaces the editor (with a replace warning when dirty).
@@ -51,6 +51,8 @@ Process panel chips. Existing cards of other kinds remain on the board if presen
 |-------|------|
 | `CreateProcessChartPanel` | Sidebar: title, flowchart/mindmap chips, cloud library, visual editor, Add / Update |
 | `MermaidVisualEditor` | Dark React Flow host; preferredKind-authoritative import; serialize to Mermaid |
+| `layoutFromMermaid.ts` | Renders studio Mermaid SVG → measures `g.node` boxes + edge `d` paths → RF nodes/edges |
+| `portLayout.ts` | Perimeter / radial connection ports; edge handle reconciliation |
 | `mermaidTemplates.ts` | Starters for flowchart + official mindmap example |
 | `flowchartLibrary.ts` + `flowchartLibraryStore` | Firestore CRUD for named flowcharts |
 | `firestore.rules` → `flowcharts/{id}` | Owner-only read/write |
@@ -60,6 +62,21 @@ Process panel chips. Existing cards of other kinds remain on the board if presen
 | `MermaidView` | Card / export SVG (`fillContainer` = vector at card size) |
 | `mermaidTheme.ts` | Studio dark init, source prep, layout-safe paint |
 | `CanvasCardBody` | Process → `MermaidView` fillContainer |
+
+### Flowchart layout = Mermaid engine
+
+On flowchart **import**, **Auto Layout**, and **direction** change:
+
+1. Serialize the canvas (or starter) to Mermaid text.
+2. `renderMermaidSvg({ theme: 'dark', studioDark: true })` — same pipeline as sheet cards.
+3. Mount the SVG offscreen; for each `g.node`, read **center** from
+   `transform="translate(cx,cy)"` and size from local `getBBox()` (not screen CTM).
+4. Map boxes onto RF `position` / `width` / `height` (normalized with pad).
+5. Copy `path.flowchart-link` geometry onto edges as `data.mermaidPath` (offset into
+   RF space) and place edge labels from Mermaid `g.edgeLabel` translates.
+6. User drag clears Mermaid paths so free-form routing falls back to smooth-step.
+
+Goal: **editor appearance matches Add to canvas** without a separate preview pane.
 
 ```
 Process panel

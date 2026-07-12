@@ -18,6 +18,7 @@ import {
 } from '@/vendor/mermaid-visual-editor/lib/store'
 import { serialize } from '@/vendor/mermaid-visual-editor/lib/serializer'
 import { parseMermaidFlowchart } from '@/vendor/mermaid-visual-editor/lib/parser'
+import { layoutWithMermaid } from '@/vendor/mermaid-visual-editor/lib/layoutFromMermaid'
 import {
   applyMindmapTreeLayout,
   parseMermaidMindmap,
@@ -39,6 +40,11 @@ type Props = {
    * Always wins over source sniffing when provided.
    */
   diagramKind?: DiagramKind
+  /**
+   * Reset diagram to the default starter template (parent clears source +
+   * bumps reloadToken). Confirmed in the toolbar before calling.
+   */
+  onReset?: () => void
   className?: string
 }
 
@@ -92,14 +98,14 @@ function resetCanvas(importDiagram: ImportFn, kind: DiagramKind) {
 
 /**
  * Load source into the RF store.
- * `preferredKind` from the Flowchart / Mind map chip is authoritative —
- * never import mindmap content when the user asked for flowchart (and vice versa).
+ * Flowcharts are laid out by rendering Mermaid (same engine as sheet cards)
+ * and copying node positions — so free-form RF matches Add to canvas.
  */
-function tryImport(
+async function tryImport(
   raw: string,
   importDiagram: ImportFn,
   preferredKind?: DiagramKind,
-): string | null {
+): Promise<string | null> {
   const trimmed = raw.trim()
   const body = stripFrontmatter(trimmed || '')
 
@@ -143,19 +149,76 @@ function tryImport(
     // parser failed on real content — show empty flowchart, not old mindmap
     return EMPTY_FLOWCHART
   }
-  importDiagram(result.nodes, result.edges, {
+
+  const syntaxOut = serialize(result.nodes, result.edges, {
+    direction: result.direction,
+    theme: 'dark',
+    look: result.look,
+    curveStyle: result.curveStyle,
+  })
+  // Exact Mermaid engine positions, sizes, and edge paths (same as sheet cards)
+  const laid = await layoutWithMermaid(
+    syntaxOut,
+    result.nodes,
+    result.edges,
+  )
+  importDiagram(laid.nodes, laid.edges, {
     direction: result.direction,
     theme: 'dark',
     look: result.look,
     curveStyle: result.curveStyle,
     diagramKind: 'flowchart',
   })
-  return serialize(result.nodes, result.edges, {
-    direction: result.direction,
-    theme: 'dark',
-    look: result.look,
-    curveStyle: result.curveStyle,
-  })
+  useFlowStore.setState((s) => ({
+    layoutEpoch: s.layoutEpoch + 1,
+  }))
+  return syntaxOut
+}
+
+/** Positions top tools + zoom bars; orientation from flow store chromeLayout. */
+function ChromeOverlay({
+  inspectorOpen,
+  onToggleInspector,
+  syntax,
+  onReset,
+}: {
+  inspectorOpen: boolean
+  onToggleInspector: () => void
+  syntax: string
+  onReset?: () => void
+}) {
+  const chromeLayout = useFlowStore((s) => s.chromeLayout)
+  const vertical = chromeLayout === 'vertical'
+
+  return (
+    <>
+      {vertical ? (
+        <div className="pointer-events-none absolute bottom-0 left-2 top-0 z-20 flex items-center">
+          <div className="pointer-events-auto origin-left scale-90">
+            <TopToolbar
+              inspectorOpen={inspectorOpen}
+              onToggleInspector={onToggleInspector}
+              syntax={syntax}
+              onReset={onReset}
+            />
+          </div>
+        </div>
+      ) : (
+        <div className="pointer-events-none absolute left-0 right-0 top-2 z-20 flex justify-center">
+          <div className="pointer-events-auto origin-top scale-90">
+            <TopToolbar
+              inspectorOpen={inspectorOpen}
+              onToggleInspector={onToggleInspector}
+              syntax={syntax}
+              onReset={onReset}
+            />
+          </div>
+        </div>
+      )}
+      {/* Zoom bar self-positions: bottom-center or right-center */}
+      <ZoomControls />
+    </>
+  )
 }
 
 function VisualEditorInner({
@@ -163,6 +226,7 @@ function VisualEditorInner({
   onSourceChange,
   reloadToken = 0,
   diagramKind: diagramKindProp,
+  onReset,
   className,
 }: Props) {
   const nodes = useFlowStore((s) => s.nodes)
@@ -197,18 +261,23 @@ function VisualEditorInner({
   useEffect(() => {
     if (bootstrapped.current) return
     suppressPush.current = true
-    const out = tryImport(source, importDiagram, diagramKindProp)
-    if (out) {
-      lastLoaded.current = out.trim()
-      lastEmitted.current = out
-      onSourceChange(out)
-    }
-    lastKindProp.current = diagramKindProp
-    bootstrapped.current = true
-    // allow push on next tick after parent has new source
-    queueMicrotask(() => {
-      suppressPush.current = false
+    let cancelled = false
+    void tryImport(source, importDiagram, diagramKindProp).then((out) => {
+      if (cancelled) return
+      if (out) {
+        lastLoaded.current = out.trim()
+        lastEmitted.current = out
+        onSourceChange(out)
+      }
+      lastKindProp.current = diagramKindProp
+      bootstrapped.current = true
+      queueMicrotask(() => {
+        suppressPush.current = false
+      })
     })
+    return () => {
+      cancelled = true
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -248,19 +317,26 @@ function VisualEditorInner({
 
     // Kind chip or template reload — preferredKind is always the chip
     suppressPush.current = true
-    const out = tryImport(
-      trimmed || (diagramKindProp === 'mindmap' ? EMPTY_MINDMAP : EMPTY_FLOWCHART),
+    let cancelled = false
+    void tryImport(
+      trimmed ||
+        (diagramKindProp === 'mindmap' ? EMPTY_MINDMAP : EMPTY_FLOWCHART),
       importDiagram,
       diagramKindProp,
-    )
-    if (out) {
-      lastLoaded.current = out.trim()
-      lastEmitted.current = out
-      onSourceChange(out)
-    }
-    queueMicrotask(() => {
-      suppressPush.current = false
+    ).then((out) => {
+      if (cancelled) return
+      if (out) {
+        lastLoaded.current = out.trim()
+        lastEmitted.current = out
+        onSourceChange(out)
+      }
+      queueMicrotask(() => {
+        suppressPush.current = false
+      })
     })
+    return () => {
+      cancelled = true
+    }
   }, [source, reloadToken, importDiagram, onSourceChange, diagramKindProp])
 
   return (
@@ -272,16 +348,13 @@ function VisualEditorInner({
       <div className="relative flex min-h-0 flex-1">
         <div className="relative min-h-0 min-w-0 flex-1">
           <Canvas />
-          <div className="pointer-events-none absolute left-0 right-0 top-2 z-20 flex justify-center">
-            <div className="pointer-events-auto origin-top scale-90">
-              <TopToolbar
-                inspectorOpen={inspectorOpen}
-                onToggleInspector={() => setInspectorOpen((o) => !o)}
-                syntax={syntax}
-              />
-            </div>
-          </div>
-          <ZoomControls />
+          {/* Floating chrome: horizontal = top+bottom center; vertical = left+right center */}
+          <ChromeOverlay
+            inspectorOpen={inspectorOpen}
+            onToggleInspector={() => setInspectorOpen((o) => !o)}
+            syntax={syntax}
+            onReset={onReset}
+          />
         </div>
         {inspectorOpen && (
           <InspectorPanel
@@ -300,7 +373,7 @@ function VisualEditorInner({
       >
         {diagramKind === 'mindmap'
           ? 'Mind map · Tab=child · Enter=sibling · Shift+Tab=promote · Inspector for shape/color/icon/reparent'
-          : 'Select (V) · Pan (H) · scroll to zoom · middle-drag pans in select mode'}
+          : 'Select (V) · Pan (H) · scroll to zoom · Auto Layout matches sheet spacing'}
       </p>
     </div>
   )

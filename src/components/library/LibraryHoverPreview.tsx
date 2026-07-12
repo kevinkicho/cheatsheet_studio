@@ -1,4 +1,10 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react'
 import { createPortal } from 'react-dom'
 import type { LibraryItem } from '@/types'
 import { FitContent } from '@/components/math/FitContent'
@@ -78,19 +84,15 @@ export function LibraryHoverPreview({
         width: PREVIEW_W,
       }}
     >
-      <div className="flex items-center justify-between gap-2 border-b border-zinc-800 px-3 py-1.5">
-        <div className="min-w-0">
-          <p className="truncate text-xs font-semibold text-zinc-100">
-            {item.title}
-          </p>
-          <p className="truncate text-[10px] text-zinc-500">
+      <div className="flex items-center justify-between gap-3 border-b border-zinc-800 px-3 py-2.5">
+        <p className="min-w-0 flex-1 truncate text-sm font-semibold leading-snug text-zinc-50">
+          {item.title}
+        </p>
+        {item.topic ? (
+          <span className="max-w-[42%] shrink-0 truncate rounded bg-zinc-900 px-2 py-0.5 text-[10px] font-medium text-zinc-400 ring-1 ring-zinc-700/80">
             {item.topic}
-            {item.type ? ` · ${item.type}` : ''}
-          </p>
-        </div>
-        <span className="shrink-0 rounded bg-zinc-900 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-zinc-500 ring-1 ring-zinc-700">
-          Full preview
-        </span>
+          </span>
+        ) : null}
       </div>
 
       {item.description && (
@@ -111,15 +113,36 @@ export function LibraryHoverPreview({
         </div>
       )}
 
-      <div style={{ height: PREVIEW_H }} className="w-full bg-zinc-900/40 p-3">
+      <div
+        style={{ height: PREVIEW_H }}
+        className="w-full bg-zinc-900/40 p-3"
+        // Keep tooltip layout self-contained so library tiles never reflow
+        data-library-hover-preview
+      >
         {item.type === 'figure' && item.imageUrl ? (
-          <FigureView src={item.imageUrl} alt={item.title} />
+          <FitContent
+            mode="scale"
+            fitMethod="transform"
+            align="center"
+            minScale={0.05}
+            maxScale={32}
+            showBadge
+            contentKey={`hover-fig-${item.id}-${item.imageUrl}`}
+            className="h-full w-full"
+          >
+            <FigureView
+              src={item.imageUrl}
+              alt={item.title}
+              fillContainer={false}
+            />
+          </FitContent>
         ) : (
           <FitContent
             mode="scale"
             minScale={0.12}
             maxScale={16}
-            fitMethod="fontSize"
+            fitMethod="transform"
+            align="center"
             baseFontSize={16}
             showBadge
             contentKey={`hover-body-${item.id}-${item.latex ?? ''}-${item.tableMarkdown ?? ''}`}
@@ -169,7 +192,7 @@ export function useLibraryHoverPreview() {
 
   useEffect(() => () => clearTimers(), [])
 
-  const onEnter = (item: LibraryItem, el: HTMLElement) => {
+  const onEnter = useCallback((item: LibraryItem, el: HTMLElement) => {
     if (hideTimer.current) {
       clearTimeout(hideTimer.current)
       hideTimer.current = null
@@ -183,9 +206,9 @@ export function useLibraryHoverPreview() {
       openIdRef.current = item.id
       setState({ item, anchor: el })
     }, SHOW_DELAY_MS)
-  }
+  }, [])
 
-  const onLeave = () => {
+  const onLeave = useCallback(() => {
     if (showTimer.current) {
       clearTimeout(showTimer.current)
       showTimer.current = null
@@ -194,20 +217,20 @@ export function useLibraryHoverPreview() {
       openIdRef.current = null
       setState({ item: null, anchor: null })
     }, HIDE_DELAY_MS)
-  }
+  }, [])
 
-  const keepOpen = () => {
+  const keepOpen = useCallback(() => {
     if (hideTimer.current) {
       clearTimeout(hideTimer.current)
       hideTimer.current = null
     }
-  }
+  }, [])
 
-  const close = () => {
+  const close = useCallback(() => {
     clearTimers()
     openIdRef.current = null
     setState({ item: null, anchor: null })
-  }
+  }, [])
 
   return {
     previewItem: state.item,

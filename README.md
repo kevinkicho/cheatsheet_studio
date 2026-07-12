@@ -52,7 +52,7 @@ organize layers in nested folders, and sync sheets per Google account.
 | Local image persistence (IndexedDB) + Storage promote | **Implemented** |
 | GIF ping-pong bake at import | **Implemented** |
 | Undo / redo (document history) | **Implemented** |
-| Process charts (flowchart + mind map interactive editor, cloud library) | **Implemented** |
+| Process charts (flowchart + mind map; Mermaid-matched layout) | **Implemented** |
 | My Sheets preview + card detail | **Implemented** |
 | Color pickers (defaults + recent) | **Implemented** |
 | Collapsible left / right / bottom chrome | **Implemented** |
@@ -96,6 +96,7 @@ Vector: [docs/vector-graphics.md](./docs/vector-graphics.md)
 - **Formats:** PDF (multi-page), PNG, JPEG (one file per page when multi-page)  
 - **Pages:** multi-select which frames to include  
 - **Color modes:** Color · Greyscale · Black & white (threshold)  
+- **Options:** show/hide print grid, transparent background (PNG), page layout packing  
 - Capture uses **html2canvas-pro** (Tailwind v4 `oklch` safe) via shared `CanvasCardBody` (matches viewport)  
 - Only cards that intersect the dashed print frames are included  
 
@@ -116,9 +117,11 @@ Vector: [docs/vector-graphics.md](./docs/vector-graphics.md)
 
 ### Process charts (Mermaid)
 - Right sidebar **Process** tool: **dark** interactive canvas (vendored [saketkattu/mermaid-visual-editor](https://github.com/saketkattu/mermaid-visual-editor), MIT)  
-- **Diagram types:** **Flowchart** and **Mind map** only — both use the interactive React Flow editor (no static Mermaid preview pane)  
-- Flowchart: 14 shapes (icon-only), inspector fill / border / text palette  
-- Mind map: radial layout, promote/demote, bang/cloud shapes  
+- **Diagram types:** **Flowchart** and **Mind map** only — both use the interactive React Flow editor (**never** a static Mermaid preview pane; the editor *is* the preview)  
+- **Flowchart layout fidelity:** import / Auto Layout / direction change render with the **same Mermaid 11 studio-dark engine** as sheet cards, then copy **node boxes** (`translate` center + `getBBox`) and **edge paths** (`path.flowchart-link`) onto React Flow — free-form edit should match **Add to canvas**  
+- Flowchart: 14 shapes, perimeter connection ports, per-side edge markers (arrow / circle / cross / none), reconnectable edges (grips when selected), inspector node/port settings  
+- Mind map: radial layout, promote/demote, bang/cloud shapes, zoom-fit chrome padding  
+- Toolbar: vertical/horizontal chrome, snap tools, zoom fit, diagram **Reset** (confirm)  
 - **Cloud library** (signed in): save / load / delete named diagrams in Firestore (`flowcharts`)  
 - Canvas cards: zinc studio dark + SVG **fillContainer** (vector at card size)  
 - See [docs/process-charts.md](./docs/process-charts.md)  

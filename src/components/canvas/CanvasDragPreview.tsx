@@ -1,79 +1,95 @@
+import { useLayoutEffect, useRef, useState } from 'react'
 import type { LibraryItem } from '@/types'
 import { DEFAULT_ITEM_STYLE } from '@/types'
-import { FitContent } from '@/components/math/FitContent'
 import { FigureView } from '@/components/math/FigureView'
 import { LatexView } from '@/components/math/LatexView'
 import { MarkdownTable } from '@/components/math/MarkdownTable'
+import { estimateLibraryCardSize } from '@/lib/canvasDrop'
 
-/** Match canvasStore.estimateTableSize defaults for drag preview. */
-function previewSize(lib: LibraryItem): { width: number; height: number } {
-  if (lib.type === 'table' && lib.tableMarkdown) {
-    const lines = lib.tableMarkdown
-      .trim()
-      .split('\n')
-      .filter((l) => l.includes('|') && !/^\|?\s*[-:| ]+\s*\|?$/.test(l.trim()))
-    const cols = Math.max(
-      ...lines.map(
-        (l) =>
-          l
-            .replace(/^\|/, '')
-            .replace(/\|$/, '')
-            .split('|').length,
-      ),
-      1,
-    )
-    const rows = Math.max(lines.length, 1)
-    return {
-      width: Math.min(520, Math.max(220, cols * 88 + 40)),
-      height: Math.min(480, Math.max(100, rows * 28 + 48)),
-    }
-  }
-  if (lib.type === 'figure') return { width: 240, height: 220 }
-  return { width: 280, height: 100 }
-}
+const TITLE_BAND = 18
+const SLACK = 4
 
 /**
- * Ghost preview while dragging from the library — matches the look of a
- * placed canvas card (not the compact library tile).
+ * Ghost preview while dragging from the library.
+ * Sized to natural content at 100% (base font) so the drop matches what you drag.
  */
 export function CanvasDragPreview({ item }: { item: LibraryItem }) {
-  const { width, height } = previewSize(item)
   const isFigure = item.type === 'figure' && Boolean(item.imageUrl)
   const style = DEFAULT_ITEM_STYLE
-  const pad = style.padding ?? 0
-  const bodyH = Math.max(32, height - pad * 2)
+  const baseFont = style.fontSize ?? 18
+  const estimate = estimateLibraryCardSize(item)
+  const [box, setBox] = useState(estimate)
+  const measureRef = useRef<HTMLDivElement>(null)
+
+  useLayoutEffect(() => {
+    if (isFigure) {
+      setBox(estimate)
+      return
+    }
+    const el = measureRef.current
+    if (!el) return
+
+    const apply = () => {
+      const w = Math.ceil(Math.max(el.scrollWidth, el.offsetWidth, 1))
+      const h = Math.ceil(Math.max(el.scrollHeight, el.offsetHeight, 1))
+      if (w < 4 || h < 4) return
+      setBox({
+        width: Math.min(520, Math.max(80, w + SLACK)),
+        height: Math.min(480, Math.max(40, h + TITLE_BAND + SLACK)),
+      })
+    }
+
+    apply()
+    const t1 = window.setTimeout(apply, 40)
+    const t2 = window.setTimeout(apply, 120)
+    if (document.fonts?.ready) {
+      void document.fonts.ready.then(apply)
+    }
+    return () => {
+      window.clearTimeout(t1)
+      window.clearTimeout(t2)
+    }
+  }, [item.id, item.latex, item.tableMarkdown, isFigure, estimate.width, estimate.height])
 
   return (
     <div
+      data-canvas-drag-preview
+      data-preview-scale="100"
       className="pointer-events-none select-none shadow-2xl ring-2 ring-indigo-400/80"
       style={{
-        width,
-        height,
-        // Same solid panel as canvas cards (figures included)
+        width: box.width,
+        height: box.height,
         background: style.background ?? 'rgba(30,32,40,0.95)',
         border: style.border,
         borderRadius: 8,
         color: style.color ?? '#e8eaed',
-        fontSize: style.fontSize ?? 18,
-        padding: pad,
+        fontSize: baseFont,
+        padding: 0,
         boxSizing: 'border-box',
         boxShadow:
           '0 0 0 1px rgba(129,140,248,0.45), 0 16px 40px rgba(0,0,0,0.45)',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
       }}
     >
-      <div className="mb-1 truncate text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+      <div className="h-[18px] shrink-0 truncate px-1 text-[10px] font-medium uppercase leading-[18px] tracking-wide text-zinc-500">
         {item.title}
       </div>
-      <div style={{ height: bodyH, width: '100%' }}>
+      <div className="relative min-h-0 flex-1 overflow-hidden">
         {isFigure && item.imageUrl ? (
-          <FigureView src={item.imageUrl} alt={item.title} />
-        ) : (
-          <FitContent
-            mode="scale"
-            minScale={0.2}
-            baseFontSize={style.fontSize ?? 18}
-            contentKey={`drag-${item.id}`}
+          <FigureView
+            src={item.imageUrl}
+            alt={item.title}
+            fillContainer
             className="h-full w-full"
+          />
+        ) : (
+          // Natural size at base font — no FitContent scale (stays 100%)
+          <div
+            ref={measureRef}
+            className="inline-block px-0.5"
+            style={{ fontSize: baseFont }}
           >
             {(item.type === 'equation' || item.latex) && item.latex && (
               <LatexView
@@ -88,7 +104,7 @@ export function CanvasDragPreview({ item }: { item: LibraryItem }) {
                 className="overflow-visible"
               />
             )}
-          </FitContent>
+          </div>
         )}
       </div>
     </div>

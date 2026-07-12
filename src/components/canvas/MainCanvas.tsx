@@ -158,10 +158,27 @@ export function MainCanvas() {
   zoomRef.current = zoom
   /** State mirror of viewportRef so minimap re-binds after mount */
   const [viewportNode, setViewportNode] = useState<HTMLDivElement | null>(null)
-  const setViewportRef = useCallback((el: HTMLDivElement | null) => {
-    viewportRef.current = el
-    setViewportNode(el)
+
+  // Droppable is the full viewport so drops land under the cursor anywhere in
+  // the scroll area (not only over the scaled board surface).
+  const { setNodeRef, isOver } = useDroppable({
+    id: 'main-canvas',
+    data: { type: 'canvas' },
+  })
+
+  const setViewportRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      viewportRef.current = el
+      setViewportNode(el)
+      setNodeRef(el)
+    },
+    [setNodeRef],
+  )
+
+  const setSurfaceNode = useCallback((node: HTMLDivElement | null) => {
+    surfaceRef.current = node
   }, [])
+
   const [isPanning, setIsPanning] = useState(false)
   const panRef = useRef<{
     pointerId: number
@@ -199,19 +216,6 @@ export function MainCanvas() {
     additive: boolean
     didMove: boolean
   } | null>(null)
-
-  const { setNodeRef, isOver } = useDroppable({
-    id: 'main-canvas',
-    data: { type: 'canvas' },
-  })
-
-  const setSurfaceNode = useCallback(
-    (node: HTMLDivElement | null) => {
-      surfaceRef.current = node
-      setNodeRef(node)
-    },
-    [setNodeRef],
-  )
 
   /** True when the event started on empty board (not a card / control). */
   const isBackgroundTarget = (target: EventTarget | null) => {
@@ -1006,11 +1010,10 @@ export function MainCanvas() {
                 ? `Hide grid (opacity ${gridOpacityPct}% / α ${gridOpacity.toFixed(2)}, max ${GRID_OPACITY_CSS_MAX})`
                 : 'Show grid (per page or whole board — open ▴ for settings)'
             }
+            active={showGrid}
             onClick={() => toggleGrid()}
           >
-            <Grid3x3
-              className={`h-3.5 w-3.5 ${showGrid ? 'text-indigo-300' : ''}`}
-            />
+            <Grid3x3 className="h-3.5 w-3.5" />
           </ZoomBtn>
           {showGrid && (
             <span
@@ -1148,11 +1151,10 @@ export function MainCanvas() {
               ? 'Snap to grid ON — click to disable'
               : `Snap to grid OFF — snap move/resize to ${gridSpacing}px`
           }
+          active={canvas.snapToGrid === true}
           onClick={() => toggleSnapToGrid()}
         >
-          <Magnet
-            className={`h-3.5 w-3.5 ${canvas.snapToGrid ? 'text-indigo-300' : ''}`}
-          />
+          <Magnet className="h-3.5 w-3.5" />
         </ZoomBtn>
         <ZoomBtn
           title="Auto-organize: pack cards on the print-page grid inside margins"
@@ -1174,17 +1176,25 @@ function ZoomBtn({
   children,
   onClick,
   title,
+  active,
 }: {
   children: ReactNode
   onClick: () => void
   title: string
+  /** When true, button looks pressed (e.g. grid / snap on). */
+  active?: boolean
 }) {
   return (
     <button
       type="button"
       title={title}
       onClick={onClick}
-      className="rounded p-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
+      aria-pressed={active}
+      className={`rounded p-1.5 transition ${
+        active
+          ? 'bg-indigo-500/20 text-indigo-300 ring-1 ring-indigo-500/50'
+          : 'text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100'
+      }`}
     >
       {children}
     </button>

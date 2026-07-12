@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import {
   FolderTree,
   LayoutGrid,
@@ -15,9 +16,10 @@ import { useLibraryHoverPreview } from '@/components/library/LibraryHoverPreview
 import { filterLibraryItems } from '@/lib/libraryFilter'
 
 function cardGridClass(labelsOnly: boolean) {
+  // items-start: fixed library tiles (zoom-fit inside; card size does not grow)
   return labelsOnly
-    ? 'grid grid-cols-1 gap-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
-    : 'grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+    ? 'grid grid-cols-1 items-start gap-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+    : 'grid grid-cols-1 items-start gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
 }
 
 export function FullLibraryView() {
@@ -50,22 +52,26 @@ export function FullLibraryView() {
 
   const topics = Array.from(new Set(filtered.map((i) => i.topic))).sort()
 
-  const hoverProps = hoverPreview
-    ? {
-        hoverPreviewEnabled: true as const,
-        hover: {
-          onEnter: hover.onEnter,
-          onLeave: hover.onLeave,
-        },
-      }
-    : { hoverPreviewEnabled: false as const }
+  const hoverHandlers = useMemo(
+    () =>
+      hoverPreview
+        ? {
+            hoverPreviewEnabled: true as const,
+            hover: {
+              onEnter: hover.onEnter,
+              onLeave: hover.onLeave,
+            },
+          }
+        : { hoverPreviewEnabled: false as const },
+    [hoverPreview, hover.onEnter, hover.onLeave],
+  )
 
   const renderCard = (item: (typeof filtered)[0]) => (
     <LibraryItemCard
       key={item.id}
       item={item}
       labelsOnly={labelsOnly}
-      {...hoverProps}
+      {...hoverHandlers}
     />
   )
 

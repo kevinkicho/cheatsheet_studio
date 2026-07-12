@@ -1,7 +1,17 @@
-import type { ReactNode } from 'react'
-import { Handle, Position, NodeResizer, type NodeProps } from '@xyflow/react'
-import { useCallback, useRef, useState } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
+import {
+  Handle,
+  NodeResizer,
+  useUpdateNodeInternals,
+  type NodeProps,
+} from '@xyflow/react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useFlowStore, type FlowNodeData, type NodeShape } from '../../lib/store'
+import {
+  computePortPlacements,
+  getPortLayout,
+  type PortPlacement,
+} from '../../lib/portLayout'
 
 // ─── SVG shape paths (viewBox 0 0 200 100, preserveAspectRatio="none") ────────
 // All points are in the 200×100 coordinate space so they stretch with the node.
@@ -179,48 +189,52 @@ const SVG_RENDERERS: Partial<Record<NodeShape, SvgShapeRenderer>> = {
 
 const IS_SVG_SHAPE = new Set<NodeShape>(Object.keys(SVG_RENDERERS) as NodeShape[])
 
-// ─── Four-directional handles (shown on all shapes) ──────────────────────────
-function NodeHandles() {
-  const base = {
-    zIndex: 30,
-    pointerEvents: 'all',
-  } as const
+// ─── Radial / perimeter connection ports ─────────────────────────────────────
+// One Handle per port (id = port-N). ConnectionMode.Loose = source+target.
+// Center with calc() — avoid transform (breaks RF connection-line origin).
+const PORT_SIZE = 8
+const PORT_SIZE_SEL = 10
 
-  const topStyle = { ...base, top: 2 }
-  const bottomStyle = { ...base, bottom: 2 }
-  const leftStyle = { ...base, left: 2 }
-  const rightStyle = { ...base, right: 2 }
-
+function NodeHandles({
+  selected,
+  ports,
+}: {
+  selected: boolean
+  ports: PortPlacement[]
+}) {
+  // Visible only when selected — unselected matches clean Mermaid card look
+  const size = selected ? PORT_SIZE_SEL : 6
+  const half = size / 2
   return (
     <>
-      <Handle
-        id="top-target"
-        type="target"
-        position={Position.Top}
-        className="!bg-blue-300 hover:!bg-blue-500 !w-3 !h-3"
-        style={topStyle}
-      />
-      <Handle
-        id="left-target"
-        type="target"
-        position={Position.Left}
-        className="!bg-blue-300 hover:!bg-blue-500 !w-3 !h-3"
-        style={leftStyle}
-      />
-      <Handle
-        id="bottom-source"
-        type="source"
-        position={Position.Bottom}
-        className="!bg-blue-300 hover:!bg-blue-500 !w-3 !h-3"
-        style={bottomStyle}
-      />
-      <Handle
-        id="right-source"
-        type="source"
-        position={Position.Right}
-        className="!bg-blue-300 hover:!bg-blue-500 !w-3 !h-3"
-        style={rightStyle}
-      />
+      {ports.map((p) => (
+        <Handle
+          key={p.id}
+          id={p.id}
+          type="source"
+          position={p.position}
+          className="flow-port"
+          isConnectable
+          title={selected ? `Port ${p.index + 1}` : undefined}
+          style={
+            {
+              ['--port-left' as string]: `calc(${p.left} - ${half}px)`,
+              ['--port-top' as string]: `calc(${p.top} - ${half}px)`,
+              width: size,
+              height: size,
+              minWidth: size,
+              minHeight: size,
+              maxWidth: size,
+              maxHeight: size,
+              borderRadius: '50%',
+              background: selected ? '#38bdf8' : 'transparent',
+              border: selected ? '2px solid #fff' : 'none',
+              opacity: selected ? 1 : 0,
+              zIndex: selected ? 4 : 2,
+            } as CSSProperties
+          }
+        />
+      ))}
     </>
   )
 }
@@ -263,8 +277,12 @@ function NodeLabel({
   }
   return (
     <span
-      className="text-center break-words text-sm font-medium leading-snug select-none"
-      style={{ color: color || '#1f2937' }}
+      className="select-none text-center font-medium leading-snug break-words"
+      style={{
+        color: color || 'var(--node-text, #f4f4f5)',
+        fontFamily: 'var(--node-font, trebuchet ms, verdana, arial, sans-serif)',
+        fontSize: 'var(--node-font-size, 16px)',
+      }}
     >
       {value}
     </span>
@@ -295,10 +313,12 @@ export function FlowNode({ id, data, selected }: NodeProps) {
   const nodeData = data as FlowNodeData
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(nodeData.label)
-  const [isHovered, setIsHovered] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const updateNodeLabel = useFlowStore((s) => s.updateNodeLabel)
   const pushHistory = useFlowStore((s) => s.pushHistory)
+  const look = useFlowStore((s) => s.look)
+  const handDrawn = look === 'handDrawn'
+  const updateNodeInternals = useUpdateNodeInternals()
 
   const commitLabel = useCallback(() => {
     const trimmed = draft.trim() || 'Node'
@@ -341,7 +361,38 @@ export function FlowNode({ id, data, selected }: NodeProps) {
   const textColor =
     (typeof nodeData.textColor === 'string' && nodeData.textColor) ||
     'var(--node-text, #f4f4f5)'
-  const strokeWidth = selected ? 3 : 2
+  // Match Mermaid flowchart stroke weight; selection uses ring (no size jump)
+  const strokeWidth = 1.5
+  const selectRing = selected
+    ? '0 0 0 2px var(--neu-icon-active, #818cf8)'
+    : undefined
+
+  const ports = useMemo(
+    () => computePortPlacements(getPortLayout(nodeData), shape),
+    // port layout fields + shape
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      shape,
+      nodeData.portCount,
+      nodeData.portRadius,
+      nodeData.portRotation,
+      nodeData.portOnPerimeter,
+    ],
+  )
+
+  // When ports move (rotate / count / radius), force RF to remeasure handles
+  // so edges and connection previews follow the dots.
+  useEffect(() => {
+    updateNodeInternals(id)
+  }, [
+    id,
+    updateNodeInternals,
+    ports,
+    nodeData.portCount,
+    nodeData.portRadius,
+    nodeData.portRotation,
+    nodeData.portOnPerimeter,
+  ])
 
   const labelProps: LabelProps = {
     value: nodeData.label,
@@ -354,16 +405,19 @@ export function FlowNode({ id, data, selected }: NodeProps) {
     color: textColor,
   }
 
+  const handDrawnClass = handDrawn ? 'rf-hand-drawn' : ''
+
   // ── Subgraph container ─────────────────────────────────────────────────────
   if (nodeData.isSubgraph) {
     return (
       <div
-        className="relative w-full h-full rounded-xl cursor-pointer"
+        className={`relative w-full h-full rounded-xl cursor-pointer ${handDrawnClass}`}
         style={{
           border: `2px dashed ${strokeColor}`,
           backgroundColor: nodeData.fillColor
             ? nodeData.fillColor
             : 'rgba(39, 39, 42, 0.45)',
+          boxShadow: selectRing,
         }}
         onDoubleClick={handleDoubleClick}
       >
@@ -374,7 +428,7 @@ export function FlowNode({ id, data, selected }: NodeProps) {
         >
           <NodeLabel {...labelProps} color={textColor} />
         </div>
-        <NodeHandles />
+        <NodeHandles selected={!!selected} ports={ports} />
       </div>
     )
   }
@@ -386,48 +440,54 @@ export function FlowNode({ id, data, selected }: NodeProps) {
     return (
       <div
         key={`svg-${shape}`}
-        className="relative cursor-pointer select-none"
+        className={`relative cursor-pointer select-none ${handDrawnClass}`}
         data-shape={shape}
         data-fill={nodeData.fillColor ?? ''}
         style={{
           width: '100%',
           height: '100%',
-          minWidth: 130,
-          minHeight: isCylinder ? 80 : 54,
+          // No minWidth — Mermaid layout sets exact node box (stadiums ~60px)
+          minWidth: 0,
+          minHeight: 0,
+          boxShadow: selectRing,
+          borderRadius: 4,
         }}
         onDoubleClick={handleDoubleClick}
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
       >
         <IconBadge icon={nodeData.icon} />
         <NodeResizer
           minWidth={80}
           minHeight={isCylinder ? 60 : 54}
-          isVisible={!!selected || isHovered}
+          isVisible={!!selected}
           onResizeEnd={() => pushHistory()}
         />
         <svg
-          className="absolute inset-0 w-full h-full overflow-visible"
+          className="absolute inset-0 w-full h-full overflow-visible pointer-events-none"
           viewBox={isCylinder ? '0 0 200 120' : '0 0 200 100'}
           preserveAspectRatio="none"
         >
           <Renderer fill={fillColor} stroke={strokeColor} sw={strokeWidth} />
         </svg>
         <div
-          className="relative z-10 flex items-center justify-center w-full h-full px-8 py-3"
-          style={{ height: '100%', minHeight: isCylinder ? 80 : 54 }}
+          className="relative z-10 flex items-center justify-center w-full h-full px-3 py-1 pointer-events-none"
+          style={{ height: '100%' }}
         >
           <NodeLabel {...labelProps} />
         </div>
-        <NodeHandles />
+        <NodeHandles selected={!!selected} ports={ports} />
       </div>
     )
   }
 
-  // ── CSS-based shapes (rectangle, rounded, stadium, subroutine, circle, double-circle) ──
+  // ── CSS-based shapes — metrics close to Mermaid flowchart cards ───────────
   const baseStyle: React.CSSProperties = {
     backgroundColor: fillColor,
     border: `${strokeWidth}px solid ${strokeColor}`,
+    boxSizing: 'border-box',
+    fontFamily: handDrawn
+      ? '"Segoe Print", "Comic Sans MS", "Chalkboard SE", cursive'
+      : 'var(--node-font, trebuchet ms, verdana, arial, sans-serif)',
+    fontSize: 'var(--node-font-size, 16px)',
   }
 
   let extraStyle: React.CSSProperties = {}
@@ -435,17 +495,23 @@ export function FlowNode({ id, data, selected }: NodeProps) {
 
   switch (shape) {
     case 'rounded':
-      extraStyle = { borderRadius: 12 }
+      extraStyle = { borderRadius: 8 }
       break
     case 'stadium':
-      // Pill — not cloud (cloud is mindmap-only)
-      extraStyle = { borderRadius: 9999, paddingLeft: 20, paddingRight: 20 }
+      // Pill (Start/Done) — match Mermaid stadium; size comes from layout box
+      extraStyle = {
+        borderRadius: 9999,
+        paddingLeft: 12,
+        paddingRight: 12,
+        paddingTop: 6,
+        paddingBottom: 6,
+      }
       break
     case 'subroutine':
       extraStyle = {
-        borderRadius: 3,
+        borderRadius: 4,
         outline: `2px solid ${strokeColor}`,
-        outlineOffset: 4,
+        outlineOffset: 3,
       }
       break
     case 'circle':
@@ -455,13 +521,23 @@ export function FlowNode({ id, data, selected }: NodeProps) {
     case 'double-circle':
       extraStyle = {
         borderRadius: '50%',
-        boxShadow: `0 0 0 3px ${fillColor}, 0 0 0 5px ${strokeColor}`,
+        boxShadow: selected
+          ? `0 0 0 3px ${fillColor}, 0 0 0 5px ${strokeColor}, 0 0 0 7px var(--neu-icon-active, #818cf8)`
+          : `0 0 0 3px ${fillColor}, 0 0 0 5px ${strokeColor}`,
       }
       extraClass = '!min-w-[80px] !min-h-[80px] !aspect-square'
       break
     case 'rectangle':
     default:
-      extraStyle = { borderRadius: 4 }
+      // Mermaid default node — slight rounding; size from layout box
+      extraStyle = { borderRadius: 5 }
+  }
+
+  if (selected && shape !== 'double-circle') {
+    extraStyle = {
+      ...extraStyle,
+      boxShadow: selectRing,
+    }
   }
 
   const isCircleShape = shape === 'circle' || shape === 'double-circle'
@@ -469,22 +545,28 @@ export function FlowNode({ id, data, selected }: NodeProps) {
   return (
     <div
       key={`css-${shape}`}
-      className={`relative flex items-center justify-center px-4 py-2.5 cursor-pointer select-none min-w-[100px] ${extraClass}`}
+      className={`relative flex h-full w-full cursor-pointer select-none items-center justify-center px-3 py-1 ${extraClass} ${handDrawnClass}`}
       data-shape={shape}
       data-fill={nodeData.fillColor ?? ''}
-      style={{ ...baseStyle, ...extraStyle, height: '100%' }}
+      style={{
+        ...baseStyle,
+        ...extraStyle,
+        width: '100%',
+        height: '100%',
+        minWidth: 0,
+        minHeight: 0,
+        boxSizing: 'border-box',
+      }}
       onDoubleClick={handleDoubleClick}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
     >
       <IconBadge icon={nodeData.icon} />
       <NodeResizer
         minWidth={80}
         minHeight={isCircleShape ? 80 : 40}
-        isVisible={!!selected || isHovered}
+        isVisible={!!selected}
         onResizeEnd={() => pushHistory()}
       />
-      <NodeHandles />
+      <NodeHandles selected={!!selected} ports={ports} />
       <NodeLabel {...labelProps} />
     </div>
   )

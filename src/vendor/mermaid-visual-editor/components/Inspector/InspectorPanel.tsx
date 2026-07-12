@@ -1,10 +1,10 @@
 import { useState } from 'react'
-import { useShallow } from 'zustand/react/shallow'
 import { useFlowStore } from '../../lib/store'
-import { applyDagreLayout } from '../../lib/layout'
+import { serialize } from '../../lib/serializer'
+import { layoutWithMermaid } from '../../lib/layoutFromMermaid'
 import { ObjectSettingsSection } from './ObjectSettingsSection'
+import { NodeSettingsSection } from './NodeSettingsSection'
 import { DiagramSettingsSection } from './DiagramSettingsSection'
-import { MermaidLiveSection } from './MermaidLiveSection'
 
 interface InspectorPanelProps {
   syntax: string
@@ -92,23 +92,36 @@ function AccordionSection({
 }
 
 export function InspectorPanel({ syntax, onCollapse }: InspectorPanelProps) {
-  const [objectOpen, setObjectOpen] = useState(true)
-  const [diagramOpen, setDiagramOpen] = useState(true)
-  const { setNodes } = useFlowStore(useShallow((s) => ({ setNodes: s.setNodes })))
+  // All sections start collapsed so the panel stays compact
+  const [nodeOpen, setNodeOpen] = useState(false)
+  const [objectOpen, setObjectOpen] = useState(false)
+  const [diagramOpen, setDiagramOpen] = useState(false)
   const nodesLength = useFlowStore((s) => s.nodes.length)
 
   const handleAutoLayout = () => {
-    const { nodes, edges, direction, diagramKind, layoutMindmap } =
+    const { nodes, edges, direction, diagramKind, layoutMindmap, theme, look, curveStyle } =
       useFlowStore.getState()
     if (nodes.length === 0) return
-    // Mindmap: equal radial pie layout (3 around center, 2 in a block, …)
-    // Detect mindmap by kind OR by mindmap-shaped source (syntax prop)
+    // Mindmap: equal radial pie layout
     const sourceLooksMindmap = /^\s*mindmap\b/im.test(syntax)
     if (diagramKind === 'mindmap' || sourceLooksMindmap) {
       layoutMindmap({ fit: true })
       return
     }
-    setNodes(applyDagreLayout(nodes, edges, direction))
+    // Flowchart: exact Mermaid engine layout (nodes + edge paths = sheet card)
+    const mermaidSrc =
+      syntax.trim() ||
+      serialize(nodes, edges, { direction, theme, look, curveStyle })
+    void layoutWithMermaid(mermaidSrc, nodes, edges).then((laid) => {
+      useFlowStore.getState().importDiagram(laid.nodes, laid.edges, {
+        direction,
+        theme,
+        look,
+        curveStyle,
+        diagramKind: 'flowchart',
+      })
+      useFlowStore.setState((s) => ({ layoutEpoch: s.layoutEpoch + 1 }))
+    })
   }
 
   return (
@@ -209,15 +222,29 @@ export function InspectorPanel({ syntax, onCollapse }: InspectorPanelProps) {
 
       {/* Scrollable content */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '0 16px 20px' }}>
-        <AccordionSection title="Object Settings" open={objectOpen} onToggle={() => setObjectOpen((v) => !v)}>
+        <AccordionSection
+          title="Node Settings"
+          open={nodeOpen}
+          onToggle={() => setNodeOpen((v) => !v)}
+        >
+          <NodeSettingsSection />
+        </AccordionSection>
+        <div style={{ height: 8 }} />
+        <AccordionSection
+          title="Object Settings"
+          open={objectOpen}
+          onToggle={() => setObjectOpen((v) => !v)}
+        >
           <ObjectSettingsSection />
         </AccordionSection>
         <div style={{ height: 8 }} />
-        <AccordionSection title="Diagram Settings" open={diagramOpen} onToggle={() => setDiagramOpen((v) => !v)}>
+        <AccordionSection
+          title="Diagram Settings"
+          open={diagramOpen}
+          onToggle={() => setDiagramOpen((v) => !v)}
+        >
           <DiagramSettingsSection />
         </AccordionSection>
-        <div style={{ height: 8 }} />
-        <MermaidLiveSection syntax={syntax} />
       </div>
     </div>
   )

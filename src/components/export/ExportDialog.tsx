@@ -5,6 +5,7 @@ import {
   FileDown,
   FileImage,
   FileType2,
+  Grid3x3,
   Image,
   Square,
   X,
@@ -16,11 +17,17 @@ import {
   type PageRect,
 } from '@/lib/exportPdf'
 import {
+  EXPORT_ARRANGEMENTS,
+  EXPORT_BACKGROUND_MODES,
   EXPORT_COLOR_MODES,
   EXPORT_FORMATS,
+  EXPORT_PACKAGE_MODES,
   exportColorModeMeta,
+  type ExportBackgroundMode,
   type ExportColorMode,
   type ExportFormat,
+  type ExportPackageMode,
+  type ExportPageArrangement,
 } from '@/lib/exportFormats'
 import { PdfExportPages, type ExportPageModel } from '@/components/export/PdfExportPages'
 import {
@@ -75,13 +82,24 @@ export function ExportDialog({
   const [format, setFormat] = useState<ExportFormat>('pdf')
   const [colorMode, setColorMode] = useState<ExportColorMode>('color')
   const [selected, setSelected] = useState<Set<number>>(() => new Set())
+  const [showGrid, setShowGrid] = useState(false)
+  const [backgroundMode, setBackgroundMode] =
+    useState<ExportBackgroundMode>('transparent')
+  const [pageArrangement, setPageArrangement] =
+    useState<ExportPageArrangement>('vertical')
+  const [packageMode, setPackageMode] =
+    useState<ExportPackageMode>('combined')
 
-  // Reset selection when dialog opens or page count changes
+  // Reset selection + defaults when dialog opens or page count changes
   useEffect(() => {
     if (!open) return
     setSelected(new Set(pages.map((p) => p.index)))
     setFormat('pdf')
     setColorMode('color')
+    setShowGrid(false)
+    setBackgroundMode('transparent')
+    setPageArrangement('vertical')
+    setPackageMode('combined')
   }, [open, pages])
 
   useEffect(() => {
@@ -108,6 +126,19 @@ export function ExportDialog({
     [pages, selected],
   )
 
+  const multiPage = selectedPages.length > 1
+
+  const previewCanvas = useMemo((): SheetCanvas => {
+    return {
+      ...canvas,
+      showGrid,
+      background:
+        backgroundMode === 'transparent'
+          ? 'transparent'
+          : canvas.background || '#0f1115',
+    }
+  }, [canvas, showGrid, backgroundMode])
+
   const previewModels: ExportPageModel[] = useMemo(
     () =>
       selectedPages.map((p) => ({
@@ -131,8 +162,38 @@ export function ExportDialog({
   // Fixed preview width inside the modal scroll pane
   const PREVIEW_FRAME_W = 300
   const previewScale = useMemo(() => {
+    if (
+      multiPage &&
+      packageMode === 'combined' &&
+      pageArrangement === 'asSheet'
+    ) {
+      const minX = Math.min(...selectedPages.map((p) => p.rect.x))
+      const maxX = Math.max(
+        ...selectedPages.map((p) => p.rect.x + p.rect.width),
+      )
+      const boardW = Math.max(1, maxX - minX)
+      return Math.min(0.35, PREVIEW_FRAME_W / boardW)
+    }
     const w = selectedPages[0]?.rect.width ?? 816
     return Math.min(0.4, PREVIEW_FRAME_W / w)
+  }, [selectedPages, multiPage, packageMode, pageArrangement])
+
+  const asSheetLayout = useMemo(() => {
+    if (selectedPages.length === 0) return null
+    const minX = Math.min(...selectedPages.map((p) => p.rect.x))
+    const minY = Math.min(...selectedPages.map((p) => p.rect.y))
+    const maxX = Math.max(
+      ...selectedPages.map((p) => p.rect.x + p.rect.width),
+    )
+    const maxY = Math.max(
+      ...selectedPages.map((p) => p.rect.y + p.rect.height),
+    )
+    return {
+      minX,
+      minY,
+      width: Math.max(1, maxX - minX),
+      height: Math.max(1, maxY - minY),
+    }
   }, [selectedPages])
 
   const togglePage = (index: number) => {
@@ -155,7 +216,15 @@ export function ExportDialog({
       canvas,
       items,
       title,
-      { format, colorMode, pageIndices },
+      {
+        format,
+        colorMode,
+        pageIndices,
+        showGrid,
+        backgroundMode,
+        pageArrangement,
+        packageMode,
+      },
       onProgress,
     )
       .catch((err) => {
@@ -168,6 +237,11 @@ export function ExportDialog({
   }
 
   if (!open) return null
+
+  const previewBg =
+    backgroundMode === 'transparent'
+      ? 'transparent'
+      : canvas.background || '#0f1115'
 
   // Portal to body — TopBar uses backdrop-blur, which creates a containing
   // block and would pin `position:fixed` to the 48px header (overflow/cutoff).
@@ -225,37 +299,126 @@ export function ExportDialog({
           <div
             className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain bg-zinc-900/80 p-4"
             data-testid="export-preview-scroll"
+            style={
+              backgroundMode === 'transparent'
+                ? {
+                    backgroundImage:
+                      'linear-gradient(45deg,#3f3f46 25%,transparent 25%),linear-gradient(-45deg,#3f3f46 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#3f3f46 75%),linear-gradient(-45deg,transparent 75%,#3f3f46 75%)',
+                    backgroundSize: '12px 12px',
+                    backgroundPosition: '0 0,0 6px,6px -6px,-6px 0',
+                    backgroundColor: '#27272a',
+                  }
+                : undefined
+            }
           >
             {selectedPages.length === 0 ? (
               <div className="flex h-full items-center justify-center text-sm text-zinc-500">
                 Select at least one page to preview.
               </div>
+            ) : multiPage &&
+              packageMode === 'combined' &&
+              pageArrangement === 'asSheet' &&
+              asSheetLayout ? (
+              <div className="mx-auto flex w-full max-w-[320px] flex-col items-center gap-1.5 pb-2">
+                <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                  Sheet layout · {selectedPages.length} pages
+                </span>
+                <div
+                  className="relative overflow-hidden rounded-sm shadow-lg ring-1 ring-zinc-600/60"
+                  style={{
+                    width: asSheetLayout.width * previewScale,
+                    height: asSheetLayout.height * previewScale,
+                    background: previewBg,
+                    filter:
+                      previewFilter === 'none' ? undefined : previewFilter,
+                  }}
+                >
+                  {selectedPages.map((p, i) => {
+                    const model = previewModels[i]!
+                    const left =
+                      (p.rect.x - asSheetLayout.minX) * previewScale
+                    const top =
+                      (p.rect.y - asSheetLayout.minY) * previewScale
+                    return (
+                      <div
+                        key={p.index}
+                        className="absolute overflow-hidden"
+                        style={{
+                          left,
+                          top,
+                          width: p.rect.width * previewScale,
+                          height: p.rect.height * previewScale,
+                        }}
+                        data-testid={`export-preview-page-${p.index + 1}`}
+                      >
+                        <div
+                          style={{
+                            width: p.rect.width,
+                            height: p.rect.height,
+                            transform: `scale(${previewScale})`,
+                            transformOrigin: 'top left',
+                          }}
+                        >
+                          <PdfExportPages
+                            pages={[model]}
+                            canvas={previewCanvas}
+                          />
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
             ) : (
-              <div className="mx-auto flex w-full max-w-[320px] flex-col items-center gap-5 pb-2">
+              <div
+                className={`mx-auto flex w-full max-w-[320px] flex-col items-center pb-2 ${
+                  multiPage && packageMode === 'combined'
+                    ? 'gap-0'
+                    : 'gap-5'
+                }`}
+              >
                 {selectedPages.map((p, i) => {
                   const model = previewModels[i]!
                   const frameW = p.rect.width * previewScale
                   const frameH = p.rect.height * previewScale
+                  const stackVertical =
+                    multiPage &&
+                    packageMode === 'combined' &&
+                    pageArrangement === 'vertical'
                   return (
                     <div
                       key={p.index}
-                      className="flex w-full flex-col items-center gap-1.5"
+                      className={`flex w-full flex-col items-center ${
+                        stackVertical ? 'gap-0' : 'gap-1.5'
+                      }`}
                       data-testid={`export-preview-page-${p.index + 1}`}
                     >
-                      <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
-                        Page {p.index + 1}
-                        {p.cardCount === 0
-                          ? ' · empty'
-                          : ` · ${p.cardCount} card${p.cardCount === 1 ? '' : 's'}`}
-                      </span>
+                      {!stackVertical && (
+                        <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                          Page {p.index + 1}
+                          {p.cardCount === 0
+                            ? ' · empty'
+                            : ` · ${p.cardCount} card${p.cardCount === 1 ? '' : 's'}`}
+                        </span>
+                      )}
                       <div
-                        className="overflow-hidden rounded-sm shadow-lg ring-1 ring-zinc-600/60"
+                        className={`overflow-hidden shadow-lg ring-1 ring-zinc-600/60 ${
+                          stackVertical ? 'rounded-none' : 'rounded-sm'
+                        } ${
+                          stackVertical && i === 0 ? 'rounded-t-sm' : ''
+                        } ${
+                          stackVertical && i === selectedPages.length - 1
+                            ? 'rounded-b-sm'
+                            : ''
+                        }`}
                         style={{
                           width: frameW,
                           height: frameH,
-                          background: canvas.background || '#0f1115',
+                          background: previewBg,
                           filter:
-                            previewFilter === 'none' ? undefined : previewFilter,
+                            previewFilter === 'none'
+                              ? undefined
+                              : previewFilter,
                         }}
                       >
                         <div
@@ -266,7 +429,10 @@ export function ExportDialog({
                             transformOrigin: 'top left',
                           }}
                         >
-                          <PdfExportPages pages={[model]} canvas={canvas} />
+                          <PdfExportPages
+                            pages={[model]}
+                            canvas={previewCanvas}
+                          />
                         </div>
                       </div>
                     </div>
@@ -362,6 +528,163 @@ export function ExportDialog({
                   })}
                 </div>
               </fieldset>
+
+              {/* Grid */}
+              <fieldset className="min-w-0">
+                <legend className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                  Grid
+                </legend>
+                <button
+                  type="button"
+                  data-testid="export-opt-show-grid"
+                  disabled={busy}
+                  aria-pressed={showGrid}
+                  onClick={() => setShowGrid((v) => !v)}
+                  className={`flex w-full items-center gap-2 rounded-md border px-2.5 py-2 text-left transition ${
+                    showGrid
+                      ? 'border-indigo-500/60 bg-indigo-500/15'
+                      : 'border-zinc-800 bg-zinc-900/40 hover:border-zinc-700'
+                  }`}
+                >
+                  <Grid3x3
+                    className={`h-3.5 w-3.5 shrink-0 ${showGrid ? 'text-indigo-300' : 'text-zinc-500'}`}
+                  />
+                  <span className="min-w-0">
+                    <span
+                      className={`block text-xs font-medium ${showGrid ? 'text-indigo-100' : 'text-zinc-200'}`}
+                    >
+                      {showGrid ? 'Show grid' : 'Hide grid'}
+                    </span>
+                    <span className="block text-[10px] text-zinc-500">
+                      {showGrid
+                        ? 'Grid lines included in export'
+                        : 'No grid lines in export (default)'}
+                    </span>
+                  </span>
+                </button>
+              </fieldset>
+
+              {/* Background */}
+              <fieldset className="min-w-0">
+                <legend className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                  Background
+                </legend>
+                <div className="flex flex-col gap-1">
+                  {EXPORT_BACKGROUND_MODES.map((m) => {
+                    const active = backgroundMode === m.id
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        data-testid={`export-opt-bg-${m.id}`}
+                        disabled={busy}
+                        onClick={() => setBackgroundMode(m.id)}
+                        className={`flex items-start gap-2 rounded-md border px-2.5 py-2 text-left transition ${
+                          active
+                            ? 'border-indigo-500/60 bg-indigo-500/15'
+                            : 'border-zinc-800 bg-zinc-900/40 hover:border-zinc-700'
+                        }`}
+                      >
+                        <BgSwatch mode={m.id} active={active} boardBg={canvas.background} />
+                        <span className="min-w-0">
+                          <span
+                            className={`block text-xs font-medium ${active ? 'text-indigo-100' : 'text-zinc-200'}`}
+                          >
+                            {m.label}
+                          </span>
+                          <span className="block text-[10px] text-zinc-500">
+                            {m.id === 'transparent' && format === 'jpeg'
+                              ? 'JPEG has no alpha — falls back to dark board'
+                              : m.description}
+                          </span>
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </fieldset>
+
+              {/* Package mode — files */}
+              <fieldset className="min-w-0">
+                <legend className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                  Files
+                </legend>
+                <div className="flex flex-col gap-1">
+                  {EXPORT_PACKAGE_MODES.map((m) => {
+                    const active = packageMode === m.id
+                    const disabledSingle =
+                      !multiPage && m.id === 'separate'
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        data-testid={`export-opt-package-${m.id}`}
+                        disabled={busy || disabledSingle}
+                        onClick={() => setPackageMode(m.id)}
+                        className={`flex items-start gap-2 rounded-md border px-2.5 py-2 text-left transition ${
+                          active
+                            ? 'border-indigo-500/60 bg-indigo-500/15'
+                            : 'border-zinc-800 bg-zinc-900/40 hover:border-zinc-700'
+                        } disabled:cursor-not-allowed disabled:opacity-40`}
+                      >
+                        <span className="min-w-0">
+                          <span
+                            className={`block text-xs font-medium ${active ? 'text-indigo-100' : 'text-zinc-200'}`}
+                          >
+                            {m.label}
+                          </span>
+                          <span className="block text-[10px] text-zinc-500">
+                            {m.description}
+                          </span>
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </fieldset>
+
+              {/* Page arrangement — only when multi-page + combined raster/preview */}
+              {multiPage && packageMode === 'combined' && (
+                <fieldset className="min-w-0">
+                  <legend className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                    Page layout
+                  </legend>
+                  <div className="flex flex-col gap-1">
+                    {EXPORT_ARRANGEMENTS.map((m) => {
+                      const active = pageArrangement === m.id
+                      const pdfNote =
+                        format === 'pdf' && m.id === 'asSheet'
+                          ? 'PDF is always one page per frame; layout applies to PNG/JPEG stitch'
+                          : m.description
+                      return (
+                        <button
+                          key={m.id}
+                          type="button"
+                          data-testid={`export-opt-arrange-${m.id}`}
+                          disabled={busy}
+                          onClick={() => setPageArrangement(m.id)}
+                          className={`flex items-start gap-2 rounded-md border px-2.5 py-2 text-left transition ${
+                            active
+                              ? 'border-indigo-500/60 bg-indigo-500/15'
+                              : 'border-zinc-800 bg-zinc-900/40 hover:border-zinc-700'
+                          }`}
+                        >
+                          <span className="min-w-0">
+                            <span
+                              className={`block text-xs font-medium ${active ? 'text-indigo-100' : 'text-zinc-200'}`}
+                            >
+                              {m.label}
+                            </span>
+                            <span className="block text-[10px] text-zinc-500">
+                              {pdfNote}
+                            </span>
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </fieldset>
+              )}
 
               {/* Pages */}
               <fieldset className="flex min-h-0 min-w-0 flex-col">
@@ -483,6 +806,39 @@ function ColorSwatch({
   return (
     <span
       className={`mt-0.5 h-4 w-4 shrink-0 rounded-sm bg-[repeating-linear-gradient(90deg,#000_0_50%,#fff_50%_100%)] ring-1 ${active ? 'ring-indigo-400' : 'ring-zinc-600'}`}
+      aria-hidden
+    />
+  )
+}
+
+function BgSwatch({
+  mode,
+  active,
+  boardBg,
+}: {
+  mode: ExportBackgroundMode
+  active: boolean
+  boardBg?: string
+}) {
+  if (mode === 'transparent') {
+    return (
+      <span
+        className={`mt-0.5 h-4 w-4 shrink-0 rounded-sm ring-1 ${active ? 'ring-indigo-400' : 'ring-zinc-600'}`}
+        style={{
+          backgroundImage:
+            'linear-gradient(45deg,#71717a 25%,transparent 25%),linear-gradient(-45deg,#71717a 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#71717a 75%),linear-gradient(-45deg,transparent 75%,#71717a 75%)',
+          backgroundSize: '6px 6px',
+          backgroundPosition: '0 0,0 3px,3px -3px,-3px 0',
+          backgroundColor: '#3f3f46',
+        }}
+        aria-hidden
+      />
+    )
+  }
+  return (
+    <span
+      className={`mt-0.5 h-4 w-4 shrink-0 rounded-sm ring-1 ${active ? 'ring-indigo-400' : 'ring-zinc-600'}`}
+      style={{ background: boardBg || '#0f1115' }}
       aria-hidden
     />
   )

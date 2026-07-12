@@ -11,9 +11,12 @@ interface TopToolbarProps {
   onToggleInspector: () => void
   onOpenPalette?: () => void
   syntax: string
+  /** Confirmed reset to default starter diagram (parent performs reload). */
+  onReset?: () => void
 }
 
-const NEU_BG = 'var(--neu-bg)'
+// Solid fill (not only CSS var) so bars stay opaque over the canvas
+const NEU_BG = '#12141a'
 
 function NeuIconBtn({
   onClick,
@@ -65,16 +68,26 @@ function NeuIconBtn({
   )
 }
 
-function Divider() {
+function Divider({ vertical }: { vertical?: boolean }) {
   return (
     <div
-      style={{
-        width: 1,
-        height: 20,
-        background: 'var(--neu-border, #3f3f46)',
-        margin: '0 4px',
-        flexShrink: 0,
-      }}
+      style={
+        vertical
+          ? {
+              width: 20,
+              height: 1,
+              background: 'var(--neu-border, #3f3f46)',
+              margin: '4px 0',
+              flexShrink: 0,
+            }
+          : {
+              width: 1,
+              height: 20,
+              background: 'var(--neu-border, #3f3f46)',
+              margin: '0 4px',
+              flexShrink: 0,
+            }
+      }
     />
   )
 }
@@ -183,6 +196,7 @@ export function TopToolbar({
   onToggleInspector,
   onOpenPalette,
   syntax,
+  onReset,
 }: TopToolbarProps) {
   const [shapePickerOpen, setShapePickerOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -198,6 +212,8 @@ export function TopToolbar({
 
   const drawingShape = useFlowStore((s) => s.drawingShape)
   const interactionMode = useFlowStore((s) => s.interactionMode)
+  const chromeLayout = useFlowStore((s) => s.chromeLayout)
+  const vertical = chromeLayout === 'vertical'
 
   const shapeRootRef = useRef<HTMLDivElement>(null)
   const shapeBtnRef = useRef<HTMLButtonElement>(null)
@@ -213,8 +229,20 @@ export function TopToolbar({
     setTimeout(() => setCopied(false), 1500)
   }
 
+  const handleReset = () => {
+    if (!onReset) return
+    const ok = window.confirm(
+      'Reset the diagram to the default starter template?\n\n' +
+        'All shapes, connections, and edits will be lost. This cannot be undone.',
+    )
+    if (!ok) return
+    onReset()
+  }
+
   return (
     <div
+      data-chrome-bar="tools"
+      data-chrome-layout={chromeLayout}
       style={{
         position: 'relative',
         display: 'flex',
@@ -229,8 +257,9 @@ export function TopToolbar({
           background: NEU_BG,
           borderRadius: 50,
           boxShadow: 'var(--neu-shadow-raised)',
-          padding: '8px 16px',
+          padding: vertical ? '16px 8px' : '8px 16px',
           display: 'flex',
+          flexDirection: vertical ? 'column' : 'row',
           alignItems: 'center',
           gap: 4,
         }}
@@ -287,7 +316,28 @@ export function TopToolbar({
           ⬡
         </NeuIconBtn>
 
-        <Divider />
+        {onReset && (
+          <NeuIconBtn
+            onClick={handleReset}
+            title="Reset diagram to default starter (clears all edits)"
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+              <path d="M3 3v5h5" />
+            </svg>
+          </NeuIconBtn>
+        )}
+
+        <Divider vertical={vertical} />
 
         <NeuIconBtn
           onClick={() => setImportOpen(true)}
@@ -319,7 +369,7 @@ export function TopToolbar({
 
         {onOpenPalette && (
           <>
-            <Divider />
+            <Divider vertical={vertical} />
             <NeuIconBtn onClick={onOpenPalette} title="Command palette (⌘K)">
               <svg
                 width="16"
@@ -360,28 +410,7 @@ export function TopToolbar({
         </div>
       </div>
 
-      {drawingShape && (
-        <div
-          style={{
-            position: 'absolute',
-            top: 'calc(100% + 8px)',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            background: '#4F46E5',
-            color: 'white',
-            fontSize: 11,
-            fontWeight: 500,
-            padding: '5px 12px',
-            borderRadius: 50,
-            pointerEvents: 'none',
-            whiteSpace: 'nowrap',
-            boxShadow: '0 4px 12px rgba(79,70,229,0.4)',
-            zIndex: 30,
-          }}
-        >
-          Drawing: {drawingShape} — drag on canvas — Esc to cancel
-        </div>
-      )}
+      {/* Draw-mode status lives on Canvas (bottom-center) so left chrome does not clip it */}
     </div>
   )
 }

@@ -17,6 +17,10 @@ import { ChevronLeft, ChevronRight, ChevronUp } from 'lucide-react'
 import type { LibraryItem } from '@/types'
 import { useCanvasStore } from '@/stores/canvasStore'
 import { useUiStore } from '@/stores/uiStore'
+import {
+  dragPreviewClientRect,
+  previewRectToCanvasDrop,
+} from '@/lib/canvasDrop'
 import { TopBar } from './TopBar'
 import { LeftSidebar } from './LeftSidebar'
 import { RightSidebar } from './RightSidebar'
@@ -55,12 +59,15 @@ export function AppShell() {
   }
 
   const onDragEnd = (event: DragEndEvent) => {
+    // Read preview rect BEFORE clearing activeLib (overlay unmounts with it)
+    const previewRect = dragPreviewClientRect(event)
     setActiveLib(null)
     const lib = event.active.data.current?.libraryItem as LibraryItem | undefined
     if (!lib) return
 
+    // Accept drop on the main viewport (or surface) droppable
     const overId = event.over?.id
-    if (overId !== 'main-canvas') return
+    if (overId !== 'main-canvas' && overId !== 'main-canvas-surface') return
 
     const surface = document.getElementById('main-canvas-surface')
     if (!surface) {
@@ -68,20 +75,17 @@ export function AppShell() {
       return
     }
 
-    const rect = surface.getBoundingClientRect()
-    const zoom = Number(surface.dataset.zoom || useUiStore.getState().canvasZoom || 1)
-    const translated = event.active.rect.current.translated
-    const clientX = translated
-      ? translated.left + translated.width / 2
-      : rect.left + 120
-    const clientY = translated
-      ? translated.top + translated.height / 2
-      : rect.top + 120
-
-    // Convert screen coords → canvas coords (undo CSS scale).
-    const x = Math.max(0, Math.round((clientX - rect.left) / zoom - 40))
-    const y = Math.max(0, Math.round((clientY - rect.top) / zoom - 20))
-    addFromLibrary(lib, x, y)
+    const surfaceRect = surface.getBoundingClientRect()
+    const zoom = Number(
+      surface.dataset.zoom || useUiStore.getState().canvasZoom || 1,
+    )
+    // Place at the same top-left as the drag ghost the user was seeing
+    if (previewRect) {
+      const { x, y } = previewRectToCanvasDrop(previewRect, surfaceRect, zoom)
+      addFromLibrary(lib, x, y)
+      return
+    }
+    addFromLibrary(lib, 120, 120)
   }
 
   const workspace = useMemo(

@@ -37,6 +37,7 @@ import {
   newCardBase,
   withBorderStyle,
 } from '@/lib/cardDefaults'
+import { estimateLibraryCardSize } from '@/lib/canvasDrop'
 
 /** Padding around the free board (print frame off). */
 const FREEFORM_PAD = 200
@@ -343,29 +344,6 @@ function takeDocSnapshot(s: {
 let applyingHistory = false
 let historyBatchDepth = 0
 let historyBatchPushed = false
-
-function estimateTableSize(markdown?: string): { width: number; height: number } {
-  if (!markdown) return { width: 320, height: 200 }
-  const lines = markdown
-    .trim()
-    .split('\n')
-    .filter((l) => l.includes('|') && !/^\|?\s*[-:| ]+\s*\|?$/.test(l.trim()))
-  const cols = Math.max(
-    ...lines.map(
-      (l) =>
-        l
-          .replace(/^\|/, '')
-          .replace(/\|$/, '')
-          .split('|').length,
-    ),
-    1,
-  )
-  const rows = Math.max(lines.length, 1)
-  return {
-    width: Math.min(520, Math.max(220, cols * 88 + 40)),
-    height: Math.min(480, Math.max(100, rows * 28 + 48)),
-  }
-}
 
 const empty = () => ({
   sheetId: null as string | null,
@@ -872,25 +850,27 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   addFromLibrary: (lib, x, y) => {
     const id = createId('item')
     const z = get().maxZ + 1
-    const tableSize =
-      lib.type === 'table' ? estimateTableSize(lib.tableMarkdown) : null
+    const size = estimateLibraryCardSize(lib)
+    const isFigure = lib.type === 'figure'
     const base = newCardBase(lib.type, {
       id,
       libraryItemId: lib.id,
       title: lib.title,
       x,
       y,
-      width:
-        tableSize?.width ??
-        (lib.type === 'figure' ? 240 : 280),
-      height:
-        tableSize?.height ??
-        (lib.type === 'figure' ? 220 : 120),
+      width: size.width,
+      height: size.height,
       zIndex: z,
       latex: lib.latex,
       tableMarkdown: lib.tableMarkdown,
       imageUrl: lib.imageUrl,
       imagePath: lib.imagePath,
+      // Equations/tables: snug to natural content at 100% (drag preview matches drop).
+      // User free-transform later enables content growth via contentFill.
+      autoFit: !isFigure,
+      // Start with fill on so resize after freeze scales content; during autoFit
+      // CanvasCardBody caps scale at 1 so badge stays ~100%.
+      contentFill: true,
     })
     set((s) => ({
       items: [...s.items, base],
@@ -1088,8 +1068,11 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       if (cur?.locked) return s
       const g = Math.max(4, s.canvas.gridSpacing ?? ORGANIZE_GRID)
       const snap = s.canvas.snapToGrid && opts?.manual
-      let w = Math.max(80, width)
-      let h = Math.max(48, height)
+      // Allow snug autoFit cards (equations) smaller than free-transform minimums
+      const minW = opts?.manual ? 80 : 40
+      const minH = opts?.manual ? 48 : 32
+      let w = Math.max(minW, width)
+      let h = Math.max(minH, height)
       if (snap) {
         w = Math.max(g, snapToGridValue(w, g))
         h = Math.max(g, snapToGridValue(h, g))

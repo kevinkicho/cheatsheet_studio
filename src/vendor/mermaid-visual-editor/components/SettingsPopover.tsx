@@ -13,7 +13,7 @@ interface SettingsPopoverProps {
   rootRef: RefObject<HTMLElement | null>
 }
 
-const NEU_BG = 'var(--neu-bg)'
+const NEU_BG = '#12141a'
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -86,12 +86,15 @@ export function SettingsPopover({
   const [importOpen, setImportOpen] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
 
-  const { loadDiagram, assignToSubgraph } = useFlowStore(
-    useShallow((s) => ({
-      loadDiagram: s.loadDiagram,
-      assignToSubgraph: s.assignToSubgraph,
-    })),
-  )
+  const { loadDiagram, assignToSubgraph, chromeLayout, toggleChromeLayout } =
+    useFlowStore(
+      useShallow((s) => ({
+        loadDiagram: s.loadDiagram,
+        assignToSubgraph: s.assignToSubgraph,
+        chromeLayout: s.chromeLayout,
+        toggleChromeLayout: s.toggleChromeLayout,
+      })),
+    )
 
   const nodesLength = useFlowStore((s) => s.nodes.length)
   const selectedWithParent = useFlowStore(
@@ -174,14 +177,19 @@ export function SettingsPopover({
           rootRef={rootRef}
           onClose={onClose}
           align="end"
-          maxHeight={360}
+          maxHeight={400}
+          className="mermaid-visual-editor"
           style={{
-            background: NEU_BG,
+            // Solid fill — portaled outside editor so CSS vars alone can look transparent
+            background: '#12141a',
             borderRadius: 16,
-            boxShadow: 'var(--neu-shadow-raised)',
+            boxShadow:
+              '0 12px 40px rgba(0,0,0,0.55), 0 0 0 1px rgba(63,63,70,0.9)',
             padding: 16,
             width: 280,
-            border: '1px solid var(--neu-border, #3f3f46)',
+            border: '1px solid #3f3f46',
+            color: '#e4e4e7',
+            opacity: 1,
           }}
         >
           <Section title="File">
@@ -217,6 +225,36 @@ export function SettingsPopover({
                 Export SVG
               </NeuBtn>
             </div>
+          </Section>
+
+          <Section title="Toolbars">
+            <NeuBtn
+              onClick={() => {
+                toggleChromeLayout()
+              }}
+              active={chromeLayout === 'vertical'}
+              title={
+                chromeLayout === 'horizontal'
+                  ? 'Switch to vertical rails (left + right)'
+                  : 'Switch to horizontal bars (top + bottom)'
+              }
+            >
+              {chromeLayout === 'horizontal'
+                ? '⇅ Vertical toolbars'
+                : '⇄ Horizontal toolbars'}
+            </NeuBtn>
+            <p
+              style={{
+                margin: '8px 0 0',
+                fontSize: 10,
+                lineHeight: 1.4,
+                color: '#a1a1aa',
+              }}
+            >
+              {chromeLayout === 'horizontal'
+                ? 'Tools on top · zoom on bottom (centered).'
+                : 'Tools on left · zoom on right (centered).'}
+            </p>
           </Section>
 
           {selectedWithParent.length > 0 && (

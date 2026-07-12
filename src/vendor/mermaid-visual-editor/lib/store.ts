@@ -4,6 +4,7 @@ import {
   applyEdgeChanges,
   applyNodeChanges,
   MarkerType,
+  reconnectEdge,
   type Connection,
   type Edge,
   type EdgeChange,
@@ -11,6 +12,13 @@ import {
   type Node,
   type NodeChange,
 } from "@xyflow/react";
+import {
+  clampPortCount,
+  clampPortRadius,
+  getPortLayout,
+  normalizePortHandleId,
+  reconcileEdgeHandles,
+} from "./portLayout";
 import {
   applyMindmapTreeLayout,
   asMindmapEdges,
@@ -45,7 +53,10 @@ export type NodeShape =
 
 // ─── Edge style types ─────────────────────────────────────────────────────────
 export type EdgeStyle = "solid" | "dashed" | "thick";
+/** @deprecated Prefer per-side EdgeMarkerKind via startMarker/endMarker */
 export type ArrowType = "arrow" | "none" | "bidirectional" | "circle" | "cross";
+/** Marker on one end of an edge (source or target). */
+export type EdgeMarkerKind = "none" | "arrow" | "circle" | "cross";
 
 // ─── Diagram-level settings ───────────────────────────────────────────────────
 export type Direction = "TD" | "LR" | "BT" | "RL";
@@ -77,12 +88,78 @@ export interface FlowNodeData extends Record<string, unknown> {
   isSubgraph?: boolean;
   /** Mermaid mindmap `::icon(fa fa-*)` class string. */
   icon?: string;
+  /**
+   * Connection ports (flowchart). Count is evenly spaced around the shape;
+   * radius / rotation / onPerimeter control placement.
+   */
+  portCount?: number;
+  /** Distance from center (1 ≈ perimeter). */
+  portRadius?: number;
+  /** Degrees offset for the first port (−90 = top). */
+  portRotation?: number;
+  /** true = snap to shape perimeter; false = free circle around center. */
+  portOnPerimeter?: boolean;
 }
 
 export interface FlowEdgeData extends Record<string, unknown> {
   edgeStyle?: EdgeStyle;
+  /** @deprecated Combined control — prefer startMarker + endMarker */
   arrowType?: ArrowType;
+  /** Marker at the source (start) of the edge */
+  startMarker?: EdgeMarkerKind;
+  /** Marker at the target (end) of the edge */
+  endMarker?: EdgeMarkerKind;
   strokeColor?: string;
+  /**
+   * Absolute SVG path from Mermaid's layout engine (RF flow coordinates).
+   * Cleared when the user moves a node so free-form editing reverts to RF routing.
+   */
+  mermaidPath?: string;
+  /** Edge label position from Mermaid (RF flow coordinates). */
+  mermaidLabelX?: number;
+  mermaidLabelY?: number;
+}
+
+/** Resolve per-side markers, migrating legacy `arrowType` when needed. */
+export function resolveEdgeMarkers(data: FlowEdgeData | undefined): {
+  start: EdgeMarkerKind;
+  end: EdgeMarkerKind;
+} {
+  if (data?.startMarker !== undefined || data?.endMarker !== undefined) {
+    return {
+      start: data?.startMarker ?? "none",
+      end: data?.endMarker ?? "arrow",
+    };
+  }
+  switch (data?.arrowType) {
+    case "none":
+      return { start: "none", end: "none" };
+    case "bidirectional":
+      return { start: "arrow", end: "arrow" };
+    case "circle":
+      return { start: "none", end: "circle" };
+    case "cross":
+      return { start: "none", end: "cross" };
+    case "arrow":
+    default:
+      return { start: "none", end: "arrow" };
+  }
+}
+
+function kindToRfMarker(
+  kind: EdgeMarkerKind,
+  color?: string,
+): EdgeMarkerType | undefined {
+  if (kind === "none" || kind === "circle" || kind === "cross") {
+    // circle/cross rendered via custom SVG markers in FlowEdge
+    return undefined;
+  }
+  return {
+    type: MarkerType.ArrowClosed,
+    width: 18,
+    height: 18,
+    color: color || "var(--edge-stroke, #a1a1aa)",
+  };
 }
 
 // ─── History snapshot ─────────────────────────────────────────────────────────
@@ -109,6 +186,18 @@ interface FlowState {
    * Not part of undo history.
    */
   layoutEpoch: number;
+  /**
+   * Request zoom-fit onto a specific node (e.g. after add shape / group).
+   * Canvas watches `token` changes and calls fitView for `nodeId`.
+   */
+  focusNodeRequest: { nodeId: string; token: number } | null;
+  /**
+   * Floating tool chrome orientation (UI only — not undo history).
+   * horizontal: top + bottom bars; vertical: left + right rails.
+   */
+  chromeLayout: "horizontal" | "vertical";
+  setChromeLayout: (layout: "horizontal" | "vertical") => void;
+  toggleChromeLayout: () => void;
   past: Snapshot[];
   future: Snapshot[];
 
@@ -116,6 +205,10 @@ interface FlowState {
   onNodesChange: (changes: NodeChange[]) => void;
   onEdgesChange: (changes: EdgeChange[]) => void;
   onConnect: (connection: Connection) => void;
+  /** Re-plug an existing edge onto new handles/nodes. */
+  onReconnect: (oldEdge: Edge<FlowEdgeData>, newConnection: Connection) => void;
+  /** Drop edge if reconnect ended without a valid target. */
+  removeEdgeById: (id: string) => void;
 
   // Node operations
   addNode: (shape?: NodeShape) => void;
@@ -143,6 +236,20 @@ interface FlowState {
   updateNodesShape: (ids: string[], shape: NodeShape) => void;
   updateNodesLabel: (ids: string[], label: string) => void;
   updateNodesIcon: (ids: string[], icon: string | undefined) => void;
+  /** Connection-port layout (count / radius / rotation / perimeter). */
+  updateNodesPortLayout: (
+    ids: string[],
+    layout: Partial<
+      Pick<
+        FlowNodeData,
+        "portCount" | "portRadius" | "portRotation" | "portOnPerimeter"
+      >
+    >,
+  ) => void;
+  /** Add one connection port (recalculates radial positions). */
+  addNodePort: (ids: string[]) => void;
+  /** Remove one connection port (min 1). */
+  removeNodePort: (ids: string[]) => void;
 
   // Mind map hierarchy operations
   addMindmapChild: (parentId?: string) => void;
@@ -207,6 +314,8 @@ interface FlowState {
   // Draw mode
   drawingShape: NodeShape | null;
   setDrawingShape: (shape: NodeShape | null) => void;
+  /** Ask canvas to zoom-fit so `nodeId` is visible (chrome padding applied). */
+  requestFocusNode: (nodeId: string) => void;
 
   /**
    * Canvas interaction when not drawing:
@@ -217,19 +326,25 @@ interface FlowState {
   setInteractionMode: (mode: "select" | "pan") => void;
 }
 
-// ─── Helper: compute edge markers based on arrowType ─────────────────────────
+// ─── Helper: RF arrow markers from per-side kinds (circle/cross via FlowEdge) ─
+function computeMarkersFromData(data: FlowEdgeData | undefined): {
+  markerEnd?: EdgeMarkerType;
+  markerStart?: EdgeMarkerType;
+} {
+  const { start, end } = resolveEdgeMarkers(data);
+  const color = data?.strokeColor;
+  return {
+    markerStart: kindToRfMarker(start, color),
+    markerEnd: kindToRfMarker(end, color),
+  };
+}
+
+/** @deprecated use computeMarkersFromData */
 function computeMarkers(arrowType: ArrowType): {
   markerEnd?: EdgeMarkerType;
   markerStart?: EdgeMarkerType;
 } {
-  if (arrowType === "none") return {};
-  if (arrowType === "bidirectional") {
-    return {
-      markerEnd: { type: MarkerType.ArrowClosed },
-      markerStart: { type: MarkerType.ArrowClosed },
-    };
-  }
-  return { markerEnd: { type: MarkerType.ArrowClosed } };
+  return computeMarkersFromData({ arrowType });
 }
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -268,6 +383,21 @@ export const useFlowStore = create<FlowState>((set, get) => {
     curveStyle: "basis",
     diagramKind: "flowchart",
     layoutEpoch: 0,
+    focusNodeRequest: null,
+    requestFocusNode: (nodeId) =>
+      set((s) => ({
+        focusNodeRequest: {
+          nodeId,
+          token: (s.focusNodeRequest?.token ?? 0) + 1,
+        },
+      })),
+    chromeLayout: "vertical",
+    setChromeLayout: (layout) => set({ chromeLayout: layout }),
+    toggleChromeLayout: () =>
+      set((s) => ({
+        chromeLayout:
+          s.chromeLayout === "horizontal" ? "vertical" : "horizontal",
+      })),
     past: [],
     future: [],
     clipboard: null,
@@ -320,10 +450,34 @@ export const useFlowStore = create<FlowState>((set, get) => {
       });
     },
 
-    onNodesChange: (changes) =>
-      set({
-        nodes: applyNodeChanges(changes, get().nodes) as Node<FlowNodeData>[],
-      }),
+    onNodesChange: (changes) => {
+      const nodes = applyNodeChanges(
+        changes,
+        get().nodes,
+      ) as Node<FlowNodeData>[];
+      // Only user drag (dragging true|false) invalidates Mermaid edge paths.
+      // Programmatic position sets (dragging undefined) keep sheet-matched paths.
+      const userDragged = changes.some(
+        (c) =>
+          c.type === "position" &&
+          (c.dragging === true || c.dragging === false),
+      );
+      if (userDragged) {
+        const edges = get().edges.map((e) => {
+          if (!e.data?.mermaidPath) return e;
+          const {
+            mermaidPath: _p,
+            mermaidLabelX: _x,
+            mermaidLabelY: _y,
+            ...rest
+          } = e.data;
+          return { ...e, data: rest as FlowEdgeData };
+        });
+        set({ nodes, edges });
+        return;
+      }
+      set({ nodes });
+    },
 
     onEdgesChange: (changes) =>
       set({
@@ -333,23 +487,64 @@ export const useFlowStore = create<FlowState>((set, get) => {
     onConnect: withHistory((connection) => {
       // Mind map edges are undirected parent→child lines (no arrow heads)
       const isMm = get().diagramKind === "mindmap";
-      const arrowType: ArrowType = isMm ? "none" : "arrow";
-      const markers = isMm ? {} : computeMarkers(arrowType);
+      const edgeData: FlowEdgeData = isMm
+        ? { edgeStyle: "solid", startMarker: "none", endMarker: "none", arrowType: "none" }
+        : {
+            edgeStyle: "solid",
+            startMarker: "none",
+            endMarker: "arrow",
+            arrowType: "arrow",
+          };
+      const markers = isMm ? {} : computeMarkersFromData(edgeData);
+      const sourceHandle = isMm
+        ? (connection.sourceHandle ?? "center")
+        : (normalizePortHandleId(connection.sourceHandle) ??
+          connection.sourceHandle ??
+          undefined);
+      const targetHandle = isMm
+        ? (connection.targetHandle ?? "center-target")
+        : (normalizePortHandleId(connection.targetHandle) ??
+          connection.targetHandle ??
+          undefined);
       set({
         edges: addEdge(
           {
             ...connection,
+            sourceHandle,
+            targetHandle,
             type: isMm ? "mindmapEdge" : "flowEdge",
-            ...(isMm
-              ? {
-                  sourceHandle: connection.sourceHandle ?? "center",
-                  targetHandle: connection.targetHandle ?? "center-target",
-                }
-              : markers),
-            data: { edgeStyle: "solid", arrowType },
+            ...markers,
+            data: edgeData,
+            reconnectable: !isMm,
           },
           get().edges,
         ) as Edge<FlowEdgeData>[],
+      });
+    }),
+
+    onReconnect: withHistory((oldEdge, newConnection) => {
+      const isMm = get().diagramKind === "mindmap";
+      if (isMm) return;
+      const sourceHandle =
+        normalizePortHandleId(newConnection.sourceHandle) ??
+        newConnection.sourceHandle ??
+        undefined;
+      const targetHandle =
+        normalizePortHandleId(newConnection.targetHandle) ??
+        newConnection.targetHandle ??
+        undefined;
+      set({
+        edges: reconnectEdge(
+          oldEdge,
+          { ...newConnection, sourceHandle, targetHandle },
+          get().edges,
+        ) as Edge<FlowEdgeData>[],
+      });
+    }),
+
+    removeEdgeById: withHistory((id) => {
+      set({
+        edges: get().edges.filter((e) => e.id !== id),
       });
     }),
 
@@ -361,8 +556,21 @@ export const useFlowStore = create<FlowState>((set, get) => {
         type: "flowNode",
         position: { x: 150 + offset, y: 100 + offset },
         data: { label: "Node", shape },
+        selected: true,
       };
-      set({ nodes: [...get().nodes, newNode] });
+      const { focusNodeRequest } = get();
+      set({
+        nodes: [
+          ...get().nodes.map((n) =>
+            n.selected ? { ...n, selected: false } : n,
+          ),
+          newNode,
+        ],
+        focusNodeRequest: {
+          nodeId: id,
+          token: (focusNodeRequest?.token ?? 0) + 1,
+        },
+      });
     }),
 
     addNodeAtPosition: withHistory(
@@ -373,9 +581,22 @@ export const useFlowStore = create<FlowState>((set, get) => {
           type: "flowNode",
           position,
           data: { label: "Node", shape },
+          selected: true,
           ...(width && height ? { style: { width, height } } : {}),
         };
-        set({ nodes: [...get().nodes, newNode] });
+        const { focusNodeRequest } = get();
+        set({
+          nodes: [
+            ...get().nodes.map((n) =>
+              n.selected ? { ...n, selected: false } : n,
+            ),
+            newNode,
+          ],
+          focusNodeRequest: {
+            nodeId: id,
+            token: (focusNodeRequest?.token ?? 0) + 1,
+          },
+        });
       },
     ),
 
@@ -481,6 +702,75 @@ export const useFlowStore = create<FlowState>((set, get) => {
               }
             : n,
         ),
+      });
+    }),
+
+    updateNodesPortLayout: withHistory((ids, layout) => {
+      if (ids.length === 0) return;
+      const idSet = new Set(ids);
+      const nodes = get().nodes.map((n) => {
+        if (!idSet.has(n.id) || n.data.isSubgraph) return n;
+        const next: FlowNodeData = { ...n.data };
+        if (layout.portCount !== undefined) {
+          next.portCount = clampPortCount(layout.portCount);
+        }
+        if (layout.portRadius !== undefined) {
+          next.portRadius = clampPortRadius(layout.portRadius);
+        }
+        if (layout.portRotation !== undefined) {
+          next.portRotation = layout.portRotation;
+        }
+        if (layout.portOnPerimeter !== undefined) {
+          next.portOnPerimeter = layout.portOnPerimeter;
+        }
+        return { ...n, selected: true, data: next };
+      });
+      // Re-snap edges to valid ports after layout change
+      set({
+        nodes,
+        edges: reconcileEdgeHandles(nodes, get().edges),
+      });
+    }),
+
+    addNodePort: withHistory((ids) => {
+      if (ids.length === 0) return;
+      const idSet = new Set(ids);
+      const nodes = get().nodes.map((n) => {
+        if (!idSet.has(n.id) || n.data.isSubgraph) return n;
+        const cur = getPortLayout(n.data);
+        return {
+          ...n,
+          selected: true,
+          data: {
+            ...n.data,
+            portCount: clampPortCount(cur.count + 1),
+          },
+        };
+      });
+      set({
+        nodes,
+        edges: reconcileEdgeHandles(nodes, get().edges),
+      });
+    }),
+
+    removeNodePort: withHistory((ids) => {
+      if (ids.length === 0) return;
+      const idSet = new Set(ids);
+      const nodes = get().nodes.map((n) => {
+        if (!idSet.has(n.id) || n.data.isSubgraph) return n;
+        const cur = getPortLayout(n.data);
+        return {
+          ...n,
+          selected: true,
+          data: {
+            ...n.data,
+            portCount: clampPortCount(cur.count - 1),
+          },
+        };
+      });
+      set({
+        nodes,
+        edges: reconcileEdgeHandles(nodes, get().edges),
       });
     }),
 
@@ -723,19 +1013,42 @@ export const useFlowStore = create<FlowState>((set, get) => {
     }),
 
     updateEdgeType: withHistory((id, updates) => {
-      const arrowType = updates.arrowType;
-      const markerUpdates =
-        arrowType !== undefined ? computeMarkers(arrowType) : {};
       set({
-        edges: get().edges.map((e) =>
-          e.id === id
-            ? {
-                ...e,
-                ...markerUpdates,
-                data: { ...(e.data ?? {}), ...updates } as FlowEdgeData,
-              }
-            : e,
-        ),
+        edges: get().edges.map((e) => {
+          if (e.id !== id) return e;
+          const data: FlowEdgeData = {
+            ...(e.data ?? {}),
+            ...updates,
+          };
+          // Keep legacy arrowType roughly in sync for serializers that still read it
+          if (
+            updates.startMarker !== undefined ||
+            updates.endMarker !== undefined
+          ) {
+            const { start, end } = resolveEdgeMarkers(data);
+            if (start === "none" && end === "none") data.arrowType = "none";
+            else if (start === "arrow" && end === "arrow")
+              data.arrowType = "bidirectional";
+            else if (start === "none" && end === "circle")
+              data.arrowType = "circle";
+            else if (start === "none" && end === "cross")
+              data.arrowType = "cross";
+            else if (start === "none" && end === "arrow")
+              data.arrowType = "arrow";
+            else data.arrowType = "arrow";
+          } else if (updates.arrowType !== undefined) {
+            const m = resolveEdgeMarkers({ arrowType: updates.arrowType });
+            data.startMarker = m.start;
+            data.endMarker = m.end;
+          }
+          const markerUpdates = computeMarkersFromData(data);
+          return {
+            ...e,
+            markerStart: markerUpdates.markerStart,
+            markerEnd: markerUpdates.markerEnd,
+            data,
+          };
+        }),
       });
     }),
 
@@ -748,6 +1061,7 @@ export const useFlowStore = create<FlowState>((set, get) => {
       const stampedEdges = edges.map((e) => ({
         ...e,
         type: "flowEdge",
+        reconnectable: true,
       })) as Edge<FlowEdgeData>[];
       set({ nodes: stampedNodes, edges: stampedEdges });
     }),
@@ -758,13 +1072,20 @@ export const useFlowStore = create<FlowState>((set, get) => {
         kind === "mindmap"
           ? asMindmapNodes(nodes, edges)
           : nodes.map((n) => ({ ...n, type: "flowNode" }));
-      const stampedEdges =
+      let stampedEdges =
         kind === "mindmap"
           ? asMindmapEdges(edges)
           : (edges.map((e) => ({
               ...e,
               type: "flowEdge",
+              reconnectable: true,
             })) as Edge<FlowEdgeData>[]);
+      if (kind !== "mindmap") {
+        stampedEdges = reconcileEdgeHandles(
+          stampedNodes as Node<FlowNodeData>[],
+          stampedEdges,
+        );
+      }
       // Advance nodeCounter to avoid ID collisions with imported nodes
       const maxId = stampedNodes.reduce((max, n) => {
         const m = n.id.match(/(\d+)$/);
@@ -792,8 +1113,21 @@ export const useFlowStore = create<FlowState>((set, get) => {
         data: { label: title, shape: "rectangle", isSubgraph: true },
         style: { width: 320, height: 220 },
         zIndex: -1,
+        selected: true,
       };
-      set({ nodes: [...get().nodes, newNode] });
+      const { focusNodeRequest } = get();
+      set({
+        nodes: [
+          ...get().nodes.map((n) =>
+            n.selected ? { ...n, selected: false } : n,
+          ),
+          newNode,
+        ],
+        focusNodeRequest: {
+          nodeId: id,
+          token: (focusNodeRequest?.token ?? 0) + 1,
+        },
+      });
     }),
 
     assignToSubgraph: withHistory((nodeIds, subgraphId) => {

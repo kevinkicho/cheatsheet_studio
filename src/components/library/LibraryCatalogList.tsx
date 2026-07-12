@@ -8,6 +8,7 @@ import {
 import { ArrowDownAZ, Check, Copy, Plus } from 'lucide-react'
 import { SUBJECTS, type LibraryItem } from '@/types'
 import { useCanvasStore } from '@/stores/canvasStore'
+import { FitContent } from '@/components/math/FitContent'
 import { FigureView } from '@/components/math/FigureView'
 import { LatexView } from '@/components/math/LatexView'
 import { MarkdownTable } from '@/components/math/MarkdownTable'
@@ -262,8 +263,23 @@ export function LibraryCatalogList({ items }: { items: LibraryItem[] }) {
                 </p>
               ) : selected.type === 'figure' && selected.imageUrl ? (
                 <div className="space-y-2">
-                  <div className="mx-auto h-28 max-w-full">
-                    <FigureView src={selected.imageUrl} alt={selected.title} />
+                  <div className="mx-auto h-28 max-w-full overflow-hidden rounded-md bg-zinc-950/40 p-1">
+                    <FitContent
+                      mode="scale"
+                      fitMethod="transform"
+                      align="center"
+                      minScale={0.05}
+                      maxScale={32}
+                      showBadge
+                      contentKey={`cat-fig-${selected.id}`}
+                      className="h-full w-full"
+                    >
+                      <FigureView
+                        src={selected.imageUrl}
+                        alt={selected.title}
+                        fillContainer={false}
+                      />
+                    </FitContent>
                   </div>
                   {selected.description && (
                     <p className="text-[10px] leading-snug text-zinc-500">

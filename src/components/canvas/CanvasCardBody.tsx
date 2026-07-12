@@ -13,31 +13,21 @@ type Props = {
   item: CanvasItem
   /** Show FitContent % badge (canvas selection only). */
   showBadge?: boolean
-  /** Bump when async Mermaid finishes (canvas only). */
-  mermaidReadyKey?: number
-  onMermaidRendered?: () => void
   /**
-   * Board zoom for vector paint (equations). Multiplies KaTeX font-size and
-   * counter-scales so glyphs stay sharp under CSS board zoom.
+   * While free-transform / drag is active, use CSS transform fit only
+   * (no KaTeX reflow) to avoid lag and scale “twitch”.
    */
-  paintZoom?: number
+  interactiveFast?: boolean
 }
 
 /**
  * Shared card content for MainCanvas and export — same FitContent / themes /
  * markup so preview and PDF match the viewport.
- *
- * Vector paths (docs/vector-graphics.md):
- * - Equations → KaTeX + fontSize fit (+ paintZoom on canvas)
- * - Figures → inline SVG at display size
- * - Process → Mermaid SVG fillContainer
  */
 export function CanvasCardBody({
   item,
   showBadge = false,
-  mermaidReadyKey = 0,
-  onMermaidRendered,
-  paintZoom = 1,
+  interactiveFast = false,
 }: Props) {
   const style = item.style ?? {}
   const asFigure = isFigureLike(item)
@@ -50,29 +40,37 @@ export function CanvasCardBody({
   const mermaidTheme = item.mermaidTheme ?? 'dark'
 
   if (asFigure && item.imageUrl) {
-    // SVG figures fill the card; FigureView paints at display resolution.
     return (
-      <FigureView
-        src={item.imageUrl}
-        alt={item.title ?? 'figure'}
-        fillContainer
-      />
+      <FitContent
+        mode="scale"
+        fitMethod="transform"
+        fillMode={fillMode}
+        align={keepAspectRatio ? 'center' : 'start'}
+        minScale={minScale}
+        maxScale={maxScale}
+        showBadge={showBadge && !interactiveFast}
+        contentKey={`${item.id}-fig-${item.imageUrl}-fit${item.contentFitKey ?? 0}-ar${keepAspectRatio ? 1 : 0}`}
+        className="h-full w-full"
+      >
+        <FigureView
+          src={item.imageUrl}
+          alt={item.title ?? 'figure'}
+          fillContainer={false}
+        />
+      </FitContent>
     )
   }
 
   if (item.type === 'process-chart' || item.mermaidSource) {
-    // Mermaid SVG fills the card at display size (vector) — no CSS scale.
     return (
       <MermaidView
+        key={`${item.id}-mmd-${keepAspectRatio ? 'meet' : 'none'}-${mermaidTheme}`}
         source={item.mermaidSource ?? ''}
         theme={mermaidTheme}
         forceDark={mermaidTheme !== 'forest'}
         fillContainer
         preserveAspect={keepAspectRatio ? 'meet' : 'none'}
-        onRendered={onMermaidRendered}
         className="h-full w-full"
-        // mermaidReadyKey kept in tree identity via key so parent can remount if needed
-        key={`${item.id}-mmd-${mermaidReadyKey}-${keepAspectRatio ? 1 : 0}`}
       />
     )
   }
@@ -81,24 +79,28 @@ export function CanvasCardBody({
     item.type === 'equation' ||
     item.type === 'custom-equation' ||
     Boolean(item.latex)
-  // Equations: fontSize fit so KaTeX reflows as vector type when the card grows.
-  // Stretch (independent X/Y) uses transform for non-uniform scale.
+
+  // During drag/resize: always transform (cheap). Idle: fontSize for crisp type.
   const equationFit =
-    isEquation && keepAspectRatio
-      ? CARD_DEFAULTS.equationFitMethod
-      : 'transform'
+    interactiveFast || !isEquation || !keepAspectRatio
+      ? 'transform'
+      : CARD_DEFAULTS.equationFitMethod
+
+  const atNaturalSize = item.autoFit === true || contentFill === false
+  const equationMaxScale = atNaturalSize ? 1 : maxScale
 
   return (
     <FitContent
       mode="scale"
       fillMode={fillMode}
+      align={keepAspectRatio ? 'center' : 'start'}
       minScale={minScale}
-      maxScale={maxScale}
+      maxScale={isEquation || item.type === 'table' ? equationMaxScale : maxScale}
       fitMethod={equationFit}
       baseFontSize={style.fontSize ?? 18}
-      paintZoom={isEquation && equationFit === 'fontSize' ? paintZoom : 1}
-      showBadge={showBadge}
-      contentKey={`${item.id}-${item.latex ?? ''}-${item.tableMarkdown ?? ''}-${style.fontSize ?? ''}-fit${item.contentFitKey ?? 0}-fill${contentFill ? 1 : 0}-ar${keepAspectRatio ? 1 : 0}-t${showTitle ? 1 : 0}-m${equationFit}-z${paintZoom}`}
+      showBadge={showBadge && !interactiveFast}
+      // Do not put board zoom or transient flags in contentKey (avoids remeasure storms)
+      contentKey={`${item.id}-${item.latex ?? ''}-${item.tableMarkdown ?? ''}-${style.fontSize ?? ''}-fit${item.contentFitKey ?? 0}-fill${contentFill ? 1 : 0}-ar${keepAspectRatio ? 1 : 0}-t${showTitle ? 1 : 0}-m${equationFit}-af${item.autoFit ? 1 : 0}`}
       className="h-full w-full"
     >
       {isEquation && item.latex && (

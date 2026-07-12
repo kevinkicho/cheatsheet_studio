@@ -1,4 +1,5 @@
 import {
+  memo,
   useCallback,
   useRef,
   useState,
@@ -31,7 +32,11 @@ interface LibraryItemCardProps {
   }
 }
 
-export function LibraryItemCard({
+/**
+ * Fixed-size library tile with a taller zoom-fit preview.
+ * Outer padding is uniform (L/R/B equal) so the content fill sits evenly.
+ */
+function LibraryItemCardInner({
   item,
   compact = false,
   labelsOnly = false,
@@ -62,7 +67,14 @@ export function LibraryItemCard({
   const TypeIcon =
     item.type === 'table' ? Table2 : item.type === 'figure' ? ImageIcon : Sigma
 
-  const previewH = compact ? 'h-[4.5rem]' : 'h-24'
+  // Taller fixed tiles + equal outer pad (p-2.5 = 10px all sides)
+  // compact (bottom panel): ~11rem total · full library: ~13rem
+  const tileClass = labelsOnly
+    ? 'px-2.5 py-1.5'
+    : compact
+      ? 'h-[11rem] p-2.5'
+      : 'h-[13rem] p-3'
+
   const canCopyLatex = Boolean(item.latex)
 
   const copyLatex = async (e: MouseEvent | PointerEvent) => {
@@ -107,47 +119,56 @@ export function LibraryItemCard({
         }
         className={`group relative flex touch-none cursor-grab flex-col overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900/80 transition active:cursor-grabbing ${
           isDragging ? 'opacity-40' : 'hover:border-indigo-500/50'
-        } ${labelsOnly ? 'px-2 py-1.5' : compact ? 'p-2' : 'p-3'}`}
+        } ${tileClass}`}
       >
-        {/* Content non-interactive so empty padding + formula area all start a drag */}
-        <div className="pointer-events-none flex min-h-0 flex-1 flex-col">
-          <div
-            className={`flex shrink-0 items-start gap-1.5 ${labelsOnly ? '' : 'mb-1.5'}`}
-          >
-            <TypeIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-indigo-400" />
-            <h4 className="min-w-0 flex-1 truncate text-xs font-medium text-zinc-100">
-              {item.title}
-            </h4>
-            {/* Topic in top-right (was under the title) */}
-            <span className="max-w-[36%] shrink-0 truncate text-right text-[10px] leading-4 text-zinc-400/50">
-              {item.topic}
-            </span>
-          </div>
+        {/* Header — fixed height row */}
+        <div className="pointer-events-none flex h-5 shrink-0 items-center gap-1.5">
+          <TypeIcon className="h-3.5 w-3.5 shrink-0 text-indigo-400" />
+          <h4 className="min-w-0 flex-1 truncate text-xs font-medium leading-5 text-zinc-100">
+            {item.title}
+          </h4>
+          <span className="max-w-[38%] shrink-0 truncate text-right text-[10px] leading-5 text-zinc-400/50">
+            {item.topic}
+          </span>
+        </div>
 
-          {!labelsOnly &&
-            (item.type === 'figure' && item.imageUrl ? (
-              <div
-                className={`flex w-full items-center justify-center overflow-hidden rounded-md bg-transparent p-0.5 ${previewH}`}
+        {!labelsOnly && (
+          /*
+           * Fixed content well under the header. Outer card pad is equal L/R/B.
+           * Inner p-1.5 lives on a WRAPPER (not FitContent) so measure uses the
+           * true content box — padding on FitContent used to oversize scale and
+           * clip right/bottom.
+           */
+          <div className="pointer-events-none mt-2 min-h-0 flex-1 overflow-hidden rounded-md bg-zinc-950/70 p-1.5">
+            {item.type === 'figure' && item.imageUrl ? (
+              <FitContent
+                mode="scale"
+                fitMethod="transform"
+                align="center"
+                minScale={0.05}
+                maxScale={32}
+                showBadge
+                contentKey={`lib-fig-${item.id}-${item.imageUrl}`}
+                className="h-full w-full"
               >
                 <FigureView
                   src={item.imageUrl}
                   alt={item.title}
-                  className="h-full w-full"
+                  fillContainer={false}
                 />
-              </div>
+              </FitContent>
             ) : (
               <FitContent
                 mode="scale"
-                // Allow grow + shrink so small formulas fill the preview box
-                // (default maxScale=1 is shrink-only → empty margins at 100%).
-                // fontSize: KaTeX reflows as vector type (docs/vector-graphics.md)
-                minScale={0.12}
+                // transform: reliable contain (KaTeX fontSize overshoots L/R/B)
+                fitMethod="transform"
+                align="center"
+                minScale={0.08}
                 maxScale={16}
-                fitMethod="fontSize"
                 baseFontSize={14}
                 showBadge
                 contentKey={`${item.id}-${item.latex ?? ''}-${item.tableMarkdown ?? ''}`}
-                className={`w-full rounded-md bg-zinc-950/60 p-1 ${previewH}`}
+                className="h-full w-full"
               >
                 {(item.type === 'equation' || item.latex) && item.latex && (
                   <LatexView
@@ -163,10 +184,10 @@ export function LibraryItemCard({
                   />
                 )}
               </FitContent>
-            ))}
-        </div>
+            )}
+          </div>
+        )}
 
-        {/* Copy KaTeX — interactive island (does not start drag) */}
         {canCopyLatex && (
           <button
             type="button"
@@ -177,7 +198,7 @@ export function LibraryItemCard({
             onClick={(e) => {
               void copyLatex(e)
             }}
-            className={`absolute bottom-1 right-1 z-10 flex h-6 w-6 items-center justify-center rounded-md border border-zinc-700/80 bg-zinc-950/90 text-zinc-400 opacity-0 shadow transition hover:border-indigo-500/50 hover:text-indigo-200 group-hover:opacity-100 ${
+            className={`absolute bottom-2 right-2 z-10 flex h-6 w-6 items-center justify-center rounded-md border border-zinc-700/80 bg-zinc-950/90 text-zinc-400 opacity-0 shadow transition hover:border-indigo-500/50 hover:text-indigo-200 group-hover:opacity-100 ${
               copied ? 'opacity-100 border-emerald-500/40 text-emerald-300' : ''
             }`}
           >
@@ -205,7 +226,8 @@ export function LibraryItemCard({
   )
 }
 
-/** Host one shared hover preview for a whole library list (avoids N timers). */
+export const LibraryItemCard = memo(LibraryItemCardInner)
+
 export function LibraryHoverPreviewHost({
   hover,
 }: {

@@ -4,6 +4,23 @@ export type ExportFormat = 'pdf' | 'png' | 'jpeg'
 /** Raster color treatment after capture. */
 export type ExportColorMode = 'color' | 'greyscale' | 'bw'
 
+/** Page paper / board fill in the export. */
+export type ExportBackgroundMode = 'transparent' | 'asShown'
+
+/**
+ * How selected pages are arranged in a combined export / preview stack.
+ * - asSheet: use print layout from page settings (vertical / horizontal / grid / free)
+ * - vertical: stack selected pages top-to-bottom
+ */
+export type ExportPageArrangement = 'asSheet' | 'vertical'
+
+/**
+ * One download vs one file per page.
+ * PDF “combined” = multi-page PDF; “separate” = one PDF per page.
+ * PNG/JPEG “combined” = one stitched image; “separate” = one image per page.
+ */
+export type ExportPackageMode = 'combined' | 'separate'
+
 export const EXPORT_FORMATS: {
   id: ExportFormat
   label: string
@@ -68,3 +85,54 @@ export function exportFormatMeta(format: ExportFormat) {
 export function exportColorModeMeta(mode: ExportColorMode) {
   return EXPORT_COLOR_MODES.find((m) => m.id === mode) ?? EXPORT_COLOR_MODES[0]!
 }
+
+export const EXPORT_BACKGROUND_MODES: {
+  id: ExportBackgroundMode
+  label: string
+  description: string
+}[] = [
+  {
+    id: 'transparent',
+    label: 'Transparent',
+    description: 'No page fill (best for overlays / slides)',
+  },
+  {
+    id: 'asShown',
+    label: 'As shown',
+    description: 'Board background color from the sheet',
+  },
+]
+
+export const EXPORT_ARRANGEMENTS: {
+  id: ExportPageArrangement
+  label: string
+  description: string
+}[] = [
+  {
+    id: 'vertical',
+    label: 'Stack vertical',
+    description: 'Selected pages one under another',
+  },
+  {
+    id: 'asSheet',
+    label: 'Page settings',
+    description: 'Use print layout (grid / free / horizontal…)',
+  },
+]
+
+export const EXPORT_PACKAGE_MODES: {
+  id: ExportPackageMode
+  label: string
+  description: string
+}[] = [
+  {
+    id: 'combined',
+    label: 'All together',
+    description: 'One file (PDF multi-page, or stitched image)',
+  },
+  {
+    id: 'separate',
+    label: 'Page by page',
+    description: 'One download file per page',
+  },
+]

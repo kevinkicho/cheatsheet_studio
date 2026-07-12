@@ -12,7 +12,21 @@ interface ShapePickerPopoverProps {
   rootRef: RefObject<HTMLElement | null>
 }
 
-const NEU_BG = 'var(--neu-bg)'
+/**
+ * Popover portals to document.body — CSS vars from `.mermaid-visual-editor`
+ * do not apply. Use solid studio colors so the panel is never transparent.
+ */
+const PANEL_BG = '#1e2028'
+const PANEL_BORDER = '#3f3f46'
+const PANEL_TEXT_MUTED = '#a1a1aa'
+const PANEL_ICON = '#a1a1aa'
+const PANEL_ICON_ACTIVE = '#818cf8'
+const PANEL_SHADOW =
+  '0 8px 28px rgba(0,0,0,0.55), 0 0 0 1px rgba(63,63,70,0.85)'
+const BTN_SHADOW_RAISED =
+  '0 1px 2px rgba(0,0,0,0.45), 0 0 0 1px rgba(63,63,70,0.6)'
+const BTN_SHADOW_INSET =
+  'inset 0 1px 3px rgba(0,0,0,0.55), 0 0 0 1px rgba(63,63,70,0.5)'
 
 export function ShapePickerPopover({
   onClose,
@@ -57,19 +71,19 @@ export function ShapePickerPopover({
       align="center"
       maxHeight={280}
       style={{
-        background: NEU_BG,
+        background: PANEL_BG,
         borderRadius: 16,
-        boxShadow: 'var(--neu-shadow-raised)',
+        boxShadow: PANEL_SHADOW,
         padding: 14,
         minWidth: 300,
-        border: '1px solid var(--neu-border, #3f3f46)',
+        border: `1px solid ${PANEL_BORDER}`,
       }}
     >
       <div
         style={{
           fontSize: 11,
           fontWeight: 600,
-          color: 'var(--neu-text-muted, #a1a1aa)',
+          color: PANEL_TEXT_MUTED,
           letterSpacing: '0.08em',
           marginBottom: 10,
           textTransform: 'uppercase',
@@ -103,27 +117,19 @@ export function ShapePickerPopover({
                   height: 32,
                   borderRadius: 10,
                   border: 'none',
-                  background: NEU_BG,
-                  boxShadow: isActive
-                    ? 'var(--neu-shadow-inset)'
-                    : 'var(--neu-shadow-raised)',
+                  background: PANEL_BG,
+                  boxShadow: isActive ? BTN_SHADOW_INSET : BTN_SHADOW_RAISED,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   cursor: 'pointer',
                   transition: 'box-shadow 0.15s',
-                  color: isActive
-                    ? 'var(--neu-icon-active, #818cf8)'
-                    : 'var(--neu-icon, #a1a1aa)',
+                  color: isActive ? PANEL_ICON_ACTIVE : PANEL_ICON,
                 }}
               >
                 <ShapeIcon
                   shape={shape}
-                  stroke={
-                    isActive
-                      ? 'var(--neu-icon-active, #818cf8)'
-                      : 'var(--neu-icon, #a1a1aa)'
-                  }
+                  stroke={isActive ? PANEL_ICON_ACTIVE : PANEL_ICON}
                 />
               </button>
             )
@@ -135,7 +141,7 @@ export function ShapePickerPopover({
           style={{
             marginTop: 10,
             fontSize: 11,
-            color: 'var(--neu-icon-active, #818cf8)',
+            color: PANEL_ICON_ACTIVE,
             textAlign: 'center',
           }}
         >

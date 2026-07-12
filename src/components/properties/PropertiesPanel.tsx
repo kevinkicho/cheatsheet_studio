@@ -67,8 +67,8 @@ export function PropertiesPanel() {
   const multi = selected.length > 1
   const single = selected.length === 1 ? selected[0] : null
 
-  const [sheetPropsOpen, setSheetPropsOpen] = useState(true)
-  const [gridSettingsOpen, setGridSettingsOpen] = useState(true)
+  const [sheetPropsOpen, setSheetPropsOpen] = useState(false)
+  const [gridSettingsOpen, setGridSettingsOpen] = useState(false)
 
   if (selected.length === 0) {
     return (

@@ -2,9 +2,13 @@ import dagre from '@dagrejs/dagre'
 import type { Edge, Node } from '@xyflow/react'
 import type { Direction, FlowNodeData } from './store'
 
-const NODE_WIDTH = 150
-const NODE_HEIGHT = 60
+/** Defaults close to studio Mermaid flowchart metrics (mermaidTheme FLOW). */
+const NODE_WIDTH = 160
+const NODE_HEIGHT = 48
 const SUBGRAPH_PADDING = 40
+/** Mermaid flowchart nodeSpacing / rankSpacing-ish */
+const NODE_SEP = 50
+const RANK_SEP = 55
 
 const RANKDIR: Record<Direction, string> = {
   TD: 'TB',
@@ -22,7 +26,13 @@ export function applyDagreLayout(
 
   const g = new dagre.graphlib.Graph({ compound: true })
   g.setDefaultEdgeLabel(() => ({}))
-  g.setGraph({ rankdir: RANKDIR[direction], nodesep: 60, ranksep: 80 })
+  g.setGraph({
+    rankdir: RANKDIR[direction],
+    nodesep: NODE_SEP,
+    ranksep: RANK_SEP,
+    marginx: 16,
+    marginy: 16,
+  })
 
   // Add all nodes
   for (const node of nodes) {

@@ -16,7 +16,8 @@ import {
   type Theme,
   type CurveStyle,
 } from '../../lib/store'
-import { applyDagreLayout } from '../../lib/layout'
+import { serialize } from '../../lib/serializer'
+import { layoutWithMermaid } from '../../lib/layoutFromMermaid'
 import { DIRECTIONS, THEMES, CURVE_STYLES } from '../ShapeIcons'
 
 const NEU_BG = 'var(--neu-bg)'
@@ -109,7 +110,6 @@ export function DiagramSettingsSection() {
     setTheme,
     setLook,
     setCurveStyle,
-    setNodes,
     layoutMindmap,
     addMindmapChild,
     addMindmapSibling,
@@ -124,7 +124,6 @@ export function DiagramSettingsSection() {
       setTheme: s.setTheme,
       setLook: s.setLook,
       setCurveStyle: s.setCurveStyle,
-      setNodes: s.setNodes,
       layoutMindmap: s.layoutMindmap,
       addMindmapChild: s.addMindmapChild,
       addMindmapSibling: s.addMindmapSibling,
@@ -141,8 +140,26 @@ export function DiagramSettingsSection() {
       queueMicrotask(() => layoutMindmap({ fit: false }))
       return
     }
-    const { nodes, edges } = useFlowStore.getState()
-    if (nodes.length > 0) setNodes(applyDagreLayout(nodes, edges, dir))
+    // Re-layout with Mermaid engine at the new direction (matches sheet card)
+    const { nodes, edges, theme: t, look: l, curveStyle: c } =
+      useFlowStore.getState()
+    if (nodes.length === 0) return
+    const src = serialize(nodes, edges, {
+      direction: dir,
+      theme: t,
+      look: l,
+      curveStyle: c,
+    })
+    void layoutWithMermaid(src, nodes, edges).then((laid) => {
+      useFlowStore.getState().importDiagram(laid.nodes, laid.edges, {
+        direction: dir,
+        theme: t,
+        look: l,
+        curveStyle: c,
+        diagramKind: 'flowchart',
+      })
+      useFlowStore.setState((s) => ({ layoutEpoch: s.layoutEpoch + 1 }))
+    })
   }
 
   return (
@@ -269,15 +286,28 @@ export function DiagramSettingsSection() {
               </select>
             </div>
 
+            <div style={{ ...subLabelStyle, marginTop: 4 }}>Canvas look</div>
             <NeuBtn
               onClick={() =>
                 setLook(look === 'handDrawn' ? 'classic' : 'handDrawn')
               }
               active={look === 'handDrawn'}
-              title="Toggle hand-drawn look"
+              title="Sketch-style filter + font on the editor (also written into Mermaid syntax for the sheet card)"
             >
               ✏ Hand-drawn {look === 'handDrawn' ? 'On' : 'Off'}
             </NeuBtn>
+            <p
+              style={{
+                fontSize: 9,
+                color: MUTED,
+                lineHeight: 1.4,
+                margin: '8px 0 0',
+              }}
+            >
+              {look === 'handDrawn'
+                ? 'On: shapes use a sketch-style filter and font in the editor and in Mermaid syntax for the sheet.'
+                : 'Off: clean geometric shapes (studio dark, same palette as sheet cards).'}
+            </p>
           </>
         )}
       </div>
