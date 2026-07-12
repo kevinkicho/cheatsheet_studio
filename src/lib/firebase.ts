@@ -14,41 +14,53 @@ const useEmulators =
   import.meta.env.VITE_USE_FIREBASE_EMULATORS === 'true' ||
   import.meta.env.VITE_USE_FIREBASE_EMULATORS === '1'
 
-const firebaseConfig = useEmulators
-  ? {
-      apiKey: 'demo-api-key',
-      authDomain: 'localhost',
-      projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'demo-cheatsheet',
-      storageBucket: 'demo-cheatsheet.appspot.com',
-      messagingSenderId: '123456789012',
-      appId: '1:123456789012:web:demo',
-    }
-  : {
-      apiKey: import.meta.env.VITE_FIREBASE_API_KEY as string | undefined,
-      authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN as string | undefined,
-      projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID as string | undefined,
-      storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET as
-        | string
-        | undefined,
-      messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID as
-        | string
-        | undefined,
-      appId: import.meta.env.VITE_FIREBASE_APP_ID as string | undefined,
-    }
+const demoConfig = {
+  apiKey: 'demo-api-key',
+  authDomain: 'localhost',
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'demo-cheatsheet',
+  storageBucket: 'demo-cheatsheet.appspot.com',
+  messagingSenderId: '123456789012',
+  appId: '1:123456789012:web:demo',
+}
 
-if (!useEmulators && (!firebaseConfig.apiKey || !firebaseConfig.projectId)) {
+const envConfig = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY as string | undefined,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN as string | undefined,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID as string | undefined,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET as
+    | string
+    | undefined,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID as
+    | string
+    | undefined,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID as string | undefined,
+}
+
+const hasEnvConfig = Boolean(envConfig.apiKey && envConfig.projectId)
+
+/**
+ * When env keys are missing (CI unit tests, fresh clone without .env), use the
+ * demo placeholder so `getAuth` does not throw `auth/invalid-api-key` on import.
+ * Real cloud calls still need a configured project; seed/local paths work offline.
+ */
+const firebaseConfig = useEmulators
+  ? demoConfig
+  : hasEnvConfig
+    ? (envConfig as typeof demoConfig)
+    : demoConfig
+
+if (!useEmulators && !hasEnvConfig) {
   console.error(
-    '[firebase] Missing config. Copy .env.example → .env, fill Firebase web app keys, restart `npm run dev`.',
+    '[firebase] Missing config. Copy .env.example → .env, fill Firebase web app keys, restart `npm run dev`. Using placeholder config for import safety (tests/CI).',
     {
-      hasApiKey: Boolean(firebaseConfig.apiKey),
-      hasProjectId: Boolean(firebaseConfig.projectId),
+      hasApiKey: Boolean(envConfig.apiKey),
+      hasProjectId: Boolean(envConfig.projectId),
+      mode: import.meta.env.MODE,
     },
   )
 }
 
-export const app = initializeApp(
-  firebaseConfig as Required<typeof firebaseConfig>,
-)
+export const app = initializeApp(firebaseConfig)
 export const auth = getAuth(app)
 export const db = getFirestore(app)
 export const storage = getStorage(app)
