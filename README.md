@@ -92,12 +92,12 @@ A Firebase-backed app for building multi-page, print-aware cheat sheets from equ
 - GIF seamless loop via bake-at-import (avoids Storage CORS reverse-play issues)  
 
 ### Process charts (Mermaid)
-- Right sidebar **Process** tool: flowchart / sequence / etc. templates, Mermaid source editor, live preview  
-- **Theme Dark** (default for Process) paints studio zinc nodes for the dark app chrome — not Mermaid’s pale lavender default  
-- Stack: `theme: base` + themeVariables + YAML frontmatter + `classDef default`, then layout-safe post-render paint (rewrites fills **without** stripping Mermaid font metrics)  
-- Preview zoom / pan / fit; add chart to canvas as a process-chart card  
-- Isolation page for paint checks: `public/mermaid-test.html` (card 1 = raw pale control; cards 2–3 = studio dark)  
-- Record + regression notes: [docs/MERMAID_DARK_THEME_WORKING_RECORD.md](./docs/MERMAID_DARK_THEME_WORKING_RECORD.md)  
+- Right sidebar **Process** tool: flowchart / sequence / etc. templates, live preview  
+- **Visual editor (flowcharts):** drag-and-drop canvas vendored from [saketkattu/mermaid-visual-editor](https://github.com/saketkattu/mermaid-visual-editor) (MIT) — React Flow + Dagre; Mermaid source is generated automatically. Toggle **Visual / Code**. Other kinds (sequence, state, class, ER, pie, mindmap) stay code + templates for now.  
+- **Theme Dark** (default) paints studio zinc nodes for the dark app chrome  
+- Stack: themeVariables + frontmatter + flowchart-only `classDef`, layout-safe paint, `forced-color-adjust: none`  
+- Isolation page: `public/mermaid-test.html`  
+- Record: [docs/MERMAID_DARK_THEME_WORKING_RECORD.md](./docs/MERMAID_DARK_THEME_WORKING_RECORD.md)  
 
 ### Layers & organization
 - Outliner with **nested folders**, reparent, hide/lock per item or folder  

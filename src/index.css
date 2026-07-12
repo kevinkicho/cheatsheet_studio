@@ -59,6 +59,37 @@ body {
   margin: 0;
 }
 
+/* Vendored mermaid-visual-editor (MIT) — neumorphic tokens for canvas chrome */
+.mermaid-visual-editor {
+  --neu-bg: #e0e5ec;
+  --neu-shadow-raised:
+    6px 6px 14px rgba(163, 177, 198, 0.6), -6px -6px 14px rgba(255, 255, 255, 0.8);
+  --neu-shadow-inset:
+    inset 4px 4px 10px rgba(163, 177, 198, 0.6),
+    inset -4px -4px 10px rgba(255, 255, 255, 0.8);
+  --neu-shadow-soft:
+    4px 4px 10px rgba(163, 177, 198, 0.5), -4px -4px 10px rgba(255, 255, 255, 0.7);
+  --neu-shadow-concave:
+    inset 6px 6px 12px rgba(163, 177, 198, 0.5),
+    inset -6px -6px 12px rgba(255, 255, 255, 0.9);
+}
+.mermaid-visual-editor .neu-raised {
+  box-shadow: var(--neu-shadow-raised);
+}
+.mermaid-visual-editor .neu-inset {
+  box-shadow: var(--neu-shadow-inset);
+}
+.mermaid-visual-editor .neu-soft {
+  box-shadow: var(--neu-shadow-soft);
+}
+.mermaid-visual-editor .react-flow {
+  width: 100%;
+  height: 100%;
+}
+.mermaid-visual-editor .react-flow__attribution {
+  display: none;
+}
+
 /*
  * Mermaid host — CRITICAL for real Chrome:
  * User screenshots (e.g. 183700) measure WHITE node pixels while DOM

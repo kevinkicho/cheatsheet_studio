@@ -25,6 +25,7 @@ import type {
 } from '@/types'
 import { useCanvasStore } from '@/stores/canvasStore'
 import { MermaidView } from '@/components/math/MermaidView'
+import { MermaidVisualEditor } from '@/components/tools/MermaidVisualEditor'
 import {
   MERMAID_KINDS,
   MERMAID_THEMES,
@@ -58,6 +59,11 @@ export function CreateProcessChartPanel() {
   const [source, setSource] = useState(() => mermaidTemplate('flowchart', 'TD'))
   const [status, setStatus] = useState<string | null>(null)
   const [quickNodes, setQuickNodes] = useState('Start, Step A, Decision, Done')
+  /**
+   * Flowchart: visual drag-drop (vendored mermaid-visual-editor) vs source text.
+   * Other diagram kinds stay code-only (visual editor is flowchart-only).
+   */
+  const [editorMode, setEditorMode] = useState<'visual' | 'code'>('visual')
   /** Preview zoom (1 = natural SVG size). */
   const [previewZoom, setPreviewZoom] = useState(1)
   const [naturalSize, setNaturalSize] = useState({ width: 0, height: 0 })
@@ -188,10 +194,15 @@ export function CreateProcessChartPanel() {
     setKind(k)
     const dir = k === 'flowchart' ? direction : 'TD'
     setSource(mermaidTemplate(k, dir))
+    // Visual canvas is flowchart-only (vendored mermaid-visual-editor)
+    setEditorMode(k === 'flowchart' ? 'visual' : 'code')
     fitAfterRenderRef.current = true
     setStatus(`Loaded ${k} template`)
     window.setTimeout(() => setStatus(null), 1500)
   }
+
+  const isFlowchartKind =
+    kind === 'flowchart' || /^(flowchart|graph)\b/im.test(source.trim())
 
   const onDirectionChange = (d: MermaidFlowDirection) => {
     setDirection(d)
@@ -487,23 +498,74 @@ export function CreateProcessChartPanel() {
               </div>
             </div>
 
-            <label className="flex min-h-0 flex-1 flex-col gap-0.5 p-2.5 pt-2">
-              <span className="text-[9px] font-medium uppercase text-zinc-500">
-                Mermaid source
-              </span>
-              <textarea
-                value={source}
-                onChange={(e) => {
-                  setSource(e.target.value)
-                  const d = detectFlowDirection(e.target.value)
-                  if (d) setDirection(d)
-                  setKind(detectMermaidKind(e.target.value))
-                }}
-                spellCheck={false}
-                className="field-input min-h-[8rem] flex-1 resize-y font-mono text-[10px] leading-relaxed"
-                data-testid="mermaid-source"
-              />
-            </label>
+            <div className="flex min-h-0 flex-1 flex-col gap-0.5 p-2.5 pt-2">
+              <div className="flex items-center gap-1">
+                <span className="text-[9px] font-medium uppercase text-zinc-500">
+                  {isFlowchartKind && editorMode === 'visual'
+                    ? 'Visual editor'
+                    : 'Mermaid source'}
+                </span>
+                {isFlowchartKind && (
+                  <div
+                    className="ml-auto inline-flex rounded border border-zinc-800 p-0.5"
+                    role="group"
+                    aria-label="Editor mode"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setEditorMode('visual')}
+                      className={`rounded px-1.5 py-0.5 text-[9px] font-medium ${
+                        editorMode === 'visual'
+                          ? 'bg-indigo-500/20 text-indigo-100'
+                          : 'text-zinc-500 hover:text-zinc-300'
+                      }`}
+                      data-testid="mermaid-mode-visual"
+                    >
+                      Visual
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditorMode('code')}
+                      className={`rounded px-1.5 py-0.5 text-[9px] font-medium ${
+                        editorMode === 'code'
+                          ? 'bg-indigo-500/20 text-indigo-100'
+                          : 'text-zinc-500 hover:text-zinc-300'
+                      }`}
+                      data-testid="mermaid-mode-code"
+                    >
+                      Code
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {isFlowchartKind && editorMode === 'visual' ? (
+                <div className="min-h-[12rem] flex-1">
+                  <MermaidVisualEditor
+                    source={source}
+                    onSourceChange={(mmd) => {
+                      setSource(mmd)
+                      setKind('flowchart')
+                      const d = detectFlowDirection(mmd)
+                      if (d) setDirection(d)
+                    }}
+                  />
+                </div>
+              ) : (
+                <textarea
+                  value={source}
+                  onChange={(e) => {
+                    setSource(e.target.value)
+                    const d = detectFlowDirection(e.target.value)
+                    if (d) setDirection(d)
+                    setKind(detectMermaidKind(e.target.value))
+                  }}
+                  spellCheck={false}
+                  className="field-input min-h-[8rem] flex-1 resize-y font-mono text-[10px] leading-relaxed"
+                  data-testid="mermaid-source"
+                />
+              )}
+            </div>
           </div>
         </Panel>
 
