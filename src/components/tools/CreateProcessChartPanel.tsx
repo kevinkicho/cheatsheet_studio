@@ -15,41 +15,42 @@ import {
   MermaidVisualEditor,
   getVisualEditorMermaidSource,
 } from '@/components/tools/MermaidVisualEditor'
-import { MermaidView } from '@/components/math/MermaidView'
 import type { MermaidDiagramKind, MermaidFlowDirection } from '@/types'
 import {
-  MERMAID_DIRECTIONS,
   MERMAID_KINDS,
-  applyFlowDirection,
   detectFlowDirection,
   detectMermaidKind,
+  isProcessPanelKind,
   mermaidTemplate,
 } from '@/lib/mermaidTemplates'
 import type { StoredFlowchart } from '@/lib/flowchartLibrary'
+import type { DiagramKind } from '@/vendor/mermaid-visual-editor/lib/store'
 
 const REPLACE_WARNING =
-  'Replace the flowchart editor with this content?\n\n' +
+  'Replace the diagram editor with this content?\n\n' +
   'Everything currently in the editor viewport will be discarded. ' +
   'This does not delete canvas cards or cloud library entries unless you already saved there.'
 
-/** True when the editor has real diagram content that would be lost on replace. */
-function hasEditorContent(source: string, isFlowchart: boolean): boolean {
-  if (isFlowchart) {
-    const fromCanvas = getVisualEditorMermaidSource().trim()
-    if (fromCanvas) return true
-  }
+/** True when the interactive editor has real content that would be lost. */
+function hasEditorContent(source: string): boolean {
+  const fromCanvas = getVisualEditorMermaidSource().trim()
+  if (fromCanvas) return true
   const s = source.trim()
   if (!s) return false
   if (/^flowchart\s+\w+\s*\n\s*%%\s*Add nodes/i.test(s)) return false
-  // Any non-trivial diagram body (more than header alone)
-  const lines = s.split(/\r?\n/).filter((l) => l.trim() && !l.trim().startsWith('%%'))
+  const lines = s
+    .split(/\r?\n/)
+    .filter((l) => l.trim() && !l.trim().startsWith('%%'))
   return lines.length > 1
 }
 
+function toEditorKind(kind: MermaidDiagramKind): DiagramKind {
+  return kind === 'mindmap' ? 'mindmap' : 'flowchart'
+}
+
 /**
- * Process sidebar: templates + visual flowchart editor (or dark preview for
- * non-flowchart Mermaid kinds). Source is written to process-chart cards.
- * Named diagrams can be saved/loaded from Firestore when signed in.
+ * Process sidebar: Flowchart + Mind map chips share the same interactive
+ * React Flow editor (never a static Mermaid preview pane).
  */
 export function CreateProcessChartPanel() {
   const addProcessChart = useCanvasStore((s) => s.addProcessChart)
@@ -101,8 +102,16 @@ export function CreateProcessChartPanel() {
     setTitle(selectedChart.title || 'Process chart')
     const src =
       selectedChart.mermaidSource || mermaidTemplate('flowchart', 'TD')
+    const k = selectedChart.mermaidKind ?? detectMermaidKind(src)
+    if (!isProcessPanelKind(k)) {
+      flash(
+        'Selected card type is not editable in Process (use Flowchart or Mind map)',
+      )
+      setActiveLibId(null)
+      return
+    }
+    setKind(k)
     setSource(src)
-    setKind(selectedChart.mermaidKind ?? detectMermaidKind(src))
     setDirection(
       selectedChart.mermaidDirection ?? detectFlowDirection(src) ?? 'TD',
     )
@@ -110,12 +119,9 @@ export function CreateProcessChartPanel() {
     setActiveLibId(null)
   }, [selectedChart?.id]) // eslint-disable-line react-hooks/exhaustive-deps -- load on select change
 
-  /** Prefer live visual canvas snapshot so Add never uses a stale/empty React state. */
   const resolveSource = useCallback(() => {
-    if (isFlowchart) {
-      const fromCanvas = getVisualEditorMermaidSource().trim()
-      if (fromCanvas) return fromCanvas
-    }
+    const fromCanvas = getVisualEditorMermaidSource().trim()
+    if (fromCanvas) return fromCanvas
     const fromState = source.trim()
     if (
       fromState &&
@@ -124,12 +130,12 @@ export function CreateProcessChartPanel() {
       return fromState
     }
     return ''
-  }, [isFlowchart, source])
+  }, [source])
 
   const confirmReplaceEditor = useCallback((): boolean => {
-    if (!hasEditorContent(source, isFlowchart)) return true
+    if (!hasEditorContent(source)) return true
     return window.confirm(REPLACE_WARNING)
-  }, [source, isFlowchart])
+  }, [source])
 
   const loadIntoEditor = useCallback(
     (
@@ -144,10 +150,12 @@ export function CreateProcessChartPanel() {
     ) => {
       if (!opts?.skipConfirm && !confirmReplaceEditor()) return false
       const k = next.kind ?? detectMermaidKind(next.source)
+      if (!isProcessPanelKind(k)) {
+        flash('Only Flowchart and Mind map can be loaded into Process')
+        return false
+      }
       const d =
-        next.direction ??
-        detectFlowDirection(next.source) ??
-        direction
+        next.direction ?? detectFlowDirection(next.source) ?? direction
       if (next.title !== undefined) setTitle(next.title)
       setKind(k)
       setDirection(d)
@@ -156,57 +164,43 @@ export function CreateProcessChartPanel() {
       setActiveLibId(next.libId ?? null)
       return true
     },
-    [confirmReplaceEditor, direction, setActiveLibId],
+    [confirmReplaceEditor, direction, setActiveLibId, flash],
   )
 
-  const applyTemplate = (nextKind: MermaidDiagramKind, nextDir = direction) => {
-    const tpl = mermaidTemplate(nextKind, nextDir)
-    const ok = loadIntoEditor(
-      {
-        source: tpl,
-        kind: nextKind,
-        direction: nextDir,
-        libId: null,
-      },
-    )
+  /** Same chip wiring for Flowchart and Mind map. */
+  const applyTemplate = (nextKind: MermaidDiagramKind) => {
+    if (!isProcessPanelKind(nextKind)) return
+    // Already on this kind and editor has content — still allow re-load of starter
+    const tpl = mermaidTemplate(nextKind, direction)
+    const ok = loadIntoEditor({
+      source: tpl,
+      kind: nextKind,
+      direction,
+      libId: null,
+    })
     if (!ok) return
+    // Force editor remount + import even if kind string was already set
+    setReloadToken((t) => t + 1)
     flash(
       nextKind === 'flowchart'
         ? 'Loaded flowchart template into editor'
-        : `Loaded ${nextKind} template (preview · Add to place on canvas)`,
+        : 'Loaded mind map template into editor',
     )
-  }
-
-  const applyDirection = (nextDir: MermaidFlowDirection) => {
-    setDirection(nextDir)
-    if (kind !== 'flowchart') return
-    // Direction rewrite keeps the same graph — no full replace warning
-    const base = resolveSource() || source
-    const next = applyFlowDirection(
-      base || mermaidTemplate('flowchart', nextDir),
-      nextDir,
-    )
-    setSource(next)
-    setReloadToken((t) => t + 1)
   }
 
   const insert = () => {
     const src = resolveSource()
     if (!src) {
-      flash(
-        isFlowchart
-          ? 'Add at least one node on the canvas first'
-          : 'Load a template first',
-      )
+      flash('Add at least one node on the canvas first')
       return
     }
     setSource(src)
-    const dir = detectFlowDirection(src) ?? direction
     const k = detectMermaidKind(src)
+    const dir = detectFlowDirection(src) ?? direction
     addProcessChart(src, {
-      title: title.trim() || 'Process chart',
+      title: title.trim() || (k === 'mindmap' ? 'Mind map' : 'Process chart'),
       mermaidTheme: 'dark',
-      mermaidKind: k,
+      mermaidKind: isProcessPanelKind(k) ? k : kind,
       mermaidDirection: dir,
     })
     flash('Added to canvas')
@@ -216,21 +210,17 @@ export function CreateProcessChartPanel() {
     if (!selectedChart) return
     const src = resolveSource()
     if (!src) {
-      flash(
-        isFlowchart
-          ? 'Add at least one node on the canvas first'
-          : 'Load a template first',
-      )
+      flash('Add at least one node on the canvas first')
       return
     }
     setSource(src)
-    const dir = detectFlowDirection(src) ?? direction
     const k = detectMermaidKind(src)
+    const dir = detectFlowDirection(src) ?? direction
     updateItem(selectedChart.id, {
-      title: title.trim() || 'Process chart',
+      title: title.trim() || (k === 'mindmap' ? 'Mind map' : 'Process chart'),
       mermaidSource: src,
       mermaidTheme: 'dark',
-      mermaidKind: k,
+      mermaidKind: isProcessPanelKind(k) ? k : kind,
       mermaidDirection: dir,
     })
     flash('Updated selected chart')
@@ -238,19 +228,24 @@ export function CreateProcessChartPanel() {
 
   const handleSaveLibrary = async (mode: 'new' | 'overwrite') => {
     if (!user?.uid) {
-      flash('Sign in to save flowcharts to the cloud')
+      flash('Sign in to save diagrams to the cloud')
       return
     }
     const src = resolveSource()
     if (!src) {
-      flash('Nothing to save — add nodes or load a template first')
+      flash('Nothing to save — add nodes first')
       return
     }
     clearLibError()
+    const k = detectMermaidKind(src)
     const payload = {
-      title: title.trim() || 'Untitled flowchart',
+      title:
+        title.trim() ||
+        (k === 'mindmap' ? 'Untitled mind map' : 'Untitled flowchart'),
       mermaidSource: src,
-      mermaidKind: detectMermaidKind(src),
+      mermaidKind: (isProcessPanelKind(k) ? k : 'flowchart') as
+        | 'flowchart'
+        | 'mindmap',
       mermaidDirection: detectFlowDirection(src) ?? direction,
     }
     if (mode === 'overwrite' && activeLibId) {
@@ -259,14 +254,19 @@ export function CreateProcessChartPanel() {
       return
     }
     const created = await saveNew(user.uid, payload)
-    if (created) flash('Saved new flowchart to cloud library')
+    if (created) flash('Saved new diagram to cloud library')
   }
 
   const handleLoadLibraryItem = (item: StoredFlowchart) => {
+    const k = item.mermaidKind ?? detectMermaidKind(item.mermaidSource)
+    if (!isProcessPanelKind(k)) {
+      flash('Only Flowchart and Mind map can be loaded into Process')
+      return
+    }
     const ok = loadIntoEditor({
       title: item.title,
       source: item.mermaidSource,
-      kind: item.mermaidKind,
+      kind: k,
       direction: item.mermaidDirection,
       libId: item.id,
     })
@@ -290,6 +290,11 @@ export function CreateProcessChartPanel() {
   }
 
   const activeLibTitle = libItems.find((i) => i.id === activeLibId)?.title
+  const processLibItems = libItems.filter((item) =>
+    isProcessPanelKind(
+      item.mermaidKind ?? detectMermaidKind(item.mermaidSource),
+    ),
+  )
 
   return (
     <div
@@ -302,7 +307,7 @@ export function CreateProcessChartPanel() {
           Process chart
         </span>
         <span className="ml-auto text-[9px] text-zinc-600">
-          {isFlowchart ? 'Visual' : 'Template'}
+          {isFlowchart ? 'Flowchart' : 'Mind map'} · interactive
         </span>
       </div>
 
@@ -348,44 +353,11 @@ export function CreateProcessChartPanel() {
             })}
           </div>
           <p className="mt-1 text-[9px] leading-snug text-zinc-600">
-            Choosing a type loads that starter into the editor
-            {isFlowchart ? ' (interactive flowchart)' : ' (preview only)'}. You
-            will be warned if the editor already has content.
+            Both types use the interactive editor. Layout direction is in the
+            editor Inspector → Diagram Settings.
           </p>
         </div>
 
-        {isFlowchart && (
-          <div>
-            <span className="mb-1 block text-[9px] font-medium uppercase text-zinc-500">
-              Direction
-            </span>
-            <div
-              className="flex flex-wrap gap-1"
-              data-testid="mermaid-directions"
-            >
-              {MERMAID_DIRECTIONS.map((d) => {
-                const active = direction === d.id
-                return (
-                  <button
-                    key={d.id}
-                    type="button"
-                    onClick={() => applyDirection(d.id)}
-                    className={`rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${
-                      active
-                        ? 'border-zinc-600 bg-zinc-800 text-zinc-200'
-                        : 'border-zinc-800 bg-zinc-900/40 text-zinc-500 hover:border-zinc-700'
-                    }`}
-                    data-testid={`mermaid-dir-${d.id}`}
-                  >
-                    {d.label}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Cloud library */}
         <div className="rounded-md border border-zinc-800 bg-zinc-950/40 p-2">
           <div className="mb-1.5 flex items-center gap-1.5">
             <Cloud className="h-3 w-3 text-indigo-400/90" />
@@ -403,7 +375,7 @@ export function CreateProcessChartPanel() {
           </div>
           {!user ? (
             <p className="text-[9px] leading-snug text-zinc-600">
-              Sign in to save and load flowcharts in Firestore.
+              Sign in to save and load diagrams in Firestore.
             </p>
           ) : (
             <>
@@ -414,7 +386,6 @@ export function CreateProcessChartPanel() {
                   onClick={() => void handleSaveLibrary('new')}
                   className="inline-flex items-center gap-1 rounded-md border border-zinc-700 px-1.5 py-1 text-[10px] text-zinc-200 hover:bg-zinc-900 disabled:opacity-50"
                   data-testid="flowchart-save-new"
-                  title="Save current editor as a new cloud flowchart"
                 >
                   <CloudUpload className="h-3 w-3" />
                   Save new
@@ -425,11 +396,6 @@ export function CreateProcessChartPanel() {
                   onClick={() => void handleSaveLibrary('overwrite')}
                   className="inline-flex items-center gap-1 rounded-md border border-zinc-700 px-1.5 py-1 text-[10px] text-zinc-200 hover:bg-zinc-900 disabled:opacity-50"
                   data-testid="flowchart-save-overwrite"
-                  title={
-                    activeLibId
-                      ? 'Overwrite the linked cloud flowchart'
-                      : 'Load a library item first to enable overwrite'
-                  }
                 >
                   <RefreshCw className="h-3 w-3" />
                   Update saved
@@ -462,13 +428,13 @@ export function CreateProcessChartPanel() {
                       Loading…
                     </p>
                   )}
-                  {!libLoading && libItems.length === 0 && (
+                  {!libLoading && processLibItems.length === 0 && (
                     <p className="px-2 py-2 text-[10px] text-zinc-500">
-                      No saved flowcharts yet. Use “Save new”.
+                      No saved diagrams yet. Use “Save new”.
                     </p>
                   )}
                   {!libLoading &&
-                    libItems.map((item) => (
+                    processLibItems.map((item) => (
                       <div
                         key={item.id}
                         className={`flex items-center gap-1 border-b border-zinc-800/80 px-1.5 py-1 last:border-0 ${
@@ -479,7 +445,6 @@ export function CreateProcessChartPanel() {
                           type="button"
                           onClick={() => handleLoadLibraryItem(item)}
                           className="min-w-0 flex-1 truncate text-left text-[10px] text-zinc-200 hover:text-white"
-                          title={`Load “${item.title}” into editor`}
                         >
                           {item.title}
                           <span className="ml-1 text-[9px] text-zinc-600">
@@ -490,7 +455,6 @@ export function CreateProcessChartPanel() {
                           type="button"
                           onClick={() => void handleDeleteLibraryItem(item)}
                           className="shrink-0 rounded p-0.5 text-zinc-600 hover:bg-zinc-800 hover:text-rose-400"
-                          title="Delete from library"
                           aria-label={`Delete ${item.title}`}
                         >
                           <Trash2 className="h-3 w-3" />
@@ -505,31 +469,14 @@ export function CreateProcessChartPanel() {
       </div>
 
       <div className="min-h-0 flex-1 p-2">
-        {isFlowchart ? (
-          <MermaidVisualEditor
-            source={source}
-            onSourceChange={setSource}
-            reloadToken={reloadToken}
-            className="h-full min-h-[16rem]"
-          />
-        ) : (
-          <div
-            className="flex h-full min-h-[16rem] flex-col overflow-hidden rounded-md border border-zinc-700/80 bg-[#12141a]"
-            data-testid="mermaid-template-preview"
-          >
-            <div className="min-h-0 flex-1 overflow-auto p-2">
-              <MermaidView
-                source={source}
-                theme="dark"
-                forceDark
-                className="h-full w-full"
-              />
-            </div>
-            <p className="shrink-0 border-t border-zinc-800 px-2 py-1 text-[9px] text-zinc-500">
-              Preview only · switch to Flowchart for interactive editing
-            </p>
-          </div>
-        )}
+        <MermaidVisualEditor
+          key={kind}
+          source={source}
+          onSourceChange={setSource}
+          reloadToken={reloadToken}
+          diagramKind={toEditorKind(kind)}
+          className="h-full min-h-[16rem]"
+        />
       </div>
 
       <div className="flex shrink-0 flex-col gap-1.5 border-t border-zinc-800 px-2.5 py-2">

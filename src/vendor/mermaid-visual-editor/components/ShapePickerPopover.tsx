@@ -38,6 +38,7 @@ export function ShapePickerPopover({
       : (drawingShape ?? 'rectangle')
 
   const handleShapeClick = (shape: NodeShape) => {
+    // Wire each button to its ALL_SHAPES entry shape id (not position index)
     if (hasNodeSelection) {
       selectedNodes.forEach((n) => updateNodeShape(n.id, shape))
     } else {

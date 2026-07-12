@@ -8,16 +8,23 @@ import {
 } from 'react'
 import type { CanvasItem } from '@/types'
 import { useCanvasStore } from '@/stores/canvasStore'
-import { FitContent } from '@/components/math/FitContent'
-import { FigureView } from '@/components/math/FigureView'
 import { LatexView } from '@/components/math/LatexView'
 import { MarkdownTable } from '@/components/math/MarkdownTable'
 import { MermaidView } from '@/components/math/MermaidView'
+import { CanvasCardBody } from '@/components/canvas/CanvasCardBody'
 import {
   CARD_DEFAULTS,
   composeBorderCss,
   isFigureLike,
 } from '@/lib/cardDefaults'
+import {
+  HANDLE_HIT_PX,
+  HANDLE_LAYOUT,
+  HANDLE_VISUAL_PX,
+  RESIZE_CURSOR,
+  applyHandleToRect,
+  type ResizeHandle,
+} from '@/lib/resizeHandles'
 
 interface CanvasItemViewProps {
   item: CanvasItem
@@ -30,11 +37,9 @@ interface CanvasItemViewProps {
 const MAX_AUTO_W = 520
 const MAX_AUTO_H = 420
 const DRAG_THRESHOLD_PX = 3
-/** Title row + margin — reserved so showing the title grows the card instead of shrinking math. */
-const TITLE_BAND = 22
 
-/** Equations/tables/mermaid — figures use a dedicated crisp layout path. */
-function ItemBody({ item }: { item: CanvasItem }) {
+/** Natural-size measure target for autoFit (unscaled). */
+function NaturalBody({ item }: { item: CanvasItem }) {
   if (item.type === 'process-chart' || item.mermaidSource) {
     return (
       <MermaidView
@@ -78,7 +83,7 @@ export function CanvasItemView({
   const moveItem = useCanvasStore((s) => s.moveItem)
   const moveItemsBy = useCanvasStore((s) => s.moveItemsBy)
   const resizeItem = useCanvasStore((s) => s.resizeItem)
-  const resizeItemsBy = useCanvasStore((s) => s.resizeItemsBy)
+  const applyItemRects = useCanvasStore((s) => s.applyItemRects)
   const selectedCount = useCanvasStore((s) => s.selectedIds.length)
   /** Multi-select: group frame owns resize; cards float above non-selected. */
   const multiSelected = selected && selectedCount > 1
@@ -99,8 +104,8 @@ export function CanvasItemView({
     hitTitle: boolean
     /** Multi-drag: start positions of every selected card */
     groupOrigins: Record<string, { x: number; y: number }> | null
-    /** Multi-resize: start sizes of every selected card */
-    groupSizes: Record<string, { width: number; height: number }> | null
+    /** Free-transform handle id (n/s/e/w/ne/nw/se/sw) */
+    resizeHandle?: ResizeHandle
     shiftToggle: boolean
   } | null>(null)
   const lastFitRef = useRef({ w: 0, h: 0 })
@@ -119,8 +124,7 @@ export function CanvasItemView({
       if (!body) return
 
       const style = item.style ?? {}
-      const pad = (style.padding ?? 12) * 2
-      const titleBand = showTitle ? TITLE_BAND : 0
+      const pad = (style.padding ?? CARD_DEFAULTS.padding) * 2
 
       const contentW = Math.ceil(
         Math.max(body.scrollWidth, body.offsetWidth, 1),
@@ -130,13 +134,9 @@ export function CanvasItemView({
       )
       if (contentW < 2 && contentH < 2) return
 
-      // Size the card to the *natural* equation size + title band so the title
-      // never steals height from the formula (which forced tiny CSS/font scale).
-      const nextW = Math.min(MAX_AUTO_W, Math.max(120, contentW + pad + 4))
-      const nextH = Math.min(
-        MAX_AUTO_H,
-        Math.max(56, contentH + titleBand + pad + 4),
-      )
+      // Natural content size only — title overlays; no reserved chrome gutters.
+      const nextW = Math.min(MAX_AUTO_W, Math.max(120, contentW + pad + 2))
+      const nextH = Math.min(MAX_AUTO_H, Math.max(48, contentH + pad + 2))
 
       const prev = lastFitRef.current
       if (Math.abs(prev.w - nextW) < 2 && Math.abs(prev.h - nextH) < 2) return
@@ -162,7 +162,6 @@ export function CanvasItemView({
     }
   }, [
     autoFit,
-    showTitle,
     item.id,
     item.latex,
     item.tableMarkdown,
@@ -250,7 +249,6 @@ export function CanvasItemView({
         origH: item.height,
         hitTitle: hitTitle && !shift,
         groupOrigins: shift ? null : groupOrigins,
-        groupSizes: null,
         shiftToggle: shift,
       }
     },
@@ -268,37 +266,17 @@ export function CanvasItemView({
   )
 
   const beginResize = useCallback(
-    (e: ReactPointerEvent) => {
+    (handle: ResizeHandle) => (e: ReactPointerEvent) => {
       if (!interactive || item.locked) return
       if (e.button !== 0) return
       e.stopPropagation()
       e.preventDefault()
       useCanvasStore.getState().beginHistoryBatch()
       const state = useCanvasStore.getState()
-      // Ensure this card is selected; keep multi-selection if already in it
       if (!state.selectedIds.includes(item.id)) {
         select(item.id)
       }
       ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
-
-      const idsForGroup =
-        state.selectedIds.includes(item.id) && state.selectedIds.length > 1
-          ? state.selectedIds
-          : [item.id]
-      // If we just selected only this card above, group is just [item.id]
-      const ids =
-        useCanvasStore.getState().selectedIds.includes(item.id) &&
-        useCanvasStore.getState().selectedIds.length > 1
-          ? useCanvasStore.getState().selectedIds
-          : idsForGroup
-
-      const groupSizes: Record<string, { width: number; height: number }> = {}
-      for (const id of ids) {
-        const it = useCanvasStore.getState().items.find((x) => x.id === id)
-        if (it && !it.locked)
-          groupSizes[id] = { width: it.width, height: it.height }
-      }
-      if (Object.keys(groupSizes).length === 0) return
 
       dragRef.current = {
         mode: 'resize',
@@ -312,9 +290,10 @@ export function CanvasItemView({
         origH: item.height,
         hitTitle: false,
         groupOrigins: null,
-        groupSizes,
+        resizeHandle: handle,
         shiftToggle: false,
       }
+      setDragging(true)
     },
     [
       item.id,
@@ -359,24 +338,32 @@ export function CanvasItemView({
           }
         }
       } else {
-        // Multi-resize: same width/height delta for every selected card
-        if (d.groupSizes && Object.keys(d.groupSizes).length > 1) {
-          resizeItemsBy(d.groupSizes, dx, dy, { manual: true })
-        } else {
-          const nw = d.origW + dx
-          const nh = d.origH + dy
-          if (Number.isFinite(nw) && Number.isFinite(nh)) {
-            resizeItem(item.id, nw, nh, { manual: true })
-          }
-        }
+        // Free-transform from active handle (single card: 4 corners + 4 edges)
+        const handle = d.resizeHandle ?? 'se'
+        const next = applyHandleToRect(
+          { x: d.origX, y: d.origY, w: d.origW, h: d.origH },
+          handle,
+          dx,
+          dy,
+        )
+        applyItemRects(
+          {
+            [item.id]: {
+              x: next.x,
+              y: next.y,
+              width: next.w,
+              height: next.h,
+            },
+          },
+          { manual: true },
+        )
       }
     },
     [
       item.id,
       moveItem,
       moveItemsBy,
-      resizeItem,
-      resizeItemsBy,
+      applyItemRects,
       zoom,
       interactive,
     ],
@@ -388,11 +375,10 @@ export function CanvasItemView({
       const d = dragRef.current
       if (d && d.pointerId !== e.pointerId) return
 
-      // Click (no drag) on title area → hide title; reclaim band so body size stays
+      // Click (no drag) on title overlay → hide title (overlay only; no size change)
       if (d && d.mode === 'move' && !d.active && d.hitTitle && !d.shiftToggle) {
         updateItem(item.id, {
           showTitle: false,
-          height: Math.max(48, item.height - TITLE_BAND),
           contentFitKey: (item.contentFitKey ?? 0) + 1,
         })
       }
@@ -403,8 +389,8 @@ export function CanvasItemView({
 
       dragRef.current = null
       setDragging(false)
-      const el = rootRef.current
-      if (el) {
+      for (const el of [e.currentTarget as HTMLElement, rootRef.current]) {
+        if (!el) continue
         try {
           el.releasePointerCapture(e.pointerId)
         } catch {
@@ -412,7 +398,7 @@ export function CanvasItemView({
         }
       }
     },
-    [item.id, item.height, item.contentFitKey, updateItem, interactive],
+    [item.id, item.contentFitKey, updateItem, interactive],
   )
 
   /**
@@ -436,7 +422,7 @@ export function CanvasItemView({
   )
 
   const style = item.style ?? {}
-  const pad = style.padding ?? 12
+  const pad = style.padding ?? CARD_DEFAULTS.padding
   const safeW = Math.max(80, item.width || 80)
   const safeH = Math.max(48, item.height || 48)
   const left = Number.isFinite(item.x) ? item.x : 0
@@ -446,13 +432,13 @@ export function CanvasItemView({
   // (figures and equations share the same solid panel default)
   const transparent = item.transparentBackground === true
   const titleAlign = item.titleAlign ?? CARD_DEFAULTS.titleAlign
-  const contentFill = item.contentFill !== false
   const titleAlignClass =
     titleAlign === 'center'
       ? 'text-center'
       : titleAlign === 'right'
         ? 'text-right'
         : 'text-left'
+  const showResizeHandles = selected && !item.locked && !multiSelected
 
   if (item.hidden) {
     // Still occupies layout identity for marquee hit-tests only when not hidden;
@@ -464,7 +450,8 @@ export function CanvasItemView({
     <div
       ref={rootRef}
       data-canvas-item
-      className={`absolute select-none overflow-hidden touch-none ${
+      // overflow-visible so corner/edge handles are not clipped by rounded border
+      className={`absolute select-none touch-none ${
         selected
           ? 'ring-2 ring-indigo-400'
           : transparent
@@ -484,22 +471,12 @@ export function CanvasItemView({
         top,
         width: safeW,
         height: safeH,
-        zIndex: displayZ,
-        background: transparent
-          ? 'transparent'
-          : (style.background ?? 'rgba(30,32,40,0.92)'),
-        // Border is independent of background fill (user can toggle stroke)
-        border: composeBorderCss(style),
-        borderRadius: 8,
-        color: style.color ?? '#e8eaed',
-        fontSize: style.fontSize ?? 18,
-        padding: pad,
+        // Selected + handles above neighbors so grips stay clickable
+        zIndex: showResizeHandles
+          ? Math.max(displayZ, 1) + 50
+          : displayZ,
         boxSizing: 'border-box',
-        boxShadow: transparent
-          ? 'none'
-          : selected
-            ? '0 0 0 1px rgba(129,140,248,0.4), 0 8px 24px rgba(0,0,0,0.35)'
-            : '0 4px 16px rgba(0,0,0,0.25)',
+        overflow: 'visible',
       }}
       onPointerDown={beginMove}
       onPointerMove={onPointerMove}
@@ -514,12 +491,32 @@ export function CanvasItemView({
         if (!selected) select(item.id)
       }}
     >
-      <div className="relative z-0 flex h-full min-h-0 flex-col">
+      {/* Chrome + content: clips to radius; handles live as siblings outside.
+          Title sits in normal flow (reserved band) so it never overlaps body. */}
+      <div
+        className="pointer-events-none absolute inset-0 flex min-h-0 flex-col overflow-hidden"
+        style={{
+          background: transparent
+            ? 'transparent'
+            : (style.background ?? 'rgba(30,32,40,0.92)'),
+          border: composeBorderCss(style),
+          borderRadius: 8,
+          color: style.color ?? '#e8eaed',
+          fontSize: style.fontSize ?? 18,
+          padding: pad,
+          boxSizing: 'border-box',
+          boxShadow: transparent
+            ? 'none'
+            : selected
+              ? '0 0 0 1px rgba(129,140,248,0.4), 0 8px 24px rgba(0,0,0,0.35)'
+              : '0 4px 16px rgba(0,0,0,0.25)',
+        }}
+      >
         {showTitle && (
           <div
             data-card-title
             title="Click to hide title"
-            className={`pointer-events-auto relative z-10 mb-1 h-[18px] shrink-0 cursor-pointer truncate text-[10px] font-medium uppercase leading-[18px] tracking-wide text-zinc-500 hover:text-zinc-300 ${titleAlignClass}`}
+            className={`pointer-events-auto relative z-10 mb-0.5 h-4 shrink-0 cursor-pointer truncate px-0.5 text-[10px] font-medium uppercase leading-4 tracking-wide text-zinc-500 hover:text-zinc-200 ${titleAlignClass}`}
           >
             {item.title}
           </div>
@@ -529,76 +526,58 @@ export function CanvasItemView({
           <div
             aria-hidden
             className="pointer-events-none fixed -left-[9999px] top-0 opacity-0"
-            style={{ width: 'max-content', maxWidth: MAX_AUTO_W - pad * 2 }}
+            style={{
+              width: 'max-content',
+              maxWidth: MAX_AUTO_W - pad * 2,
+            }}
           >
             <div ref={naturalRef}>
-              <ItemBody item={item} />
+              <NaturalBody item={item} />
             </div>
           </div>
         )}
 
-        {/* flex-1 body: title is shrink-0 so it never compresses the formula area */}
-        <div className="pointer-events-none min-h-0 w-full flex-1">
-          {asFigure && item.imageUrl ? (
-            // Vector/bitmap at container size — no transform upscale blur
-            <FigureView
-              src={item.imageUrl}
-              alt={item.title ?? 'figure'}
-            />
-          ) : item.type === 'process-chart' || item.mermaidSource ? (
-            // Mermaid SVG: use transform fit (not fontSize). Honors contentFill.
-            // contentKey includes mermaidReadyKey so we re-fit after async render.
-            <FitContent
-              mode="scale"
-              minScale={CARD_DEFAULTS.minFitScale}
-              maxScale={
-                contentFill ? CARD_DEFAULTS.maxFillScale : 1
-              }
-              fitMethod="transform"
-              showBadge={selected}
-              contentKey={`${item.id}-mmd-${item.mermaidSource ?? ''}-${item.mermaidTheme ?? ''}-fit${item.contentFitKey ?? 0}-fill${contentFill ? 1 : 0}-t${showTitle ? 1 : 0}-r${mermaidReadyKey}`}
-              className="h-full w-full"
-            >
-              <MermaidView
-                source={item.mermaidSource ?? ''}
-                theme={item.mermaidTheme ?? 'dark'}
-                forceDark={(item.mermaidTheme ?? 'dark') !== 'forest'}
-                scale={1}
-                onRendered={() => setMermaidReadyKey((k) => k + 1)}
-              />
-            </FitContent>
-          ) : (
-            <FitContent
-              mode="scale"
-              minScale={CARD_DEFAULTS.minFitScale}
-              maxScale={
-                contentFill ? CARD_DEFAULTS.maxFillScale : 1
-              }
-              // App-wide default: fontSize (crisp). Figures never reach here.
-              fitMethod={CARD_DEFAULTS.equationFitMethod}
-              baseFontSize={style.fontSize ?? 18}
-              showBadge={selected}
-              contentKey={`${item.id}-${item.latex ?? ''}-${item.tableMarkdown ?? ''}-${item.style?.fontSize ?? ''}-fit${item.contentFitKey ?? 0}-fill${contentFill ? 1 : 0}-t${showTitle ? 1 : 0}`}
-              className="h-full w-full"
-            >
-              <ItemBody item={item} />
-            </FitContent>
-          )}
+        {/* Body below title — process charts / equations never sit under the label */}
+        <div className="pointer-events-none relative min-h-0 w-full flex-1">
+          <CanvasCardBody
+            item={item}
+            showBadge={selected}
+            mermaidReadyKey={mermaidReadyKey}
+            onMermaidRendered={() => setMermaidReadyKey((k) => k + 1)}
+            paintZoom={zoom}
+          />
         </div>
       </div>
 
-      {/* Per-card handle only for single selection; multi uses MultiSelectFrame */}
-      {selected && !item.locked && !multiSelected && (
-        <div
-          data-resize-handle
-          className="absolute bottom-0 right-0 z-20 h-4 w-4 cursor-se-resize rounded-tl bg-indigo-400"
-          onPointerDown={beginResize}
-          onPointerMove={onPointerMove}
-          onPointerUp={endPointer}
-          onPointerCancel={endPointer}
-          title="Resize"
-        />
-      )}
+      {/* Free-transform handles sit outside clipped chrome (large hit targets) */}
+      {showResizeHandles &&
+        HANDLE_LAYOUT.map(({ id, className }) => (
+          <div
+            key={id}
+            data-resize-handle={id}
+            className={`${className} z-[60] flex items-center justify-center`}
+            style={{
+              width: HANDLE_HIT_PX,
+              height: HANDLE_HIT_PX,
+              cursor: RESIZE_CURSOR[id],
+              // Extend hit area without enlarging visual grip
+              touchAction: 'none',
+            }}
+            onPointerDown={beginResize(id)}
+            onPointerMove={onPointerMove}
+            onPointerUp={endPointer}
+            onPointerCancel={endPointer}
+            title={`Resize (${id})`}
+          >
+            <span
+              className="pointer-events-none block rounded-sm bg-indigo-400 shadow-sm ring-1 ring-indigo-100"
+              style={{
+                width: HANDLE_VISUAL_PX,
+                height: HANDLE_VISUAL_PX,
+              }}
+            />
+          </div>
+        ))}
       {item.locked && selected && (
         <div
           className="pointer-events-none absolute bottom-1 right-1 z-20 rounded bg-zinc-950/80 px-1 text-[9px] text-zinc-400 ring-1 ring-zinc-700"

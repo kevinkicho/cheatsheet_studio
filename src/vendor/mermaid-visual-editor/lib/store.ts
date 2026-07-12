@@ -11,6 +11,16 @@ import {
   type Node,
   type NodeChange,
 } from "@xyflow/react";
+import {
+  applyMindmapTreeLayout,
+  asMindmapEdges,
+  asMindmapNodes,
+  makeMindmapEdge,
+  mindmapDescendantsOf,
+  mindmapParentOf,
+  mindmapPreviousSibling,
+  mindmapRoots,
+} from "./mindmap";
 
 // ─── Node shape types ────────────────────────────────────────────────────────
 export type NodeShape =
@@ -27,7 +37,11 @@ export type NodeShape =
   | "parallelogram-alt"
   | "trapezoid"
   | "trapezoid-alt"
-  | "asymmetric";
+  | "asymmetric"
+  /** Mermaid mindmap bang / explode: `id))text((` */
+  | "bang"
+  /** Mermaid mindmap cloud: `id)text(` */
+  | "cloud";
 
 // ─── Edge style types ─────────────────────────────────────────────────────────
 export type EdgeStyle = "solid" | "dashed" | "thick";
@@ -37,6 +51,8 @@ export type ArrowType = "arrow" | "none" | "bidirectional" | "circle" | "cross";
 export type Direction = "TD" | "LR" | "BT" | "RL";
 export type Theme = "default" | "dark" | "forest" | "neutral" | "base";
 export type Look = "classic" | "handDrawn";
+/** Process panel modes that use the interactive canvas (never Mermaid preview). */
+export type DiagramKind = "flowchart" | "mindmap";
 export type CurveStyle =
   | "basis"
   | "bumpX"
@@ -59,6 +75,8 @@ export interface FlowNodeData extends Record<string, unknown> {
   strokeColor?: string;
   textColor?: string;
   isSubgraph?: boolean;
+  /** Mermaid mindmap `::icon(fa fa-*)` class string. */
+  icon?: string;
 }
 
 export interface FlowEdgeData extends Record<string, unknown> {
@@ -84,6 +102,13 @@ interface FlowState {
   theme: Theme;
   look: Look;
   curveStyle: CurveStyle;
+  /** flowchart | mindmap — drives serialize / import format. */
+  diagramKind: DiagramKind;
+  /**
+   * Bumped after mindmap auto-layout so the canvas can fitView.
+   * Not part of undo history.
+   */
+  layoutEpoch: number;
   past: Snapshot[];
   future: Snapshot[];
 
@@ -108,6 +133,34 @@ interface FlowState {
       Pick<FlowNodeData, "fillColor" | "strokeColor" | "textColor">
     >,
   ) => void;
+  /** Batch style update (single history entry; keeps selection). */
+  updateNodesStyle: (
+    ids: string[],
+    style: Partial<
+      Pick<FlowNodeData, "fillColor" | "strokeColor" | "textColor">
+    >,
+  ) => void;
+  updateNodesShape: (ids: string[], shape: NodeShape) => void;
+  updateNodesLabel: (ids: string[], label: string) => void;
+  updateNodesIcon: (ids: string[], icon: string | undefined) => void;
+
+  // Mind map hierarchy operations
+  addMindmapChild: (parentId?: string) => void;
+  addMindmapSibling: (nodeId?: string) => void;
+  reparentMindmapNodes: (
+    nodeIds: string[],
+    newParentId: string | null,
+  ) => void;
+  promoteMindmapNodes: (nodeIds?: string[]) => void;
+  demoteMindmapNodes: (nodeIds?: string[]) => void;
+  deleteMindmapSubtree: (nodeIds?: string[]) => void;
+  /**
+   * Radial equal-slice layout for mindmap.
+   * @param opts.fit — when true, bump layoutEpoch so canvas fitView runs (Auto layout / import only).
+   *   Hierarchy edits should pass `fit: false` to keep the user’s zoom.
+   */
+  layoutMindmap: (opts?: { fit?: boolean }) => void;
+
   setNodes: (nodes: Node<FlowNodeData>[]) => void;
   loadDiagram: (
     nodes: Node<FlowNodeData>[],
@@ -116,7 +169,13 @@ interface FlowState {
   importDiagram: (
     nodes: Node<FlowNodeData>[],
     edges: Edge<FlowEdgeData>[],
-    settings: { direction: Direction; theme: Theme; look: Look; curveStyle: CurveStyle },
+    settings: {
+      direction: Direction;
+      theme: Theme;
+      look: Look;
+      curveStyle: CurveStyle;
+      diagramKind?: DiagramKind;
+    },
   ) => void;
 
   // Subgraph operations
@@ -132,6 +191,7 @@ interface FlowState {
   setTheme: (theme: Theme) => void;
   setLook: (look: Look) => void;
   setCurveStyle: (curveStyle: CurveStyle) => void;
+  setDiagramKind: (kind: DiagramKind) => void;
 
   // History
   pushHistory: () => void;
@@ -206,6 +266,8 @@ export const useFlowStore = create<FlowState>((set, get) => {
     theme: "dark",
     look: "classic",
     curveStyle: "basis",
+    diagramKind: "flowchart",
+    layoutEpoch: 0,
     past: [],
     future: [],
     clipboard: null,
@@ -269,14 +331,22 @@ export const useFlowStore = create<FlowState>((set, get) => {
       }),
 
     onConnect: withHistory((connection) => {
-      const markers = computeMarkers("arrow");
+      // Mind map edges are undirected parent→child lines (no arrow heads)
+      const isMm = get().diagramKind === "mindmap";
+      const arrowType: ArrowType = isMm ? "none" : "arrow";
+      const markers = isMm ? {} : computeMarkers(arrowType);
       set({
         edges: addEdge(
           {
             ...connection,
-            type: "flowEdge",
-            ...markers,
-            data: { edgeStyle: "solid", arrowType: "arrow" },
+            type: isMm ? "mindmapEdge" : "flowEdge",
+            ...(isMm
+              ? {
+                  sourceHandle: connection.sourceHandle ?? "center",
+                  targetHandle: connection.targetHandle ?? "center-target",
+                }
+              : markers),
+            data: { edgeStyle: "solid", arrowType },
           },
           get().edges,
         ) as Edge<FlowEdgeData>[],
@@ -318,9 +388,17 @@ export const useFlowStore = create<FlowState>((set, get) => {
     }),
 
     updateNodeShape: withHistory((id, shape) => {
+      const isMm = get().diagramKind === "mindmap";
       set({
         nodes: get().nodes.map((n) =>
-          n.id === id ? { ...n, data: { ...n.data, shape } } : n,
+          n.id === id
+            ? {
+                ...n,
+                // Always match diagram kind so flowchart never stays on mindmapNode
+                type: isMm ? "mindmapNode" : "flowNode",
+                data: { ...n.data, shape },
+              }
+            : n,
         ),
       });
     }),
@@ -328,10 +406,315 @@ export const useFlowStore = create<FlowState>((set, get) => {
     updateNodeStyle: withHistory((id, style) => {
       set({
         nodes: get().nodes.map((n) =>
-          n.id === id ? { ...n, data: { ...n.data, ...style } } : n,
+          n.id === id ? { ...n, selected: true, data: { ...n.data, ...style } } : n,
         ),
       });
     }),
+
+    updateNodesStyle: withHistory((ids, style) => {
+      if (ids.length === 0) return;
+      const idSet = new Set(ids);
+      set({
+        nodes: get().nodes.map((n) =>
+          idSet.has(n.id)
+            ? {
+                ...n,
+                selected: true,
+                // Keep mindmap circular node type when styling
+                type:
+                  get().diagramKind === "mindmap" ? "mindmapNode" : n.type,
+                data: { ...n.data, ...style },
+              }
+            : n,
+        ),
+      });
+    }),
+
+    updateNodesShape: withHistory((ids, shape) => {
+      if (ids.length === 0) return;
+      const idSet = new Set(ids);
+      const isMm = get().diagramKind === "mindmap";
+      // Flowchart inspector must never write mindmap-only shapes
+      const safeShape: NodeShape =
+        !isMm && (shape === "bang" || shape === "cloud")
+          ? "rounded"
+          : shape;
+      set({
+        nodes: get().nodes.map((n) =>
+          idSet.has(n.id)
+            ? {
+                ...n,
+                selected: true,
+                type: isMm ? "mindmapNode" : "flowNode",
+                data: { ...n.data, shape: safeShape },
+              }
+            : n,
+        ),
+      });
+    }),
+
+    updateNodesLabel: withHistory((ids, label) => {
+      if (ids.length === 0) return;
+      const idSet = new Set(ids);
+      set({
+        nodes: get().nodes.map((n) =>
+          idSet.has(n.id)
+            ? { ...n, selected: true, data: { ...n.data, label } }
+            : n,
+        ),
+      });
+    }),
+
+    updateNodesIcon: withHistory((ids, icon) => {
+      if (ids.length === 0) return;
+      const idSet = new Set(ids);
+      set({
+        nodes: get().nodes.map((n) =>
+          idSet.has(n.id)
+            ? {
+                ...n,
+                selected: true,
+                data: {
+                  ...n.data,
+                  icon: icon && icon.trim() ? icon.trim() : undefined,
+                },
+              }
+            : n,
+        ),
+      });
+    }),
+
+    addMindmapChild: withHistory((parentId) => {
+      const { nodes, edges } = get();
+      const selected = nodes.filter((n) => n.selected);
+      const parent =
+        parentId ??
+        selected[0]?.id ??
+        mindmapRoots(nodes, edges)[0]?.id ??
+        null;
+      const id = `mm_${nodeCounter++}`;
+      const parentNode = parent ? nodes.find((n) => n.id === parent) : null;
+      const offset = parentNode
+        ? {
+            x: parentNode.position.x + 200,
+            y: parentNode.position.y + selected.length * 40,
+          }
+        : { x: 150, y: 100 };
+      const newNode: Node<FlowNodeData> = {
+        id,
+        type: "mindmapNode",
+        position: offset,
+        selected: true,
+        data: { label: "New topic", shape: "circle" },
+        style: { width: 96, height: 96 },
+      };
+      const nextNodes: Node<FlowNodeData>[] = [
+        ...nodes.map((n) => ({ ...n, selected: false as const })),
+        newNode,
+      ];
+      const nextEdges = parent
+        ? [...edges, makeMindmapEdge(parent, id)]
+        : edges;
+      set({ nodes: nextNodes, edges: nextEdges });
+    }),
+
+    addMindmapSibling: withHistory((nodeId) => {
+      const { nodes, edges } = get();
+      const selected = nodes.filter((n) => n.selected);
+      const refId = nodeId ?? selected[0]?.id;
+      if (!refId) {
+        // No selection → add a new root
+        const id = `mm_${nodeCounter++}`;
+        const rootNode: Node<FlowNodeData> = {
+          id,
+          type: "mindmapNode",
+          position: { x: 40, y: 40 + nodes.length * 88 },
+          selected: true,
+          data: { label: "New topic", shape: "circle" },
+          style: { width: 120, height: 120 },
+        };
+        set({
+          nodes: [
+            ...nodes.map((n) => ({ ...n, selected: false as const })),
+            rootNode,
+          ],
+        });
+        return;
+      }
+      const parent = mindmapParentOf(refId, edges);
+      const ref = nodes.find((n) => n.id === refId);
+      const id = `mm_${nodeCounter++}`;
+      const newNode: Node<FlowNodeData> = {
+        id,
+        type: "mindmapNode",
+        position: {
+          x: (ref?.position.x ?? 40) + (parent ? 0 : 40),
+          y: (ref?.position.y ?? 40) + 88,
+        },
+        selected: true,
+        data: { label: "New topic", shape: "circle" },
+        style: { width: 96, height: 96 },
+      };
+      const nextNodes: Node<FlowNodeData>[] = [
+        ...nodes.map((n) => ({ ...n, selected: false as const })),
+        newNode,
+      ];
+      const nextEdges = parent
+        ? [...edges, makeMindmapEdge(parent, id)]
+        : edges;
+      set({ nodes: nextNodes, edges: nextEdges });
+    }),
+
+    reparentMindmapNodes: withHistory((nodeIds, newParentId) => {
+      if (nodeIds.length === 0) return;
+      const { nodes, edges } = get();
+      const moving = new Set(nodeIds);
+      // Prevent cycles: cannot parent under self or descendant
+      if (newParentId) {
+        for (const id of nodeIds) {
+          if (id === newParentId) return;
+          const desc = mindmapDescendantsOf(id, edges);
+          if (desc.has(newParentId)) return;
+        }
+      }
+      const nextEdges = edges.filter((e) => !moving.has(e.target));
+      if (newParentId) {
+        for (const id of nodeIds) {
+          nextEdges.push(makeMindmapEdge(newParentId, id));
+        }
+      }
+      set({
+        edges: nextEdges,
+        nodes: nodes.map((n) =>
+          moving.has(n.id) ? { ...n, selected: true } : n,
+        ),
+      });
+    }),
+
+    /**
+     * Outdent: become sibling of parent, inserted *immediately after* parent
+     * among grandparent’s children so Demote (indent under previous sibling)
+     * returns to the original parent.
+     */
+    promoteMindmapNodes: withHistory((nodeIds) => {
+      const { nodes, edges } = get();
+      const ids =
+        nodeIds && nodeIds.length > 0
+          ? nodeIds
+          : nodes.filter((n) => n.selected).map((n) => n.id);
+      if (ids.length === 0) return;
+      let nextEdges = [...edges];
+      for (const id of ids) {
+        const parent = mindmapParentOf(id, nextEdges);
+        if (!parent) continue;
+        const grand = mindmapParentOf(parent, nextEdges);
+        nextEdges = nextEdges.filter(
+          (e) => !(e.target === id && e.source === parent),
+        );
+        if (grand) {
+          const newEdge = makeMindmapEdge(grand, id);
+          // Place right after grand→parent so previous sibling on demote = parent
+          const parentEdgeIdx = nextEdges.findIndex(
+            (e) => e.source === grand && e.target === parent,
+          );
+          if (parentEdgeIdx >= 0) {
+            nextEdges = [
+              ...nextEdges.slice(0, parentEdgeIdx + 1),
+              newEdge,
+              ...nextEdges.slice(parentEdgeIdx + 1),
+            ];
+          } else {
+            nextEdges.push(newEdge);
+          }
+        }
+        // else: becomes a root (no incoming edge) — demote uses previous root
+      }
+      set({
+        edges: nextEdges,
+        nodes: nodes.map((n) =>
+          ids.includes(n.id) ? { ...n, selected: true } : n,
+        ),
+      });
+    }),
+
+    /**
+     * Indent: become last? No — become child of previous sibling (edge order).
+     * Inverse of promote when promote inserted after former parent.
+     */
+    demoteMindmapNodes: withHistory((nodeIds) => {
+      const { nodes, edges } = get();
+      const ids =
+        nodeIds && nodeIds.length > 0
+          ? nodeIds
+          : nodes.filter((n) => n.selected).map((n) => n.id);
+      if (ids.length === 0) return;
+      let nextEdges = [...edges];
+      for (const id of ids) {
+        const prev = mindmapPreviousSibling(id, nextEdges, nodes);
+        if (!prev) continue;
+        // Remove current parent edge (if any)
+        nextEdges = nextEdges.filter((e) => e.target !== id);
+        // Attach under previous sibling (as its last child in edge order)
+        nextEdges.push(makeMindmapEdge(prev, id));
+      }
+      set({
+        edges: nextEdges,
+        nodes: nodes.map((n) =>
+          ids.includes(n.id) ? { ...n, selected: true } : n,
+        ),
+      });
+    }),
+
+    deleteMindmapSubtree: withHistory((nodeIds) => {
+      const { nodes, edges } = get();
+      const ids =
+        nodeIds && nodeIds.length > 0
+          ? nodeIds
+          : nodes.filter((n) => n.selected).map((n) => n.id);
+      if (ids.length === 0) return;
+      const remove = new Set<string>();
+      for (const id of ids) {
+        remove.add(id);
+        for (const d of mindmapDescendantsOf(id, edges)) remove.add(d);
+      }
+      set({
+        nodes: nodes.filter((n) => !remove.has(n.id)),
+        edges: edges.filter(
+          (e) => !remove.has(e.source) && !remove.has(e.target),
+        ),
+      });
+    }),
+
+    layoutMindmap: (opts) => {
+      const fit = opts?.fit === true;
+      const { nodes, edges, direction, past, layoutEpoch } = get();
+      if (nodes.length === 0) return;
+      // Snapshot for undo
+      const snapshot = {
+        nodes: nodes.map((n) => ({ ...n, data: { ...n.data } })),
+        edges: edges.map((e) => ({
+          ...e,
+          data: { ...(e.data ?? {}) } as FlowEdgeData,
+        })),
+      };
+      const laidOut = applyMindmapTreeLayout(
+        nodes,
+        edges,
+        direction || "TD",
+      );
+      // Ensure circular mindmap nodes + radial edge types
+      const mmNodes = asMindmapNodes(laidOut, edges);
+      const mmEdges = asMindmapEdges(edges);
+      set({
+        nodes: mmNodes,
+        edges: mmEdges,
+        diagramKind: "mindmap",
+        past: [...past.slice(-(MAX_HISTORY - 1)), snapshot],
+        future: [],
+        // Only Auto layout / import should re-fit and change zoom
+        layoutEpoch: fit ? layoutEpoch + 1 : layoutEpoch,
+      });
+    },
 
     updateEdgeLabel: withHistory((id, label) => {
       set({
@@ -370,17 +753,24 @@ export const useFlowStore = create<FlowState>((set, get) => {
     }),
 
     importDiagram: withHistory((nodes, edges, settings) => {
-      const stampedNodes = nodes.map((n) => ({ ...n, type: "flowNode" }));
-      const stampedEdges = edges.map((e) => ({
-        ...e,
-        type: "flowEdge",
-      })) as Edge<FlowEdgeData>[];
+      const kind = settings.diagramKind ?? get().diagramKind;
+      const stampedNodes =
+        kind === "mindmap"
+          ? asMindmapNodes(nodes, edges)
+          : nodes.map((n) => ({ ...n, type: "flowNode" }));
+      const stampedEdges =
+        kind === "mindmap"
+          ? asMindmapEdges(edges)
+          : (edges.map((e) => ({
+              ...e,
+              type: "flowEdge",
+            })) as Edge<FlowEdgeData>[]);
       // Advance nodeCounter to avoid ID collisions with imported nodes
       const maxId = stampedNodes.reduce((max, n) => {
-        const m = n.id.match(/(\d+)$/)
-        return m ? Math.max(max, parseInt(m[1], 10)) : max
-      }, 0)
-      if (maxId >= nodeCounter) nodeCounter = maxId + 1
+        const m = n.id.match(/(\d+)$/);
+        return m ? Math.max(max, parseInt(m[1], 10)) : max;
+      }, 0);
+      if (maxId >= nodeCounter) nodeCounter = maxId + 1;
       set({
         nodes: stampedNodes,
         edges: stampedEdges,
@@ -388,6 +778,7 @@ export const useFlowStore = create<FlowState>((set, get) => {
         theme: settings.theme,
         look: settings.look,
         curveStyle: settings.curveStyle,
+        ...(settings.diagramKind ? { diagramKind: settings.diagramKind } : {}),
       });
     }),
 
@@ -432,6 +823,7 @@ export const useFlowStore = create<FlowState>((set, get) => {
     setTheme: (theme) => set({ theme }),
     setLook: (look) => set({ look }),
     setCurveStyle: (curveStyle) => set({ curveStyle }),
+    setDiagramKind: (diagramKind) => set({ diagramKind }),
 
     copySelected: () => {
       const { nodes, edges } = get();

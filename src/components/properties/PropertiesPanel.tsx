@@ -265,6 +265,10 @@ export function PropertiesPanel() {
 
   const showTitleVal = commonValue(selected, (i) => i.showTitle !== false)
   const contentFillVal = commonValue(selected, (i) => i.contentFill !== false)
+  const keepAspectVal = commonValue(
+    selected,
+    (i) => i.keepAspectRatio !== false,
+  )
   const titleAlignVal = commonValue(
     selected,
     (i) => (i.titleAlign ?? 'left') as TitleAlign,
@@ -370,15 +374,10 @@ export function PropertiesPanel() {
         label="Show title on card"
         value={showTitleVal}
         onChange={(show) => {
-          const TITLE_BAND = 22
+          // Title is an overlay — toggling it does not change card size
           for (const it of selected) {
-            const wasShown = it.showTitle !== false
-            let nextH = it.height
-            if (show && !wasShown) nextH = it.height + TITLE_BAND
-            if (!show && wasShown) nextH = Math.max(48, it.height - TITLE_BAND)
             useCanvasStore.getState().updateItem(it.id, {
               showTitle: show,
-              height: nextH,
               contentFitKey: (it.contentFitKey ?? 0) + 1,
             })
           }
@@ -425,6 +424,21 @@ export function PropertiesPanel() {
           })
         }
       />
+
+      <TriCheck
+        label="Keep aspect ratio"
+        value={keepAspectVal}
+        onChange={(on) =>
+          patch({
+            keepAspectRatio: on,
+            contentFitKey: Date.now(),
+          })
+        }
+      />
+      <p className="-mt-1 text-[10px] leading-snug text-zinc-500">
+        On: preserve proportions when resizing (default). Off: stretch X and Y
+        independently with free-transform edges.
+      </p>
 
       {!multi && (
         <div className="grid grid-cols-2 gap-2">

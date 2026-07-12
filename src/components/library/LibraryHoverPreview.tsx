@@ -119,7 +119,7 @@ export function LibraryHoverPreview({
             mode="scale"
             minScale={0.12}
             maxScale={16}
-            fitMethod="transform"
+            fitMethod="fontSize"
             baseFontSize={16}
             showBadge
             contentKey={`hover-body-${item.id}-${item.latex ?? ''}-${item.tableMarkdown ?? ''}`}

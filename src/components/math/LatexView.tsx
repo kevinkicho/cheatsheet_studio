@@ -7,6 +7,10 @@ interface LatexViewProps {
   className?: string
 }
 
+/**
+ * Renders KaTeX HTML from LaTeX. Scales as vector type when the parent
+ * font-size changes (FitContent fitMethod="fontSize"). See docs/vector-graphics.md.
+ */
 export function LatexView({
   latex,
   displayMode = true,

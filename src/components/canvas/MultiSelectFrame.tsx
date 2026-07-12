@@ -1,6 +1,17 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import { useCanvasStore } from '@/stores/canvasStore'
+import {
+  HANDLE_HIT_PX,
+  HANDLE_LAYOUT,
+  HANDLE_VISUAL_PX,
+  RESIZE_CURSOR,
+  applyHandleToRect,
+  boundsOfItems,
+  mapItemsToNewBounds,
+  type ItemRect,
+  type ResizeHandle,
+} from '@/lib/resizeHandles'
 
 const PAD = 6
 const MIN_W = 80
@@ -10,6 +21,7 @@ const MIN_H = 48
  * Group selection chrome: bounding box over all selected cards with a
  * high z-index so move/resize stay above everything else (including print
  * overlays). Appears when 2+ items are selected.
+ * Free-transform via 4 corners + 4 edge midpoints.
  */
 export function MultiSelectFrame({
   zoom,
@@ -21,7 +33,7 @@ export function MultiSelectFrame({
   const items = useCanvasStore((s) => s.items)
   const selectedIds = useCanvasStore((s) => s.selectedIds)
   const moveItemsBy = useCanvasStore((s) => s.moveItemsBy)
-  const resizeItemsBy = useCanvasStore((s) => s.resizeItemsBy)
+  const applyItemRects = useCanvasStore((s) => s.applyItemRects)
 
   const selected = useMemo(
     () =>
@@ -59,11 +71,13 @@ export function MultiSelectFrame({
 
   const dragRef = useRef<{
     mode: 'move' | 'resize'
+    handle?: ResizeHandle
     pointerId: number
     startX: number
     startY: number
     origins: Record<string, { x: number; y: number }>
-    sizes: Record<string, { width: number; height: number }>
+    itemRects: Record<string, ItemRect>
+    groupBounds: { x: number; y: number; w: number; h: number }
   } | null>(null)
 
   const [dragging, setDragging] = useState(false)
@@ -71,6 +85,7 @@ export function MultiSelectFrame({
   const onPointerDownMove = useCallback(
     (e: ReactPointerEvent) => {
       if (!interactive || e.button !== 0) return
+      if ((e.target as HTMLElement).closest('[data-resize-handle]')) return
       e.stopPropagation()
       e.preventDefault()
       const origins: Record<string, { x: number; y: number }> = {}
@@ -86,7 +101,8 @@ export function MultiSelectFrame({
         startX: e.clientX,
         startY: e.clientY,
         origins,
-        sizes: {},
+        itemRects: {},
+        groupBounds: { x: 0, y: 0, w: 1, h: 1 },
       }
       setDragging(true)
     },
@@ -94,25 +110,35 @@ export function MultiSelectFrame({
   )
 
   const onPointerDownResize = useCallback(
-    (e: ReactPointerEvent) => {
+    (handle: ResizeHandle) => (e: ReactPointerEvent) => {
       if (!interactive || e.button !== 0) return
       e.stopPropagation()
       e.preventDefault()
-      const sizes: Record<string, { width: number; height: number }> = {}
+      const itemRects: Record<string, ItemRect> = {}
       for (const it of selected) {
-        if (!it.locked)
-          sizes[it.id] = { width: it.width, height: it.height }
+        if (!it.locked) {
+          itemRects[it.id] = {
+            x: it.x,
+            y: it.y,
+            width: it.width,
+            height: it.height,
+          }
+        }
       }
-      if (Object.keys(sizes).length === 0) return
+      if (Object.keys(itemRects).length === 0) return
+      const groupBounds = boundsOfItems(Object.values(itemRects))
+      if (!groupBounds) return
       useCanvasStore.getState().beginHistoryBatch()
       ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
       dragRef.current = {
         mode: 'resize',
+        handle,
         pointerId: e.pointerId,
         startX: e.clientX,
         startY: e.clientY,
         origins: {},
-        sizes,
+        itemRects,
+        groupBounds,
       }
       setDragging(true)
     },
@@ -128,12 +154,18 @@ export function MultiSelectFrame({
       const dy = (e.clientY - d.startY) / z
       if (d.mode === 'move') {
         moveItemsBy(d.origins, dx, dy)
-      } else {
-        // Keep group aspect roughly usable: same pixel delta for all
-        resizeItemsBy(d.sizes, dx, dy, { manual: true })
+        return
       }
+      if (!d.handle) return
+      const newBounds = applyHandleToRect(d.groupBounds, d.handle, dx, dy)
+      const mapped = mapItemsToNewBounds(
+        d.itemRects,
+        d.groupBounds,
+        newBounds,
+      )
+      applyItemRects(mapped, { manual: true })
     },
-    [zoom, moveItemsBy, resizeItemsBy],
+    [zoom, moveItemsBy, applyItemRects],
   )
 
   const endPointer = useCallback((e: ReactPointerEvent) => {
@@ -175,30 +207,39 @@ export function MultiSelectFrame({
       onPointerMove={onPointerMove}
       onPointerUp={endPointer}
       onPointerCancel={endPointer}
-      title={`${selected.length} selected — drag to move, corner to resize all`}
+      title={`${selected.length} selected — drag to move · corners & edges to resize all`}
     >
-      {/* Label chip */}
       <div className="pointer-events-none absolute -top-5 left-0 rounded bg-indigo-500/90 px-1.5 py-px text-[9px] font-medium tabular-nums text-white shadow">
         {selected.length} selected
       </div>
 
-      {/* Edge mid-handles (visual only for now — SE is interactive) */}
-      <div className="pointer-events-none absolute -left-1 top-1/2 h-2 w-2 -translate-y-1/2 rounded-sm bg-indigo-300 ring-1 ring-indigo-600" />
-      <div className="pointer-events-none absolute -right-1 top-1/2 h-2 w-2 -translate-y-1/2 rounded-sm bg-indigo-300 ring-1 ring-indigo-600" />
-      <div className="pointer-events-none absolute left-1/2 -top-1 h-2 w-2 -translate-x-1/2 rounded-sm bg-indigo-300 ring-1 ring-indigo-600" />
-      <div className="pointer-events-none absolute bottom-0 left-1/2 h-2 w-2 -translate-x-1/2 translate-y-1/2 rounded-sm bg-indigo-300 ring-1 ring-indigo-600" />
-
-      {interactive && (
-        <div
-          data-resize-handle
-          className="absolute -bottom-1 -right-1 z-10 h-3.5 w-3.5 cursor-se-resize rounded-sm bg-indigo-400 ring-1 ring-indigo-200"
-          onPointerDown={onPointerDownResize}
-          onPointerMove={onPointerMove}
-          onPointerUp={endPointer}
-          onPointerCancel={endPointer}
-          title="Resize all selected"
-        />
-      )}
+      {interactive &&
+        HANDLE_LAYOUT.map(({ id, className }) => (
+          <div
+            key={id}
+            data-resize-handle={id}
+            className={`${className} z-20 flex items-center justify-center`}
+            style={{
+              width: HANDLE_HIT_PX,
+              height: HANDLE_HIT_PX,
+              cursor: RESIZE_CURSOR[id],
+              touchAction: 'none',
+            }}
+            onPointerDown={onPointerDownResize(id)}
+            onPointerMove={onPointerMove}
+            onPointerUp={endPointer}
+            onPointerCancel={endPointer}
+            title={`Resize (${id})`}
+          >
+            <span
+              className="pointer-events-none block rounded-sm bg-indigo-400 shadow-sm ring-1 ring-indigo-100"
+              style={{
+                width: HANDLE_VISUAL_PX,
+                height: HANDLE_VISUAL_PX,
+              }}
+            />
+          </div>
+        ))}
     </div>
   )
 }

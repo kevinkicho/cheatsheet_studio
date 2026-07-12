@@ -140,9 +140,10 @@ export function LibraryItemCard({
                 mode="scale"
                 // Allow grow + shrink so small formulas fill the preview box
                 // (default maxScale=1 is shrink-only → empty margins at 100%).
+                // fontSize: KaTeX reflows as vector type (docs/vector-graphics.md)
                 minScale={0.12}
                 maxScale={16}
-                fitMethod="transform"
+                fitMethod="fontSize"
                 baseFontSize={14}
                 showBadge
                 contentKey={`${item.id}-${item.latex ?? ''}-${item.tableMarkdown ?? ''}`}

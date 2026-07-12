@@ -40,9 +40,8 @@ export function CanvasDragPreview({ item }: { item: LibraryItem }) {
   const { width, height } = previewSize(item)
   const isFigure = item.type === 'figure' && Boolean(item.imageUrl)
   const style = DEFAULT_ITEM_STYLE
-  const pad = isFigure ? 8 : (style.padding ?? 12)
-  const titleH = 18
-  const bodyH = Math.max(32, height - pad * 2 - titleH)
+  const pad = style.padding ?? 0
+  const bodyH = Math.max(32, height - pad * 2)
 
   return (
     <div

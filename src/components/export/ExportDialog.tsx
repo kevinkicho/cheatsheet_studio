@@ -249,10 +249,11 @@ export function ExportDialog({
                           : ` · ${p.cardCount} card${p.cardCount === 1 ? '' : 's'}`}
                       </span>
                       <div
-                        className="overflow-hidden rounded-sm bg-white shadow-lg ring-1 ring-zinc-600/60"
+                        className="overflow-hidden rounded-sm shadow-lg ring-1 ring-zinc-600/60"
                         style={{
                           width: frameW,
                           height: frameH,
+                          background: canvas.background || '#0f1115',
                           filter:
                             previewFilter === 'none' ? undefined : previewFilter,
                         }}
@@ -265,7 +266,7 @@ export function ExportDialog({
                             transformOrigin: 'top left',
                           }}
                         >
-                          <PdfExportPages pages={[model]} />
+                          <PdfExportPages pages={[model]} canvas={canvas} />
                         </div>
                       </div>
                     </div>

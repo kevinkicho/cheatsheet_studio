@@ -1,8 +1,5 @@
 /**
- * Every Process template button kind must survive studio dark source prep
- * (frontmatter + flowchart-only classDef) without Mermaid parse errors.
- *
- * Full SVG draw needs getBBox (browser); we use mermaid.parse here.
+ * Process templates must survive studio dark source prep without Mermaid parse errors.
  */
 import { describe, expect, it, beforeAll } from 'vitest'
 import mermaid from 'mermaid'
@@ -40,7 +37,6 @@ describe('Process chart templates × studio dark prep', () => {
     async (kind: MermaidDiagramKind) => {
       const source = mermaidTemplate(kind, 'TD')
       const prepared = prepareStudioDarkSource(source)
-      // mermaid.parse throws on syntax / unexpected tokens (classDef on state/seq)
       await expect(mermaid.parse(prepared)).resolves.toBeTruthy()
     },
   )

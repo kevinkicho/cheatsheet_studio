@@ -2,6 +2,7 @@ import {
   ReactFlow,
   Background,
   BackgroundVariant,
+  ConnectionMode,
   useReactFlow,
   type Node,
 } from '@xyflow/react'
@@ -10,10 +11,12 @@ import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react
 
 import { useFlowStore, type FlowNodeData } from '../lib/store'
 import { FlowNode } from './NodeTypes/FlowNode'
+import { MindmapNode } from './NodeTypes/MindmapNode'
 import { FlowEdge } from './EdgeTypes/FlowEdge'
+import { MindmapEdge } from './EdgeTypes/MindmapEdge'
 
-const nodeTypes = { flowNode: FlowNode }
-const edgeTypes = { flowEdge: FlowEdge }
+const nodeTypes = { flowNode: FlowNode, mindmapNode: MindmapNode }
+const edgeTypes = { flowEdge: FlowEdge, mindmapEdge: MindmapEdge }
 
 interface CanvasInnerProps {
   onOpenPalette?: () => void
@@ -28,9 +31,32 @@ function CanvasInner({ onOpenPalette }: CanvasInnerProps) {
     pushHistory, assignToSubgraph,
     drawingShape, setDrawingShape,
     interactionMode, setInteractionMode,
+    diagramKind,
+    layoutEpoch,
+    addMindmapChild,
+    addMindmapSibling,
+    promoteMindmapNodes,
   } = useFlowStore()
-  const { screenToFlowPosition } = useReactFlow()
+  const { screenToFlowPosition, fitView } = useReactFlow()
   const panMode = !drawingShape && interactionMode === 'pan'
+  const isMindmap = diagramKind === 'mindmap'
+
+  // After Auto Layout / Layout tree, re-fit viewport so the radial map is visible
+  const lastLayoutEpoch = useRef(layoutEpoch)
+  useEffect(() => {
+    if (layoutEpoch === lastLayoutEpoch.current) return
+    lastLayoutEpoch.current = layoutEpoch
+    // Wait a frame so React Flow has new positions
+    const t = window.requestAnimationFrame(() => {
+      void fitView({
+        padding: 0.2,
+        duration: 280,
+        minZoom: 0.05,
+        maxZoom: 2.5,
+      })
+    })
+    return () => window.cancelAnimationFrame(t)
+  }, [layoutEpoch, fitView])
 
   // ── Draw-mode state ─────────────────────────────────────────────────────────
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null)
@@ -62,9 +88,29 @@ function CanvasInner({ onOpenPalette }: CanvasInnerProps) {
         return
       }
 
+      // Mind map: Tab = child, Enter = sibling, Shift+Tab = promote
+      if (!isTyping && isMindmap) {
+        if (e.key === 'Tab' && e.shiftKey) {
+          e.preventDefault()
+          promoteMindmapNodes()
+          return
+        }
+        if (e.key === 'Tab') {
+          e.preventDefault()
+          addMindmapChild()
+          return
+        }
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          addMindmapSibling()
+          return
+        }
+      }
+
       // N → add node (when not typing)
       if (!isTyping && (e.key === 'n' || e.key === 'N')) {
-        addNode()
+        if (isMindmap) addMindmapChild()
+        else addNode()
         return
       }
 
@@ -124,6 +170,10 @@ function CanvasInner({ onOpenPalette }: CanvasInnerProps) {
     setDrawingShape,
     setInteractionMode,
     onOpenPalette,
+    isMindmap,
+    addMindmapChild,
+    addMindmapSibling,
+    promoteMindmapNodes,
   ])
 
   // ── Double-click on blank canvas → add node at cursor ─────────────────────
@@ -295,7 +345,14 @@ function CanvasInner({ onOpenPalette }: CanvasInnerProps) {
         onConnect={onConnect}
         onNodeDragStop={handleNodeDragStop}
         fitView
+        // Allow zoom well below 50% (RF default minZoom is 0.5)
+        minZoom={0.05}
+        maxZoom={2.5}
         deleteKeyCode={['Backspace', 'Delete']}
+        // Mindmap: loose center handles + radial edge clipping
+        connectionMode={
+          isMindmap ? ConnectionMode.Loose : ConnectionMode.Strict
+        }
         // Draw: no pan. Pan mode: left-drag pans. Select: middle/right pan only.
         panOnDrag={drawingShape ? false : panMode ? true : [1, 2]}
         selectionOnDrag={!drawingShape && !panMode}
@@ -331,17 +388,23 @@ function CanvasInner({ onOpenPalette }: CanvasInnerProps) {
               Canvas is empty
             </p>
             <p className="mt-1 text-xs leading-relaxed">
-              Pick a template above, draw a shape, double-click, or press{' '}
-              <kbd
-                className="rounded px-1 py-0.5 font-mono text-[10px]"
-                style={{
-                  background: 'var(--neu-kbd-bg, #27272a)',
-                  color: 'var(--neu-text-muted, #a1a1aa)',
-                }}
-              >
-                N
-              </kbd>{' '}
-              to add a node.
+              {isMindmap
+                ? 'Load the Mind map template, or press N / Tab to add a topic. Enter = sibling.'
+                : (
+                  <>
+                    Pick a template above, draw a shape, double-click, or press{' '}
+                    <kbd
+                      className="rounded px-1 py-0.5 font-mono text-[10px]"
+                      style={{
+                        background: 'var(--neu-kbd-bg, #27272a)',
+                        color: 'var(--neu-text-muted, #a1a1aa)',
+                      }}
+                    >
+                      N
+                    </kbd>{' '}
+                    to add a node.
+                  </>
+                )}
             </p>
           </div>
         </div>

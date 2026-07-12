@@ -223,9 +223,10 @@ export function CreateEquationPanel() {
           >
             <FitContent
               mode="scale"
-              fitMethod="transform"
+              // Vector type: KaTeX reflows with font-size (docs/vector-graphics.md)
+              fitMethod="fontSize"
               minScale={0.1}
-              maxScale={1}
+              maxScale={8}
               baseFontSize={15}
               contentKey={latex}
               className="h-full w-full"

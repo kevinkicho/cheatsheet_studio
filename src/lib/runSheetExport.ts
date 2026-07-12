@@ -135,7 +135,12 @@ export async function runSheetExport(
   let root: Root | null = createRoot(host)
   try {
     flushSync(() => {
-      root!.render(createElement(PdfExportPages, { pages: models }))
+      root!.render(
+        createElement(PdfExportPages, {
+          pages: models,
+          canvas,
+        }),
+      )
     })
     await waitForExportReady(host)
 
@@ -233,7 +238,12 @@ async function writePdf(
         width: rect.width,
         height: rect.height,
       },
-      { scale, colorMode },
+      {
+        scale,
+        colorMode,
+        // Match studio board (not forced white paper)
+        backgroundColor: el.style.background || undefined,
+      },
     )
 
     let img: string
@@ -307,7 +317,12 @@ async function writeImages(
         width: rect.width,
         height: rect.height,
       },
-      { scale, colorMode },
+      {
+        scale,
+        colorMode,
+        // Match studio board (not forced white paper)
+        backgroundColor: el.style.background || undefined,
+      },
     )
 
     onProgress?.({

@@ -13,6 +13,12 @@ type Props = {
    * (board / page / printable) composites identically.
    */
   opacity: number
+  /**
+   * Board-space phase for pattern alignment (export page crops of a continuous
+   * board grid). Lines line up with MainCanvas when phase = page origin.
+   */
+  phaseX?: number
+  phaseY?: number
 }
 
 /** Cache pattern data-URLs so board & page tiles share the exact same pixels. */
@@ -92,6 +98,8 @@ export function CanvasGridLayer({
   height,
   spacing,
   opacity,
+  phaseX = 0,
+  phaseY = 0,
 }: Props) {
   const alpha = clampGridOpacity(opacity)
   const step = Math.max(2, Math.round(spacing))
@@ -103,6 +111,10 @@ export function CanvasGridLayer({
   }, [step])
 
   if (alpha <= 0 || width < 1 || height < 1 || !patternUrl) return null
+
+  // Align repeating tile with board origin (negative phase → same lines as main)
+  const posX = major > 0 ? -(((phaseX % major) + major) % major) : 0
+  const posY = major > 0 ? -(((phaseY % major) + major) % major) : 0
 
   return (
     <div
@@ -116,7 +128,7 @@ export function CanvasGridLayer({
         opacity: alpha,
         backgroundImage: `url(${patternUrl})`,
         backgroundSize: `${major}px ${major}px`,
-        backgroundPosition: '0 0',
+        backgroundPosition: `${posX}px ${posY}px`,
         backgroundRepeat: 'repeat',
         // Isolate so opacity doesn’t interact with page chrome underneath
         isolation: 'isolate',

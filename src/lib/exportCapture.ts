@@ -8,7 +8,10 @@ import type { ExportColorMode } from '@/lib/exportFormats'
 
 export type CaptureOptions = {
   scale?: number
-  /** White paper background */
+  /**
+   * Page fill behind transparent areas. Defaults to studio board (#0f1115)
+   * so export matches the main viewport (not white paper).
+   */
   backgroundColor?: string
   colorMode?: ExportColorMode
 }
@@ -72,7 +75,7 @@ export async function capturePageElement(
   options: CaptureOptions = {},
 ): Promise<HTMLCanvasElement> {
   const scale = options.scale ?? 2
-  const backgroundColor = options.backgroundColor ?? '#ffffff'
+  const backgroundColor = options.backgroundColor ?? '#0f1115'
   const colorMode = options.colorMode ?? 'color'
 
   let canvas: HTMLCanvasElement

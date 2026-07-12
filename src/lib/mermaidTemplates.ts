@@ -4,6 +4,7 @@ import type {
   MermaidThemeId,
 } from '@/types'
 
+/** Diagram types offered in the Process panel. */
 export const MERMAID_KINDS: {
   id: MermaidDiagramKind
   label: string
@@ -15,34 +16,9 @@ export const MERMAID_KINDS: {
     description: 'Process steps, decisions, branches',
   },
   {
-    id: 'sequence',
-    label: 'Sequence',
-    description: 'Actors and message order',
-  },
-  {
-    id: 'state',
-    label: 'State',
-    description: 'States and transitions',
-  },
-  {
-    id: 'class',
-    label: 'Class',
-    description: 'Classes and relationships',
-  },
-  {
-    id: 'er',
-    label: 'ER diagram',
-    description: 'Entities and relations',
-  },
-  {
-    id: 'pie',
-    label: 'Pie chart',
-    description: 'Simple proportional slices',
-  },
-  {
     id: 'mindmap',
     label: 'Mind map',
-    description: 'Hierarchical ideas',
+    description: 'Hierarchical ideas (Mermaid mindmap)',
   },
 ]
 
@@ -64,85 +40,44 @@ export const MERMAID_THEMES: { id: MermaidThemeId; label: string }[] = [
   { id: 'base', label: 'Base' },
 ]
 
-/** Starter templates for each diagram kind. */
+/**
+ * Official Mermaid mindmap example (syntax/mindmap).
+ * https://mermaid.js.org/syntax/mindmap.html
+ */
+export const MERMAID_MINDMAP_EXAMPLE = `mindmap
+  root((mindmap))
+    Origins
+      Long history
+      ::icon(fa fa-book)
+      Popularisation
+        British popular psychology author Tony Buzan
+    Research
+      On effectiveness<br/>and features
+      On Automatic creation
+        Uses
+            Creative techniques
+            Strategic planning
+            Argument mapping
+    Tools
+      Pen and paper
+      Mermaid`
+
+/** Starter templates for Process diagram types. */
 export function mermaidTemplate(
-  kind: MermaidDiagramKind,
+  kind: MermaidDiagramKind = 'flowchart',
   direction: MermaidFlowDirection = 'TD',
 ): string {
   switch (kind) {
+    case 'mindmap':
+      return MERMAID_MINDMAP_EXAMPLE
     case 'flowchart':
+    default:
       return `flowchart ${direction}
     Start([Start]) --> Input[Collect input]
     Input --> Check{Valid?}
     Check -->|Yes| Process[Process data]
     Check -->|No| Input
     Process --> Done([Done])`
-    case 'sequence':
-      return `sequenceDiagram
-    actor User
-    participant UI
-    participant API
-    participant DB
-    User->>UI: Submit form
-    UI->>API: POST /items
-    API->>DB: Insert row
-    DB-->>API: OK
-    API-->>UI: 201 Created
-    UI-->>User: Success`
-    case 'state':
-      return `stateDiagram-v2
-    [*] --> Draft
-    Draft --> Review: submit
-    Review --> Draft: changes requested
-    Review --> Published: approve
-    Published --> [*]`
-    case 'class':
-      return `classDiagram
-    class Order {
-      +String id
-      +Date created
-      +place()
-      +cancel()
-    }
-    class Customer {
-      +String name
-      +String email
-    }
-    Customer "1" --> "*" Order : places`
-    case 'er':
-      return `erDiagram
-    CUSTOMER ||--o{ ORDER : places
-    ORDER ||--|{ LINE-ITEM : contains
-    CUSTOMER {
-      string name
-      string email
-    }
-    ORDER {
-      string id
-      date created
-    }`
-    case 'pie':
-      return `pie showData
-    title Study time
-    "Math" : 40
-    "Physics" : 25
-    "Review" : 20
-    "Breaks" : 15`
-    case 'mindmap':
-      return `mindmap
-  root((Cheat sheet))
-    Formulas
-      Algebra
-      Calculus
-    Process
-      Study plan
-      Exam tips
-    Visuals
-      Diagrams
-      Tables`
-    default:
-      return `flowchart ${direction}
-    A[Start] --> B[End]`
   }
 }
 
@@ -181,6 +116,7 @@ export function detectFlowDirection(
   return null
 }
 
+/** Classify Mermaid source. */
 export function detectMermaidKind(source: string): MermaidDiagramKind {
   const head = source.trim().split(/\r?\n/)[0]?.trim().toLowerCase() ?? ''
   if (head.startsWith('sequencediagram')) return 'sequence'
@@ -191,4 +127,11 @@ export function detectMermaidKind(source: string): MermaidDiagramKind {
   if (head.startsWith('mindmap')) return 'mindmap'
   if (head.startsWith('flowchart') || head.startsWith('graph')) return 'flowchart'
   return 'flowchart'
+}
+
+/** Kinds the Process panel can load / create (chips). */
+export function isProcessPanelKind(
+  kind: MermaidDiagramKind,
+): kind is 'flowchart' | 'mindmap' {
+  return kind === 'flowchart' || kind === 'mindmap'
 }

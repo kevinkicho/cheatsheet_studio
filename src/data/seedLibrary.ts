@@ -1,10 +1,21 @@
 import type { LibraryItem, Subject } from '@/types'
 
-/** Encode an inline SVG as a data URL for figure cards. */
+/**
+ * Encode an inline SVG as a data URL for figure cards.
+ *
+ * Catalog figures are SVG (vector) so enlarge stays sharp.
+ * Include a viewBox; FigureView inlines SVG at the card’s display size.
+ * See docs/vector-graphics.md — new figures use svgUrl(`<svg … viewBox="…">`).
+ */
 function svgUrl(svg: string): string {
   return 'data:image/svg+xml,' + encodeURIComponent(svg.trim())
 }
 
+/**
+ * Library equation: KaTeX-compatible LaTeX (vector type on canvas).
+ * New equations use eq(…, latex, …) — pure LaTeX, not raster images.
+ * Example: Euler’s identity → e^{i\\pi} + 1 = 0
+ */
 function eq(
   id: string,
   title: string,
@@ -49,6 +60,7 @@ function tbl(
   }
 }
 
+/** Library figure: SVG data URL (vector). Prefer svgUrl(`<svg viewBox=…>`) for new diagrams. */
 function fig(
   id: string,
   title: string,

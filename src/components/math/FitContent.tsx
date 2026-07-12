@@ -7,10 +7,17 @@ import {
 
 export type FitMode = 'scale' | 'scroll' | 'clip'
 /**
- * transform — CSS scale() (smooth while dragging card corners)
- * fontSize  — change font-size so KaTeX re-rasterizes crisp
+ * transform — CSS scale() (smooth while dragging; stretch / non-uniform)
+ * fontSize  — change font-size so KaTeX reflows as vector type (uniform; equations)
+ * See docs/vector-graphics.md
  */
 export type FitMethod = 'transform' | 'fontSize'
+
+/**
+ * contain — uniform scale (aspect locked); letterboxing ignored via top-left align
+ * stretch — independent scaleX / scaleY so edge resize only affects that axis
+ */
+export type FitFillMode = 'contain' | 'stretch'
 
 interface FitContentProps {
   children: ReactNode
@@ -25,21 +32,47 @@ interface FitContentProps {
   maxScale?: number
   mode?: FitMode
   fitMethod?: FitMethod
+  /**
+   * contain (default for library thumbs): one scale for both axes.
+   * stretch (canvas free-transform): scale X from width, Y from height so
+   * vertical resize does not force horizontal content growth.
+   */
+  fillMode?: FitFillMode
+  /**
+   * start (default): top-left, no gutters (canvas cards).
+   * center: letterbox margins so the diagram sits in the middle (sidebar preview).
+   */
+  align?: 'start' | 'center'
   /** Base font size (px) for natural measurement (fontSize method). */
   baseFontSize?: number
+  /**
+   * Canvas board zoom. For fontSize fit, multiplies paint font-size and
+   * counter-scales so glyphs resolve at screen pixels under board CSS zoom.
+   * Keep 1 for library thumbs / export off-board.
+   */
+  paintZoom?: number
   showBadge?: boolean
   /**
-   * Remeasure when *content* changes. Do not put card width/height here —
-   * ResizeObserver handles continuous resize.
+   * Remeasure natural content size when this changes.
+   * Do not put card width/height here — ResizeObserver handles box resize
+   * without re-measuring content (avoids flicker).
    */
   contentKey?: string | number
+}
+
+function clampScale(n: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, n))
 }
 
 /**
  * Fits children into a bounded box and keeps refitting as the box resizes.
  *
- * Always measures natural size at the base size first, then applies a uniform
- * scale. That avoids locking in an intermediate size that stops growing.
+ * Natural content size is measured only when contentKey / method inputs change.
+ * On card resize we only recompute scale from cached natural size — we never
+ * flash unscaled content (that was the resize flicker bug).
+ *
+ * Equations use fitMethod="fontSize" so enlarge reflows KaTeX as vector type
+ * (docs/vector-graphics.md). Prefer SVG fill for figures/Mermaid over transform.
  */
 export function FitContent({
   children,
@@ -47,19 +80,30 @@ export function FitContent({
   minScale = 0.08,
   maxScale = 1,
   mode = 'scale',
-  // App default: re-render at target size (crisp KaTeX). Pass 'transform' only if needed.
   fitMethod = 'fontSize',
+  fillMode = 'contain',
+  align = 'start',
   baseFontSize = 18,
+  paintZoom = 1,
   showBadge = false,
   contentKey,
 }: FitContentProps) {
   const boxRef = useRef<HTMLDivElement>(null)
   const innerRef = useRef<HTMLDivElement>(null)
+  /** Cached natural (unscaled) content size. */
+  const naturalRef = useRef({ w: 0, h: 0, ready: false })
+  const lastScaleRef = useRef({ sx: 1, sy: 1, pz: 1 })
   const [scale, setScale] = useState(1)
+  const [scaleY, setScaleY] = useState(1)
+  const [usingTransform, setUsingTransform] = useState(
+    fitMethod === 'transform' || fillMode === 'stretch',
+  )
 
   useLayoutEffect(() => {
     if (mode !== 'scale') {
       setScale(1)
+      setScaleY(1)
+      naturalRef.current = { w: 0, h: 0, ready: false }
       return
     }
 
@@ -69,23 +113,20 @@ export function FitContent({
 
     let raf = 0
     let cancelled = false
+    // Force remeasure when content identity changes
+    naturalRef.current = { w: 0, h: 0, ready: false }
+    lastScaleRef.current = { sx: 1, sy: 1, pz: 1 }
 
-    const apply = () => {
-      if (cancelled) return
-      const b = boxRef.current
+    const preferTransform =
+      fillMode === 'stretch' || fitMethod === 'transform'
+    const pz = Number.isFinite(paintZoom) && paintZoom > 0 ? paintZoom : 1
+
+    const measureNatural = (): boolean => {
       const el = innerRef.current
-      if (!b || !el) return
-
+      if (!el) return false
       const base = Math.max(1, baseFontSize)
 
-      // Detect content that scales poorly with font-size alone (fixed rem
-      // classes, multi-column tables). Prefer CSS transform for those so
-      // the whole layout grows/shrinks with the card.
-      const hasTable = el.querySelector('table') != null
-      const method =
-        fitMethod === 'fontSize' && hasTable ? 'transform' : fitMethod
-
-      // 1) Natural size always at base — never measure the already-scaled tree
+      // Measure at base size (no paintZoom) in canvas layout space.
       el.style.transform = 'none'
       el.style.transformOrigin = 'top left'
       el.style.fontSize = `${base}px`
@@ -97,109 +138,176 @@ export function FitContent({
 
       const nw = Math.max(el.scrollWidth, el.offsetWidth, 1)
       const nh = Math.max(el.scrollHeight, el.offsetHeight, 1)
-      const cw = Math.max(b.clientWidth, 1)
-      const ch = Math.max(b.clientHeight, 1)
 
-      // Async content (e.g. Mermaid) may still be empty — wait for a real size
-      // instead of treating a 1×1 placeholder as fill-scale.
       if (nw < 8 && nh < 8) {
-        el.style.transform = 'none'
-        el.style.fontSize = `${base}px`
-        el.style.marginLeft = '0'
-        el.style.marginTop = '0'
-        setScale(1)
-        return
+        naturalRef.current = { w: 0, h: 0, ready: false }
+        return false
       }
 
-      // 2) Uniform fit; only limited by min/maxScale
-      const fit = Math.min(cw / nw, ch / nh)
-      let clamped = Math.min(maxScale, Math.max(minScale, fit))
-
-      if (method === 'fontSize') {
-        el.style.transform = 'none'
-        el.style.fontSize = `${base * clamped}px`
-        void el.offsetWidth
-
-        // KaTeX metrics can overshoot slightly after font change
-        const nw2 = Math.max(el.scrollWidth, el.offsetWidth, 1)
-        const nh2 = Math.max(el.scrollHeight, el.offsetHeight, 1)
-        if (nw2 > cw + 1 || nh2 > ch + 1) {
-          const refine = Math.min(cw / nw2, ch / nh2)
-          clamped = Math.max(minScale, clamped * refine * 0.995)
-          el.style.fontSize = `${base * clamped}px`
-          void el.offsetWidth
-        }
-
-        const finalW = Math.max(el.scrollWidth, el.offsetWidth, 1)
-        const finalH = Math.max(el.scrollHeight, el.offsetHeight, 1)
-        el.style.marginLeft = `${Math.max(0, (cw - finalW) / 2)}px`
-        el.style.marginTop = `${Math.max(0, (ch - finalH) / 2)}px`
-      } else {
-        // Transform scales the whole painted layer (tables, mixed content)
-        el.style.fontSize = `${base}px`
-        el.style.transform = `scale(${clamped})`
-        el.style.transformOrigin = 'top left'
-        const scaledW = nw * clamped
-        const scaledH = nh * clamped
-        el.style.marginLeft = `${Math.max(0, (cw - scaledW) / 2)}px`
-        el.style.marginTop = `${Math.max(0, (ch - scaledH) / 2)}px`
-      }
-
-      setScale(clamped)
+      naturalRef.current = { w: nw, h: nh, ready: true }
+      return true
     }
 
-    const schedule = () => {
+    const applyScaleOnly = () => {
+      if (cancelled) return
+      const b = boxRef.current
+      const el = innerRef.current
+      if (!b || !el) return
+
+      const base = Math.max(1, baseFontSize)
+      const { w: nw, h: nh, ready } = naturalRef.current
+      if (!ready || nw < 8 || nh < 8) return
+
+      const cw = Math.max(b.clientWidth, 1)
+      const ch = Math.max(b.clientHeight, 1)
+      const stretch = fillMode === 'stretch'
+      const hasTable = el.querySelector('table') != null
+      const useTransform =
+        preferTransform || (fitMethod === 'fontSize' && hasTable)
+
+      let sx: number
+      let sy: number
+      if (stretch) {
+        sx = clampScale(cw / nw, minScale, maxScale)
+        sy = clampScale(ch / nh, minScale, maxScale)
+      } else {
+        const fit = clampScale(Math.min(cw / nw, ch / nh), minScale, maxScale)
+        sx = fit
+        sy = fit
+      }
+
+      // Skip DOM writes / React state when scale barely changed (smooth drag)
+      const prev = lastScaleRef.current
+      const same =
+        Math.abs(prev.sx - sx) < 0.002 &&
+        Math.abs(prev.sy - sy) < 0.002 &&
+        Math.abs(prev.pz - pz) < 0.002
+
+      if (!same || !el.style.transform || el.style.transform === 'none') {
+        if (useTransform || stretch) {
+          // Transform path: paint at base size, CSS scale for layout fit.
+          el.style.fontSize = `${base}px`
+          el.style.transform =
+            Math.abs(sx - sy) < 0.0005
+              ? `scale(${sx})`
+              : `scale(${sx}, ${sy})`
+          el.style.transformOrigin = 'top left'
+          setUsingTransform(true)
+        } else {
+          // fontSize path: reflow KaTeX at target size (vector type).
+          // paintZoom: render glyphs at screen resolution under board CSS zoom.
+          const paint = base * sx * pz
+          if (pz === 1) {
+            el.style.transform = 'none'
+            el.style.fontSize = `${paint}px`
+          } else {
+            el.style.fontSize = `${paint}px`
+            el.style.transform = `scale(${1 / pz})`
+            el.style.transformOrigin = 'top left'
+          }
+          // One refine pass when content overflows the card box
+          void el.offsetWidth
+          const nw2 = Math.max(el.scrollWidth, el.offsetWidth, 1) / pz
+          const nh2 = Math.max(el.scrollHeight, el.offsetHeight, 1) / pz
+          if (nw2 > cw + 1 || nh2 > ch + 1) {
+            const refine = Math.min(cw / nw2, ch / nh2)
+            sx = Math.max(minScale, sx * refine * 0.995)
+            sy = sx
+            el.style.fontSize = `${base * sx * pz}px`
+          }
+          setUsingTransform(pz !== 1)
+        }
+        if (align === 'center' && !stretch) {
+          const scaledW = nw * sx
+          const scaledH = nh * sy
+          el.style.marginLeft = `${Math.max(0, (cw - scaledW) / 2)}px`
+          el.style.marginTop = `${Math.max(0, (ch - scaledH) / 2)}px`
+        } else {
+          el.style.marginLeft = '0'
+          el.style.marginTop = '0'
+        }
+        lastScaleRef.current = { sx, sy, pz }
+      }
+
+      if (!same) {
+        setScale(sx)
+        setScaleY(sy)
+      }
+    }
+
+    const apply = (remeasure: boolean) => {
+      if (cancelled) return
+      if (remeasure || !naturalRef.current.ready) {
+        if (!measureNatural()) {
+          // Keep prior scale; async content may still be loading
+          setScale(1)
+          setScaleY(1)
+          return
+        }
+      }
+      applyScaleOnly()
+    }
+
+    const schedule = (remeasure = false) => {
       if (raf) cancelAnimationFrame(raf)
       raf = requestAnimationFrame(() => {
         raf = 0
-        apply()
+        apply(remeasure)
       })
     }
 
-    apply()
+    // Initial: measure natural once, then scale
+    apply(true)
 
-    // Observe the box (card resize) and the inner (async content such as
-    // Mermaid SVG). Without the inner observer, first measure often runs on
-    // empty markup and never re-fits when the diagram appears.
-    const ro = new ResizeObserver(schedule)
-    ro.observe(box)
-    ro.observe(inner)
+    // Box resize → scale only (no natural remeasure → no flicker)
+    const roBox = new ResizeObserver(() => schedule(false))
+    roBox.observe(box)
 
-    // Mermaid / remote assets often finish after the first paint
-    const t1 = window.setTimeout(schedule, 40)
-    const t2 = window.setTimeout(schedule, 160)
-    const t3 = window.setTimeout(schedule, 400)
-    const t4 = window.setTimeout(schedule, 900)
-
-    // childList only — do not watch attributes; apply() writes styles on
-    // `inner` and would schedule itself in a loop.
+    // Content size changes (async inject) → remeasure natural
     const mo =
       typeof MutationObserver !== 'undefined'
-        ? new MutationObserver(schedule)
+        ? new MutationObserver(() => schedule(true))
         : null
     mo?.observe(inner, { childList: true, subtree: true })
 
     const imgs = inner.querySelectorAll('img')
     imgs.forEach((img) => {
-      if (!img.complete) img.addEventListener('load', schedule, { once: true })
+      if (!img.complete) {
+        img.addEventListener('load', () => schedule(true), { once: true })
+      }
     })
+
+    // Async mermaid / fonts — remeasure when they settle
+    const t1 = window.setTimeout(() => schedule(true), 50)
+    const t2 = window.setTimeout(() => schedule(true), 200)
+    const t3 = window.setTimeout(() => schedule(true), 500)
+
     if (document.fonts?.ready) {
       void document.fonts.ready.then(() => {
-        if (!cancelled) schedule()
+        if (!cancelled) schedule(true)
       })
     }
 
     return () => {
       cancelled = true
-      ro.disconnect()
+      roBox.disconnect()
       mo?.disconnect()
       if (raf) cancelAnimationFrame(raf)
       window.clearTimeout(t1)
       window.clearTimeout(t2)
       window.clearTimeout(t3)
-      window.clearTimeout(t4)
     }
-  }, [mode, minScale, maxScale, fitMethod, baseFontSize, contentKey])
+  }, [
+    mode,
+    minScale,
+    maxScale,
+    fitMethod,
+    fillMode,
+    align,
+    baseFontSize,
+    paintZoom,
+    contentKey,
+  ])
 
   if (mode === 'scroll') {
     return (
@@ -220,16 +328,26 @@ export function FitContent({
     )
   }
 
+  const nonUniform = fillMode === 'stretch' && Math.abs(scale - scaleY) > 0.01
+  const badgeText = nonUniform
+    ? `${Math.round(scale * 100)}×${Math.round(scaleY * 100)}%`
+    : `${Math.round(scale * 100)}%`
+
   return (
     <div
       ref={boxRef}
       className={`relative h-full w-full min-h-0 overflow-hidden ${className}`}
       data-fit-scale={scale.toFixed(3)}
+      data-fit-scale-y={scaleY.toFixed(3)}
       data-fit-method={fitMethod}
+      data-fit-fill={fillMode}
+      data-paint-zoom={String(paintZoom)}
     >
       <div
         ref={innerRef}
-        className="inline-block will-change-transform origin-top-left"
+        className={`inline-block origin-top-left ${
+          usingTransform ? 'will-change-transform' : ''
+        }`}
       >
         {children}
       </div>
@@ -237,12 +355,14 @@ export function FitContent({
         <span
           className="pointer-events-none absolute bottom-0.5 right-0.5 rounded bg-zinc-950/85 px-1 py-px text-[9px] tabular-nums text-zinc-400 ring-1 ring-zinc-700/60"
           title={
-            maxScale <= 1
-              ? 'Shrink-only (fill card off)'
-              : `Fills card · scale ${Math.round(scale * 100)}% (cap ${Math.round(maxScale * 100)}%)`
+            fillMode === 'stretch'
+              ? `Stretch fill · X ${Math.round(scale * 100)}% · Y ${Math.round(scaleY * 100)}% (edge resize is independent)`
+              : maxScale <= 1
+                ? 'Shrink-only (fill card off)'
+                : `Uniform fit · scale ${Math.round(scale * 100)}% (cap ${Math.round(maxScale * 100)}%)`
           }
         >
-          {Math.round(scale * 100)}%
+          {badgeText}
         </span>
       )}
     </div>

@@ -432,7 +432,9 @@ export function ImportImagePanel() {
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
         <p className="text-xs text-zinc-500">
           Pick a file → preview → toggle seamless for GIFs → upload to Storage
-          and place on the canvas.
+          and place on the canvas. Use{' '}
+          <strong className="font-medium text-zinc-400">SVG</strong> for
+          diagrams so they stay sharp when resized; PNG/JPEG work well for photos.
         </p>
 
         {!user && (
@@ -462,7 +464,7 @@ export function ImportImagePanel() {
               {busy ? 'Working…' : 'Choose image / GIF'}
             </span>
             <span className="text-[10px] text-zinc-600">
-              PNG, JPG, GIF, WebP, SVG · max 10 MB
+              SVG for diagrams · PNG, JPG, GIF, WebP for photos · max 10 MB
             </span>
             <input
               type="file"

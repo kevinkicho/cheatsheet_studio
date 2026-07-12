@@ -98,14 +98,25 @@ export function InspectorPanel({ syntax, onCollapse }: InspectorPanelProps) {
   const nodesLength = useFlowStore((s) => s.nodes.length)
 
   const handleAutoLayout = () => {
-    const { nodes, edges, direction } = useFlowStore.getState()
+    const { nodes, edges, direction, diagramKind, layoutMindmap } =
+      useFlowStore.getState()
     if (nodes.length === 0) return
+    // Mindmap: equal radial pie layout (3 around center, 2 in a block, …)
+    // Detect mindmap by kind OR by mindmap-shaped source (syntax prop)
+    const sourceLooksMindmap = /^\s*mindmap\b/im.test(syntax)
+    if (diagramKind === 'mindmap' || sourceLooksMindmap) {
+      layoutMindmap({ fit: true })
+      return
+    }
     setNodes(applyDagreLayout(nodes, edges, direction))
   }
 
   return (
     <div
       data-testid="mermaid-inspector-panel"
+      className="nopan nodrag"
+      onMouseDown={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
       style={{
         width: 280,
         maxWidth: '100%',

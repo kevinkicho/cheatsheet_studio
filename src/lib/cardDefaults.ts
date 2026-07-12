@@ -67,19 +67,34 @@ export function isProcessChart(
 
 /**
  * App-wide card defaults:
- * - Equations/tables: font-size fit (crisp KaTeX)
- * - Figures: FigureView (vector size) + same solid panel as other cards
+ * - Equations: KaTeX via font-size fit (vector type, sharp when resized)
+ * - Figures: inline SVG at card display size (vector)
+ * - Process charts: Mermaid SVG fillContainer (vector)
  * - Background fill ON for all types (turn off via Properties)
  * - contentFill ON so content tracks card resize
+ *
+ * New equations and figures are authored as vector graphics (LaTeX / SVG).
+ * See docs/vector-graphics.md.
  */
 export const CARD_DEFAULTS = {
   contentFill: true as const,
+  /** Uniform scale (aspect locked). Off = independent X/Y stretch on resize. */
+  keepAspectRatio: true as const,
   showTitle: true as const,
   titleAlign: 'left' as TitleAlign,
   /** Background fill on unless user opts out (transparentBackground: true). */
   backgroundFill: true as const,
+  /**
+   * Card inner padding (px). 0 so free-transform stretch-fill uses the full
+   * card; avoid “baked-in” gutters that couple axis resizes.
+   */
+  padding: 0,
   maxFillScale: 64,
   minFitScale: 0.08,
+  /**
+   * Equations with keepAspectRatio: scale via font-size so KaTeX reflows as
+   * vector type when the card grows (docs/vector-graphics.md).
+   */
   equationFitMethod: 'fontSize' as const,
   panelBackground: 'rgba(30, 32, 40, 0.92)',
   borderEnabled: true as const,
@@ -88,12 +103,15 @@ export const CARD_DEFAULTS = {
   borderColor: DEFAULT_BORDER_COLOR,
 }
 
+/** Old baked defaults — migrate to 0 padding on load. */
+const LEGACY_CARD_PADS = new Set([4, 8, 10, 12])
+
 export function solidPanelStyle(overrides?: Partial<ItemStyle>): ItemStyle {
   return withBorderStyle(
     {
       ...DEFAULT_ITEM_STYLE,
       background: CARD_DEFAULTS.panelBackground,
-      padding: overrides?.padding ?? DEFAULT_ITEM_STYLE.padding ?? 12,
+      padding: overrides?.padding ?? CARD_DEFAULTS.padding,
     },
     overrides ?? {},
   )
@@ -101,7 +119,7 @@ export function solidPanelStyle(overrides?: Partial<ItemStyle>): ItemStyle {
 
 /** @deprecated alias — figures use the same solid panel by default now */
 export function figureStyle(overrides?: Partial<ItemStyle>): ItemStyle {
-  return solidPanelStyle({ padding: 8, ...overrides })
+  return solidPanelStyle({ padding: CARD_DEFAULTS.padding, ...overrides })
 }
 
 export function equationStyle(overrides?: Partial<ItemStyle>): ItemStyle {
@@ -141,6 +159,12 @@ export function normalizeCanvasItem(item: CanvasItem): CanvasItem {
             : mergedStyle.background,
       }
 
+  // Migrate legacy roomy padding (8/10/12) so content fills the card
+  const rawPad = withBg.padding
+  if (rawPad == null || LEGACY_CARD_PADS.has(rawPad)) {
+    withBg.padding = CARD_DEFAULTS.padding
+  }
+
   const style = withBorderStyle(withBg, {
     borderEnabled: withBg.borderEnabled !== false,
     borderWidth: withBg.borderWidth ?? CARD_DEFAULTS.borderWidth,
@@ -151,6 +175,8 @@ export function normalizeCanvasItem(item: CanvasItem): CanvasItem {
   return {
     ...item,
     contentFill: item.contentFill !== false,
+    // Default ON — preserve aspect unless user opts into stretch free-transform
+    keepAspectRatio: item.keepAspectRatio !== false,
     showTitle: item.showTitle !== false,
     titleAlign: item.titleAlign ?? CARD_DEFAULTS.titleAlign,
     transparentBackground: transparent,
@@ -180,17 +206,20 @@ export function newCardBase(
 
   return normalizeCanvasItem({
     type,
-    // Process charts use FitContent transform scale (same “scale to card” as equations)
+    // Vector content fills the card (KaTeX fontSize / SVG / Mermaid fillContainer)
     contentFill:
       partial.contentFill !== undefined
         ? partial.contentFill
         : CARD_DEFAULTS.contentFill,
+    keepAspectRatio:
+      partial.keepAspectRatio !== undefined
+        ? partial.keepAspectRatio
+        : CARD_DEFAULTS.keepAspectRatio,
     showTitle: CARD_DEFAULTS.showTitle,
     titleAlign: CARD_DEFAULTS.titleAlign,
+    // Process charts: fixed card size; diagram SVG scales inside the card
     autoFit: !figure && !processChart,
-    style: figure
-      ? solidPanelStyle({ padding: 8 })
-      : solidPanelStyle({ padding: processChart ? 10 : undefined }),
+    style: solidPanelStyle({ padding: CARD_DEFAULTS.padding }),
     ...partial,
     // Solid panel for equations AND figures unless caller forces transparent
     transparentBackground: partial.transparentBackground === true,

@@ -35,6 +35,9 @@ const SHAPE_TEMPLATES: Record<NodeShape, [string, string]> = {
   'trapezoid': ['[/"', '"\\]'],
   'trapezoid-alt': ['[\\"', '"/]'],
   'asymmetric': ['>"', '"]'],
+  // Mindmap-only shapes (flowchart export falls back to similar delimiters)
+  'bang': ['((("', '")))'],
+  'cloud': ['(["', '"])'],
   'rectangle': ['["', '"]'],
 }
 

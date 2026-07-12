@@ -6,6 +6,10 @@ import { defineConfig, devices } from '@playwright/test'
  */
 export default defineConfig({
   testDir: './e2e',
+  // Auth-emulator suite lives under e2e/emulator and uses playwright.emulator.config.ts
+  // (VITE_USE_FIREBASE_EMULATORS). Never pick those up in smoke — CI was failing on
+  // missing emulator-banner when smoke ran without emulators.
+  testIgnore: ['**/emulator/**'],
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,

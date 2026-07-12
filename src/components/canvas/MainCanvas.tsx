@@ -115,6 +115,7 @@ export function MainCanvas() {
   const items = useCanvasStore((s) => s.items)
   const selectedIds = useCanvasStore((s) => s.selectedIds)
   const select = useCanvasStore((s) => s.select)
+  const toggleSelect = useCanvasStore((s) => s.toggleSelect)
   const setSelectedIds = useCanvasStore((s) => s.setSelectedIds)
   const canvas = useCanvasStore((s) => s.canvas)
   // Dedicated selectors so opacity/spacing updates always re-render this view
@@ -886,6 +887,10 @@ export function MainCanvas() {
             selectedIds={selectedIds}
             zoom={zoom}
             viewportEl={viewportNode}
+            onSelectItem={(id, multi) => {
+              if (multi) toggleSelect(id)
+              else select(id)
+            }}
           />
         )}
       <div

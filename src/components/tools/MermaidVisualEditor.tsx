@@ -1,7 +1,8 @@
 /**
- * Embedded flowchart visual editor adapted from
+ * Embedded interactive diagram editor adapted from
  * https://github.com/saketkattu/mermaid-visual-editor (MIT).
  * Canvas is source of truth; Mermaid syntax is serialized out.
+ * Supports flowchart + mindmap (never a static Mermaid preview).
  */
 import { useEffect, useRef, useState } from 'react'
 import { ReactFlowProvider } from '@xyflow/react'
@@ -11,9 +12,17 @@ import { Canvas } from '@/vendor/mermaid-visual-editor/components/Canvas'
 import { TopToolbar } from '@/vendor/mermaid-visual-editor/components/TopToolbar'
 import { ZoomControls } from '@/vendor/mermaid-visual-editor/components/ZoomControls'
 import { InspectorPanel } from '@/vendor/mermaid-visual-editor/components/Inspector/InspectorPanel'
-import { useFlowStore } from '@/vendor/mermaid-visual-editor/lib/store'
+import {
+  useFlowStore,
+  type DiagramKind,
+} from '@/vendor/mermaid-visual-editor/lib/store'
 import { serialize } from '@/vendor/mermaid-visual-editor/lib/serializer'
 import { parseMermaidFlowchart } from '@/vendor/mermaid-visual-editor/lib/parser'
+import {
+  applyMindmapTreeLayout,
+  parseMermaidMindmap,
+  serializeMindmap,
+} from '@/vendor/mermaid-visual-editor/lib/mindmap'
 
 type Props = {
   /** Current Mermaid source (used when loading into canvas). */
@@ -25,16 +34,20 @@ type Props = {
    * Parent should bump when the same string is re-applied.
    */
   reloadToken?: number
+  /**
+   * Authoritative diagram mode from Process panel chips.
+   * Always wins over source sniffing when provided.
+   */
+  diagramKind?: DiagramKind
   className?: string
 }
 
-/** Snapshot current visual canvas as Mermaid (for Add/Update card). */
-export function getVisualEditorMermaidSource(): string {
-  const { nodes, edges, direction, theme, look, curveStyle } =
-    useFlowStore.getState()
-  if (nodes.length === 0) return ''
-  return serialize(nodes, edges, { direction, theme, look, curveStyle })
-}
+const EMPTY_FLOWCHART = `flowchart TD
+  %% Add nodes to get started`
+
+const EMPTY_MINDMAP = `mindmap
+  root((Topic))
+`
 
 function stripFrontmatter(src: string): string {
   const t = src.trim()
@@ -44,21 +57,98 @@ function stripFrontmatter(src: string): string {
   return t.slice(end + 4).trim()
 }
 
-function tryImportFlowchart(
+function detectKindFromSource(raw: string): DiagramKind {
+  const body = stripFrontmatter(raw)
+  if (/^mindmap\b/im.test(body)) return 'mindmap'
+  return 'flowchart'
+}
+
+function serializeCanvas(): string {
+  const { nodes, edges, direction, theme, look, curveStyle, diagramKind } =
+    useFlowStore.getState()
+  if (nodes.length === 0) return ''
+  if (diagramKind === 'mindmap') {
+    return serializeMindmap(nodes, edges)
+  }
+  return serialize(nodes, edges, { direction, theme, look, curveStyle })
+}
+
+/** Snapshot current visual canvas as Mermaid (for Add/Update card). */
+export function getVisualEditorMermaidSource(): string {
+  return serializeCanvas()
+}
+
+type ImportFn = ReturnType<typeof useFlowStore.getState>['importDiagram']
+
+function resetCanvas(importDiagram: ImportFn, kind: DiagramKind) {
+  importDiagram([], [], {
+    direction: 'TD',
+    theme: 'dark',
+    look: 'classic',
+    curveStyle: 'basis',
+    diagramKind: kind,
+  })
+}
+
+/**
+ * Load source into the RF store.
+ * `preferredKind` from the Flowchart / Mind map chip is authoritative —
+ * never import mindmap content when the user asked for flowchart (and vice versa).
+ */
+function tryImport(
   raw: string,
-  importDiagram: ReturnType<typeof useFlowStore.getState>['importDiagram'],
+  importDiagram: ImportFn,
+  preferredKind?: DiagramKind,
 ): string | null {
   const trimmed = raw.trim()
-  if (!trimmed) return null
-  const body = stripFrontmatter(trimmed)
-  if (!/^(flowchart|graph)\b/im.test(body)) return null
-  const result = parseMermaidFlowchart(trimmed)
-  if (result.error || result.nodes.length === 0) return null
+  const body = stripFrontmatter(trimmed || '')
+
+  // Chip wins over source sniffing (fixes sticky mindmap after clicking Flowchart)
+  const kind: DiagramKind =
+    preferredKind === 'mindmap' || preferredKind === 'flowchart'
+      ? preferredKind
+      : detectKindFromSource(body || 'flowchart TD')
+
+  if (kind === 'mindmap') {
+    const src = /^mindmap\b/im.test(body) ? trimmed : EMPTY_MINDMAP
+    const result = parseMermaidMindmap(src)
+    if (result.error || result.nodes.length === 0) {
+      resetCanvas(importDiagram, 'mindmap')
+      return EMPTY_MINDMAP
+    }
+    const laidOut = applyMindmapTreeLayout(result.nodes, result.edges, 'TD')
+    importDiagram(laidOut, result.edges, {
+      direction: 'TD',
+      theme: 'dark',
+      look: 'classic',
+      curveStyle: 'basis',
+      diagramKind: 'mindmap',
+    })
+    useFlowStore.setState((s) => ({ layoutEpoch: s.layoutEpoch + 1 }))
+    return serializeMindmap(laidOut, result.edges)
+  }
+
+  // ── flowchart only (never fall through from mindmap body) ───────────────
+  const flowSrc = /^(flowchart|graph)\b/im.test(body)
+    ? trimmed
+    : EMPTY_FLOWCHART
+  const result = parseMermaidFlowchart(flowSrc)
+  if (result.error || result.nodes.length === 0) {
+    // Still clear any leftover mindmap nodes
+    resetCanvas(importDiagram, 'flowchart')
+    if (result.nodes.length === 0 && !result.error) {
+      // empty starter is ok
+      return EMPTY_FLOWCHART
+    }
+    // parser failed on real content — show empty flowchart, not old mindmap
+    return EMPTY_FLOWCHART
+  }
   importDiagram(result.nodes, result.edges, {
     direction: result.direction,
     theme: 'dark',
     look: result.look,
     curveStyle: result.curveStyle,
+    diagramKind: 'flowchart',
   })
   return serialize(result.nodes, result.edges, {
     direction: result.direction,
@@ -72,6 +162,7 @@ function VisualEditorInner({
   source,
   onSourceChange,
   reloadToken = 0,
+  diagramKind: diagramKindProp,
   className,
 }: Props) {
   const nodes = useFlowStore((s) => s.nodes)
@@ -80,44 +171,50 @@ function VisualEditorInner({
   const theme = useFlowStore((s) => s.theme)
   const look = useFlowStore((s) => s.look)
   const curveStyle = useFlowStore((s) => s.curveStyle)
+  const diagramKind = useFlowStore((s) => s.diagramKind)
   const importDiagram = useFlowStore((s) => s.importDiagram)
   const setTheme = useFlowStore((s) => s.setTheme)
   const [inspectorOpen, setInspectorOpen] = useState(false)
 
-  const syntax = serialize(nodes, edges, {
-    direction,
-    theme,
-    look,
-    curveStyle,
-  })
+  const syntax =
+    diagramKind === 'mindmap'
+      ? serializeMindmap(nodes, edges)
+      : serialize(nodes, edges, { direction, theme, look, curveStyle })
 
   const bootstrapped = useRef(false)
   const lastEmitted = useRef('')
   const lastLoaded = useRef('')
   const lastReload = useRef(reloadToken)
+  const lastKindProp = useRef<DiagramKind | undefined>(diagramKindProp)
+  // Ignore canvas→parent pushes until import for this kind has settled
+  const suppressPush = useRef(false)
 
-  // Prefer studio dark theme for our app chrome
   useEffect(() => {
     setTheme('dark')
   }, [setTheme])
 
-  // Bootstrap canvas once from parent source (template / selected card).
+  // Bootstrap (or remount via key={kind} on parent)
   useEffect(() => {
     if (bootstrapped.current) return
-    const out = tryImportFlowchart(source, importDiagram)
+    suppressPush.current = true
+    const out = tryImport(source, importDiagram, diagramKindProp)
     if (out) {
-      lastLoaded.current = source.trim()
+      lastLoaded.current = out.trim()
       lastEmitted.current = out
       onSourceChange(out)
     }
+    lastKindProp.current = diagramKindProp
     bootstrapped.current = true
-    // only on mount
+    // allow push on next tick after parent has new source
+    queueMicrotask(() => {
+      suppressPush.current = false
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Push canvas → parent whenever user edits (never emit placeholder-only)
+  // Push canvas → parent whenever user edits (not during kind switch import)
   useEffect(() => {
-    if (!bootstrapped.current) return
+    if (!bootstrapped.current || suppressPush.current) return
     if (nodes.length === 0) return
     if (syntax === lastEmitted.current) return
     lastEmitted.current = syntax
@@ -125,31 +222,52 @@ function VisualEditorInner({
     onSourceChange(syntax)
   }, [syntax, nodes.length, onSourceChange])
 
-  // Parent source changed externally OR reloadToken bumped (templates)
+  // Parent source / reloadToken / diagram kind chip changed
   useEffect(() => {
     if (!bootstrapped.current) return
+
     const tokenBump = reloadToken !== lastReload.current
     lastReload.current = reloadToken
 
+    const kindChanged =
+      diagramKindProp !== undefined &&
+      diagramKindProp !== lastKindProp.current
+    lastKindProp.current = diagramKindProp
+
     const trimmed = source.trim()
-    if (!trimmed) return
-    if (!tokenBump && trimmed === lastLoaded.current) return
-    if (!tokenBump && trimmed === lastEmitted.current) {
+    if (!trimmed && !kindChanged) return
+
+    if (
+      !tokenBump &&
+      !kindChanged &&
+      (trimmed === lastLoaded.current || trimmed === lastEmitted.current)
+    ) {
       lastLoaded.current = trimmed
       return
     }
 
-    const out = tryImportFlowchart(trimmed, importDiagram)
-    if (!out) return
-    lastLoaded.current = trimmed
-    lastEmitted.current = out
-    if (tokenBump) onSourceChange(out)
-  }, [source, reloadToken, importDiagram, onSourceChange])
+    // Kind chip or template reload — preferredKind is always the chip
+    suppressPush.current = true
+    const out = tryImport(
+      trimmed || (diagramKindProp === 'mindmap' ? EMPTY_MINDMAP : EMPTY_FLOWCHART),
+      importDiagram,
+      diagramKindProp,
+    )
+    if (out) {
+      lastLoaded.current = out.trim()
+      lastEmitted.current = out
+      onSourceChange(out)
+    }
+    queueMicrotask(() => {
+      suppressPush.current = false
+    })
+  }, [source, reloadToken, importDiagram, onSourceChange, diagramKindProp])
 
   return (
     <div
       className={`mermaid-visual-editor relative flex h-full min-h-0 w-full flex-col overflow-hidden rounded-md border border-zinc-700/80 ${className ?? ''}`}
       data-testid="mermaid-visual-editor"
+      data-diagram-kind={diagramKind}
     >
       <div className="relative flex min-h-0 flex-1">
         <div className="relative min-h-0 min-w-0 flex-1">
@@ -180,7 +298,9 @@ function VisualEditorInner({
           color: 'var(--neu-text-muted, #a1a1aa)',
         }}
       >
-        Select (V) · Pan (H) · scroll to zoom · middle-drag pans in select mode
+        {diagramKind === 'mindmap'
+          ? 'Mind map · Tab=child · Enter=sibling · Shift+Tab=promote · Inspector for shape/color/icon/reparent'
+          : 'Select (V) · Pan (H) · scroll to zoom · middle-drag pans in select mode'}
       </p>
     </div>
   )

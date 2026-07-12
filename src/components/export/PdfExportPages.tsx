@@ -1,17 +1,26 @@
-import type { CanvasItem, TitleAlign } from '@/types'
-import { FitContent } from '@/components/math/FitContent'
-import { FigureView } from '@/components/math/FigureView'
-import { LatexView } from '@/components/math/LatexView'
-import { MarkdownTable } from '@/components/math/MarkdownTable'
-import { MermaidView } from '@/components/math/MermaidView'
+import type { CanvasItem, SheetCanvas, TitleAlign } from '@/types'
+import {
+  DEFAULT_CANVAS,
+  DEFAULT_MARGINS,
+  clampGridOpacity,
+  normalizeGridExtent,
+} from '@/types'
+import { CanvasCardBody } from '@/components/canvas/CanvasCardBody'
+import { CanvasGridLayer } from '@/components/canvas/CanvasGridLayer'
 import {
   CARD_DEFAULTS,
   composeBorderCss,
-  isFigureLike,
 } from '@/lib/cardDefaults'
+import {
+  resolveGridCoverage,
+  resolvePageGridRect,
+} from '@/lib/gridCoverage'
 import type { PageRect } from '@/lib/exportPdf'
 
-const TITLE_BAND = 22
+/** Match main canvas default board fill when canvas.background is missing. */
+const DEFAULT_BOARD_BG = '#0f1115'
+const DEFAULT_CARD_BG = 'rgba(30,32,40,0.92)'
+const DEFAULT_CARD_COLOR = '#e8eaed'
 
 function titleAlignCss(align: TitleAlign | undefined): CanvasTextAlign {
   if (align === 'center' || align === 'right') return align
@@ -19,12 +28,12 @@ function titleAlignCss(align: TitleAlign | undefined): CanvasTextAlign {
 }
 
 /**
- * Prefer hex/rgb for export capture — avoid Tailwind class colors (oklch)
- * which older html2canvas builds cannot parse.
+ * Prefer hex/rgb for export capture — avoid modern color functions
+ * that older html2canvas builds cannot parse.
  */
 function sanitizeCssColor(value: string | undefined, fallback: string): string {
-  if (!value || value === 'transparent') return fallback
-  // Reject modern color functions that can still slip through item styles
+  if (!value) return fallback
+  if (value === 'transparent') return 'transparent'
   if (/oklch|oklab|lab\(|lch\(|color-mix|color\(/i.test(value)) return fallback
   return value
 }
@@ -39,24 +48,19 @@ function ExportCard({
   y: number
 }) {
   const style = item.style ?? {}
-  const figure = isFigureLike(item)
   const transparent = item.transparentBackground === true
-  const showTitle = item.showTitle !== false
-  const pad = style.padding ?? 12
+  const showTitle = item.showTitle !== false && Boolean(item.title)
+  const pad = style.padding ?? CARD_DEFAULTS.padding
   const border = composeBorderCss(style)
-  // Light paper theme for export (hex only)
   const bg = transparent
     ? 'transparent'
     : sanitizeCssColor(
         style.background && style.background !== 'transparent'
           ? style.background
           : undefined,
-        '#f8fafc',
+        DEFAULT_CARD_BG,
       )
-  const color = sanitizeCssColor(
-    style.color && style.color !== '#e8eaed' ? style.color : undefined,
-    '#111827',
-  )
+  const color = sanitizeCssColor(style.color, DEFAULT_CARD_COLOR)
   const fontSize = style.fontSize ?? 18
 
   return (
@@ -69,96 +73,62 @@ function ExportCard({
         width: item.width,
         height: item.height,
         boxSizing: 'border-box',
-        overflow: 'hidden',
-        background: bg,
-        border,
-        borderRadius: 6,
-        color,
-        fontSize,
-        padding: pad,
-        display: 'flex',
-        flexDirection: 'column',
+        overflow: 'visible',
         zIndex: item.zIndex,
       }}
     >
-      {showTitle && (
-        <div
-          style={{
-            flexShrink: 0,
-            height: TITLE_BAND - 4,
-            marginBottom: 4,
-            fontSize: 11,
-            fontWeight: 600,
-            color: '#374151',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            textAlign: titleAlignCss(item.titleAlign),
-          }}
-        >
-          {item.title || 'Untitled'}
-        </div>
-      )}
+      {/* Match CanvasItemView: title in flow (reserved), body flex-1 below */}
       <div
         style={{
-          flex: 1,
-          minHeight: 0,
+          position: 'absolute',
+          inset: 0,
           overflow: 'hidden',
-          position: 'relative',
+          display: 'flex',
+          flexDirection: 'column',
+          background: bg,
+          border,
+          borderRadius: 8,
+          color,
+          fontSize,
+          padding: pad,
+          boxSizing: 'border-box',
+          boxShadow: transparent ? 'none' : '0 4px 16px rgba(0,0,0,0.25)',
         }}
       >
-        {figure && item.imageUrl ? (
+        {showTitle && (
           <div
             style={{
-              width: '100%',
-              height: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
+              flexShrink: 0,
+              height: 16,
+              marginBottom: 2,
+              padding: '0 2px',
+              fontSize: 10,
+              fontWeight: 500,
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase',
+              color: '#a1a1aa',
               overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              textAlign: titleAlignCss(item.titleAlign),
+              lineHeight: '16px',
+              pointerEvents: 'none',
             }}
           >
-            <FigureView
-              src={item.imageUrl}
-              alt={item.title || 'figure'}
-              className=""
-            />
+            {item.title}
           </div>
-        ) : item.type === 'process-chart' || item.mermaidSource ? (
-          <MermaidView
-            source={item.mermaidSource ?? ''}
-            // Print on white paper — light Mermaid theme, no dark polish
-            theme="default"
-            forceDark={false}
-            className="h-full w-full"
-          />
-        ) : (
-          <FitContent
-            className=""
-            baseFontSize={fontSize}
-            maxScale={CARD_DEFAULTS.maxFillScale}
-            contentKey={item.latex ?? item.tableMarkdown ?? item.id}
-          >
-            {(item.type === 'equation' ||
-              item.type === 'custom-equation' ||
-              item.latex) &&
-              item.latex && (
-                <LatexView
-                  latex={item.latex}
-                  className="export-latex"
-                />
-              )}
-            {(item.type === 'table' || item.tableMarkdown) &&
-              item.tableMarkdown && (
-                <MarkdownTable
-                  markdown={item.tableMarkdown}
-                  fitContent
-                  printTheme
-                  className=""
-                />
-              )}
-          </FitContent>
         )}
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            minWidth: 0,
+            overflow: 'hidden',
+            position: 'relative',
+          }}
+        >
+          <CanvasCardBody item={item} showBadge={false} />
+        </div>
       </div>
     </div>
   )
@@ -170,41 +140,100 @@ export type ExportPageModel = {
 }
 
 /**
- * Off-screen white print pages for capture (light theme for paper).
- * Uses inline styles only so html2canvas-pro does not hit Tailwind oklch.
+ * Print pages for preview + capture — same background, grid, and card body
+ * as the main viewport (minus selection handles / page labels).
  */
 export function PdfExportPages({
   pages,
+  canvas,
+  pageBackground,
 }: {
   pages: ExportPageModel[]
+  /** Full sheet canvas — grid + background match MainCanvas. */
+  canvas?: SheetCanvas
+  /** @deprecated Prefer `canvas.background`. */
+  pageBackground?: string
 }) {
+  const c = canvas ?? { ...DEFAULT_CANVAS, background: pageBackground ?? DEFAULT_BOARD_BG }
+  const boardBg = sanitizeCssColor(
+    pageBackground ?? c.background,
+    DEFAULT_BOARD_BG,
+  )
+  const margins = { ...DEFAULT_MARGINS, ...c.margins }
+  const gridSpacing = Math.max(2, Math.round(c.gridSpacing ?? 24))
+  const gridOpacity = clampGridOpacity(c.gridOpacity)
+  const extent = normalizeGridExtent(c.gridExtent)
+  const { useBoardGrid, usePerPageGrid } = resolveGridCoverage({
+    showGrid: c.showGrid === true,
+    showPrintArea: c.showPrintArea !== false,
+    gridExtent: extent,
+  })
+
   return (
-    <div data-pdf-export-root style={{ color: '#111827' }}>
-      {pages.map(({ page, items }) => (
-        <div
-          key={page.index}
-          data-pdf-page={page.index}
-          style={{
-            position: 'relative',
-            width: page.width,
-            height: page.height,
-            background: '#ffffff',
-            overflow: 'hidden',
-            boxSizing: 'border-box',
-            boxShadow: 'none',
-            color: '#111827',
-          }}
-        >
-          {items.map((it) => (
-            <ExportCard
-              key={it.id}
-              item={it}
-              x={it.exportX}
-              y={it.exportY}
-            />
-          ))}
-        </div>
-      ))}
+    <div data-pdf-export-root style={{ color: DEFAULT_CARD_COLOR }}>
+      {pages.map(({ page, items }) => {
+        // Page-local grid geometry (origin = page top-left)
+        const pageLocalOrigin = { x: 0, y: 0 }
+        const perPageRect =
+          usePerPageGrid
+            ? resolvePageGridRect(
+                extent,
+                pageLocalOrigin,
+                { width: page.width, height: page.height },
+                margins,
+              )
+            : null
+
+        return (
+          <div
+            key={page.index}
+            data-pdf-page={page.index}
+            style={{
+              position: 'relative',
+              width: page.width,
+              height: page.height,
+              background: boardBg,
+              overflow: 'hidden',
+              boxSizing: 'border-box',
+              boxShadow: 'none',
+              color: DEFAULT_CARD_COLOR,
+            }}
+          >
+            {/* Grid under cards — same tiles / opacity as MainCanvas */}
+            {useBoardGrid && (
+              <CanvasGridLayer
+                left={0}
+                top={0}
+                width={page.width}
+                height={page.height}
+                spacing={gridSpacing}
+                opacity={gridOpacity}
+                phaseX={page.x}
+                phaseY={page.y}
+              />
+            )}
+            {perPageRect && (
+              <CanvasGridLayer
+                left={perPageRect.left}
+                top={perPageRect.top}
+                width={perPageRect.width}
+                height={perPageRect.height}
+                spacing={gridSpacing}
+                opacity={gridOpacity}
+              />
+            )}
+
+            {items.map((it) => (
+              <ExportCard
+                key={it.id}
+                item={it}
+                x={it.exportX}
+                y={it.exportY}
+              />
+            ))}
+          </div>
+        )
+      })}
     </div>
   )
 }

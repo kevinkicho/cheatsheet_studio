@@ -1,8 +1,11 @@
 import type { ReactNode } from 'react'
-import { useReactFlow } from '@xyflow/react'
+import { useOnViewportChange, useReactFlow } from '@xyflow/react'
 import { useEffect, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useFlowStore } from '../lib/store'
+
+const MIN_ZOOM = 0.05
+const MAX_ZOOM = 2.5
 
 const NEU_BG = 'var(--neu-bg)'
 
@@ -118,12 +121,19 @@ export function ZoomControls() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- initial zoom only
   }, [])
 
+  // Keep % label in sync with scroll-wheel / pinch zoom
+  useOnViewportChange({
+    onChange: ({ zoom: z }) => setZoom(Math.round(z * 100)),
+    onEnd: ({ zoom: z }) => setZoom(Math.round(z * 100)),
+  })
+
   const handleZoomIn = () => {
     zoomIn({ duration: 200 })
     window.setTimeout(refreshZoom, 220)
   }
 
   const handleZoomOut = () => {
+    // Respects ReactFlow minZoom (0.05) — was stuck at 50% with RF default
     zoomOut({ duration: 200 })
     window.setTimeout(refreshZoom, 220)
   }
@@ -133,8 +143,8 @@ export function ZoomControls() {
     void fitView({
       duration: 300,
       padding: 0.18,
-      maxZoom: 1.5,
-      minZoom: 0.15,
+      maxZoom: MAX_ZOOM,
+      minZoom: MIN_ZOOM,
     })
     window.setTimeout(refreshZoom, 320)
   }

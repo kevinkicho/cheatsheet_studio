@@ -79,7 +79,7 @@ export function MarkdownTable({
                   style={{
                     whiteSpace: 'nowrap',
                     borderBottom: '1px solid #9ca3af',
-                    padding: '0.4em 0.65em',
+                    padding: '0.2em 0.4em',
                     fontWeight: 600,
                     color: '#3730a3',
                   }}
@@ -103,7 +103,7 @@ export function MarkdownTable({
                     style={{
                       whiteSpace: 'nowrap',
                       borderBottom: '1px solid #e5e7eb',
-                      padding: '0.4em 0.65em',
+                      padding: '0.2em 0.4em',
                       color: '#111827',
                     }}
                   >
@@ -132,7 +132,7 @@ export function MarkdownTable({
             {header.map((cell, i) => (
               <th
                 key={i}
-                className="whitespace-nowrap border-b border-zinc-600 px-[0.65em] py-[0.4em] font-semibold text-indigo-200"
+                className="whitespace-nowrap border-b border-zinc-600 px-[0.4em] py-[0.2em] font-semibold text-indigo-200"
               >
                 {cell}
               </th>
@@ -145,7 +145,7 @@ export function MarkdownTable({
               {row.map((cell, ci) => (
                 <td
                   key={ci}
-                  className="whitespace-nowrap border-b border-zinc-800 px-[0.65em] py-[0.4em]"
+                  className="whitespace-nowrap border-b border-zinc-800 px-[0.4em] py-[0.2em]"
                 >
                   {cell}
                 </td>

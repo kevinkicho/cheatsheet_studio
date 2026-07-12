@@ -232,11 +232,23 @@ interface CanvasState {
   /**
    * Multi-resize: apply the same width/height delta to every item in
    * `origins` (start sizes), relative to the handle card's drag.
+   * @deprecated Prefer transform via handle + applyItemRects for free-transform.
    */
   resizeItemsBy: (
     origins: Record<string, { width: number; height: number }>,
     dw: number,
     dh: number,
+    opts?: { manual?: boolean },
+  ) => void
+  /**
+   * Batch-set x/y/width/height for free-transform (8 handles).
+   * Keys are item ids; locked items are skipped.
+   */
+  applyItemRects: (
+    rects: Record<
+      string,
+      { x: number; y: number; width: number; height: number }
+    >,
     opts?: { manual?: boolean },
   ) => void
   fitItemToContent: (id: string) => void
@@ -1125,6 +1137,49 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           }
           return {
             ...i,
+            width: w,
+            height: h,
+            autoFit: opts?.manual ? false : i.autoFit,
+          }
+        }),
+        dirty: true,
+      }
+    })
+  },
+
+  applyItemRects: (rects, opts) => {
+    const ids = Object.keys(rects)
+    if (ids.length === 0) return
+    set((s) => {
+      const g = Math.max(4, s.canvas.gridSpacing ?? ORGANIZE_GRID)
+      const snap = s.canvas.snapToGrid && opts?.manual
+      const idSet = new Set(ids)
+      return {
+        items: s.items.map((i) => {
+          if (!idSet.has(i.id) || i.locked) return i
+          const r = rects[i.id]
+          if (!r) return i
+          let x = r.x
+          let y = r.y
+          let w = Math.max(80, r.width)
+          let h = Math.max(48, r.height)
+          if (snap) {
+            const { ox, oy } = getPrintAwareSnapOrigin(x, y, s.canvas)
+            x = snapToGridValue(x, g, ox)
+            y = snapToGridValue(y, g, oy)
+            w = Math.max(g, snapToGridValue(w, g))
+            h = Math.max(g, snapToGridValue(h, g))
+          } else {
+            x = Math.round(x)
+            y = Math.round(y)
+            w = Math.round(w)
+            h = Math.round(h)
+          }
+          if (!Number.isFinite(x) || !Number.isFinite(y)) return i
+          return {
+            ...i,
+            x,
+            y,
             width: w,
             height: h,
             autoFit: opts?.manual ? false : i.autoFit,

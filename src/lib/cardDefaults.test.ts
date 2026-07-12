@@ -63,7 +63,23 @@ describe('normalizeCanvasItem', () => {
     expect(item.transparentBackground).toBe(false)
     expect(item.style?.background).not.toBe('transparent')
     expect(item.contentFill).toBe(true)
+    expect(item.keepAspectRatio).toBe(true)
     expect(item.showTitle).toBe(true)
+  })
+
+  it('allows keepAspectRatio opt-out (stretch free-transform)', () => {
+    const item = normalizeCanvasItem({
+      id: 'stretch',
+      type: 'equation',
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 50,
+      zIndex: 1,
+      latex: 'x',
+      keepAspectRatio: false,
+    })
+    expect(item.keepAspectRatio).toBe(false)
   })
 
   it('keeps transparent background when opted out', () => {

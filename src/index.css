@@ -43,8 +43,21 @@ body {
   border-color: rgb(99 102 241);
 }
 
+/* KaTeX host: inherits font-size from FitContent (vector type on resize). */
 .katex-host {
   color: inherit;
+}
+
+.katex-host .katex {
+  font-size: 1em;
+}
+
+/* Inline SVG figures / Mermaid fill paint crisply at layout size */
+[data-figure-vector='svg'] svg,
+.mermaid-host[data-mermaid-fill='true'] svg {
+  max-width: 100%;
+  max-height: 100%;
+  display: block;
 }
 
 /* Export capture: avoid Tailwind utilities (oklch) on math inside print pages */

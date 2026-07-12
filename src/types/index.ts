@@ -122,6 +122,11 @@ export interface CanvasItem {
    */
   contentFill?: boolean
   /**
+   * When true (default), content uses uniform scale so aspect ratio is preserved.
+   * When false, free-transform stretch scales X and Y independently.
+   */
+  keepAspectRatio?: boolean
+  /**
    * When true, card chrome is fully transparent (no fill/shadow) so figures
    * and equations blend with the dark canvas. Default false; figures often set true.
    */
@@ -351,5 +356,9 @@ export const DEFAULT_ITEM_STYLE: ItemStyle = {
   borderStyle: 'solid',
   borderColor: DEFAULT_BORDER_COLOR,
   border: `1px solid ${DEFAULT_BORDER_COLOR}`,
-  padding: 12,
+  /**
+   * No inner padding — content uses the full card; FitContent stretch-fills.
+   * Legacy sheets with 4–12px padding are normalized down to 0 on load.
+   */
+  padding: 0,
 }

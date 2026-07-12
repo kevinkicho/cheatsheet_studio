@@ -59,7 +59,8 @@ test.describe('Emulator workspace', () => {
   })
 
   test('can create equation card on canvas sheet', async ({ page }) => {
-    await page.getByText('Equation', { exact: true }).click()
+    // Right tools rail — not library table headers that also say "Equation"
+    await page.getByRole('button', { name: 'Equation', exact: true }).click()
     const latex = page.locator('textarea').first()
     await expect(latex).toBeVisible({ timeout: 10_000 })
     await latex.fill('E = mc^2')

@@ -1,3 +1,4 @@
+import { Cloud } from 'lucide-react'
 import type { NodeShape, Direction, Theme, CurveStyle } from '../lib/store'
 
 export function ShapeIcon({ shape, stroke = '#6b7280', fill = 'white' }: { shape: NodeShape; stroke?: string; fill?: string }) {
@@ -9,6 +10,16 @@ export function ShapeIcon({ shape, stroke = '#6b7280', fill = 'white' }: { shape
       return <svg viewBox="0 0 24 16" className="w-6 h-4"><rect x={1} y={2} width={22} height={12} rx={5} fill={fill} stroke={stroke} strokeWidth={sw} /></svg>
     case 'stadium':
       return <svg viewBox="0 0 24 16" className="w-6 h-4"><rect x={1} y={2} width={22} height={12} rx={7} fill={fill} stroke={stroke} strokeWidth={sw} /></svg>
+    case 'cloud':
+      return (
+        <Cloud
+          className="h-4 w-5"
+          stroke={stroke}
+          fill={fill === 'white' || fill === 'transparent' ? 'none' : fill}
+          strokeWidth={sw}
+          aria-hidden
+        />
+      )
     case 'subroutine':
       return <svg viewBox="0 0 24 16" className="w-6 h-4"><rect x={2} y={3} width={20} height={10} rx={1} fill={fill} stroke={stroke} strokeWidth={sw} /><rect x={4} y={5} width={16} height={6} fill="none" stroke={stroke} strokeWidth={0.8} /></svg>
     case 'cylinder':
@@ -31,25 +42,62 @@ export function ShapeIcon({ shape, stroke = '#6b7280', fill = 'white' }: { shape
       return <svg viewBox="0 0 24 16" className="w-6 h-4"><polygon points="4,2 20,2 23,14 1,14" fill={fill} stroke={stroke} strokeWidth={sw} /></svg>
     case 'asymmetric':
       return <svg viewBox="0 0 24 16" className="w-6 h-4"><polygon points="1,2 19,2 23,8 19,14 1,14" fill={fill} stroke={stroke} strokeWidth={sw} /></svg>
+    case 'bang':
+      // Exploding / starburst bubble (Mermaid mindmap bang)
+      return (
+        <svg viewBox="0 0 24 24" className="w-5 h-5">
+          <polygon
+            points="12,1 14.5,8 22,8.5 16,13.5 18,21 12,17 6,21 8,13.5 2,8.5 9.5,8"
+            fill={fill}
+            stroke={stroke}
+            strokeWidth={sw}
+            strokeLinejoin="round"
+          />
+        </svg>
+      )
+    default:
+      // Unknown shape — never silently render the wrong icon
+      return (
+        <svg viewBox="0 0 24 16" className="w-6 h-4">
+          <rect
+            x={1}
+            y={2}
+            width={22}
+            height={12}
+            rx={1}
+            fill={fill}
+            stroke={stroke}
+            strokeWidth={sw}
+          />
+        </svg>
+      )
   }
 }
 
+/**
+ * Flowchart Object Settings / shape picker only.
+ * Order is fixed; each `shape` id must match ShapeIcon + FlowNode rendering 1:1.
+ * Do NOT include mindmap-only shapes (`bang`, `cloud`).
+ */
 export const ALL_SHAPES: { shape: NodeShape; label: string }[] = [
-  { shape: 'rectangle',       label: 'Rectangle' },
-  { shape: 'rounded',         label: 'Rounded' },
-  { shape: 'stadium',         label: 'Stadium' },
-  { shape: 'diamond',         label: 'Diamond' },
-  { shape: 'circle',          label: 'Circle' },
-  { shape: 'double-circle',   label: 'Double Circle' },
-  { shape: 'hexagon',         label: 'Hexagon' },
-  { shape: 'subroutine',      label: 'Subroutine' },
-  { shape: 'cylinder',        label: 'Cylinder/DB' },
-  { shape: 'parallelogram',   label: 'Parallelogram' },
-  { shape: 'parallelogram-alt', label: 'Para. Alt' },
-  { shape: 'trapezoid',       label: 'Trapezoid' },
-  { shape: 'trapezoid-alt',   label: 'Trap. Alt' },
-  { shape: 'asymmetric',      label: 'Asymmetric' },
+  { shape: 'rectangle', label: 'Rectangle' },
+  { shape: 'rounded', label: 'Rounded rectangle' },
+  { shape: 'stadium', label: 'Stadium / pill' },
+  { shape: 'diamond', label: 'Diamond' },
+  { shape: 'circle', label: 'Circle' },
+  { shape: 'double-circle', label: 'Double circle' },
+  { shape: 'hexagon', label: 'Hexagon' },
+  { shape: 'subroutine', label: 'Subroutine' },
+  { shape: 'cylinder', label: 'Cylinder / DB' },
+  { shape: 'parallelogram', label: 'Parallelogram' },
+  { shape: 'parallelogram-alt', label: 'Parallelogram alt' },
+  { shape: 'trapezoid', label: 'Trapezoid' },
+  { shape: 'trapezoid-alt', label: 'Trapezoid alt' },
+  { shape: 'asymmetric', label: 'Asymmetric / flag' },
 ]
+
+/** @deprecated use ALL_SHAPES — alias for callers */
+export const FLOWCHART_SHAPES = ALL_SHAPES
 
 export const DIRECTIONS: { value: Direction; label: string; title: string }[] = [
   { value: 'TD', label: '↓', title: 'Top → Down' },

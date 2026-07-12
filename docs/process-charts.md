@@ -1,36 +1,47 @@
 # Process charts
 
-CheatSheet Studio process charts are **Mermaid flowcharts** authored in the
-right sidebar **Process** tool and placed as canvas cards.
+CheatSheet Studio process charts are **Mermaid diagrams** authored in the right
+sidebar **Process** tool and placed as canvas cards.
 
 **Mermaid version:** 11.x (`package.json`)  
-**Authoring:** visual drag-and-drop editor (vendored [saketkattu/mermaid-visual-editor](https://github.com/saketkattu/mermaid-visual-editor), MIT)
+**Authoring:** interactive visual editor (vendored
+[saketkattu/mermaid-visual-editor](https://github.com/saketkattu/mermaid-visual-editor), MIT)
 
 ---
 
 ## User flow
 
 1. Open **Process** in the right tools rail.
-2. Pick a **diagram type** template (flowchart, sequence, state, class, ER, pie,
-   mindmap) and, for flowcharts, a **direction** (TD / LR / BT / RL).
-   Choosing a type **replaces** the editor contents; if the viewport already has
-   a diagram, the app asks for confirmation (unsaved editor work is discarded;
-   canvas cards and the cloud library are not deleted).
-3. **Flowchart:** edit on the dark visual canvas (nodes, edges, shapes).
-   Toolbar: **Inspector**, **Select (V)**, **Pan (H)**, shapes, **zoom fit**.
-   **Other kinds:** studio-dark Mermaid preview only; Add places the template.
+2. Choose a **diagram type** chip:
+   - **Flowchart** — nodes, edges, 14 shapes, inspector (fill / border / text)
+   - **Mind map** — radial hierarchy, promote/demote, bang/cloud shapes
+3. Edit on the **dark** React Flow canvas (never a static Mermaid preview pane).
+   Toolbar: **Inspector**, **Select (V)**, **Pan (H)**, shapes, **zoom fit**
+   (min zoom ~5%).
 4. **Cloud library** (signed in): **Save new** / **Update saved** / **Load…**
    stores named Mermaid sources under the user’s `flowcharts` collection in
-   Firestore. Load replaces the editor (with the same replace warning when dirty).
+   Firestore. Load replaces the editor (with a replace warning when dirty).
 5. Set a **title**, then **Add to canvas** (or **Update card** when a process
    card is selected).
-6. On the board, cards use the same solid panel chrome as equations. With
-   **Scale content to fill card** enabled (default), the diagram scales into the
-   card body via `FitContent` (CSS transform).
+6. On the board, process cards use the same solid panel chrome as equations.
+   Diagrams paint as **SVG `fillContainer`** (vector at card size — see
+   [vector-graphics.md](./vector-graphics.md)).
 
-For flowcharts, Mermaid source is **derived from the visual canvas** at
+For both kinds, Mermaid source is **derived from the visual canvas** at
 insert/update time (`getVisualEditorMermaidSource()`), so Add never depends on
-a stale empty React state.
+stale empty React state.
+
+---
+
+## Diagram types
+
+| Kind | Interactive editor | Notes |
+|------|--------------------|--------|
+| **Flowchart** | Yes | 14 official shapes (icon-only picker); inspector colors + hierarchy N/A |
+| **Mind map** | Yes | Radial equal-slice layout; promote/demote via edge order; bang / cloud shapes |
+
+Older sequence / state / class / ER / pie templates are **not** offered in the
+Process panel chips. Existing cards of other kinds remain on the board if present.
 
 ---
 
@@ -38,19 +49,17 @@ a stale empty React state.
 
 | Piece | Role |
 |-------|------|
-| `CreateProcessChartPanel` | Sidebar: title, kind/direction templates, cloud library, visual editor or preview, Add / Update |
-| `MermaidVisualEditor` | Dark React Flow canvas; serializes to Mermaid flowchart source |
-| `mermaidTemplates.ts` | Starter sources for each diagram kind + direction helpers |
+| `CreateProcessChartPanel` | Sidebar: title, flowchart/mindmap chips, cloud library, visual editor, Add / Update |
+| `MermaidVisualEditor` | Dark React Flow host; preferredKind-authoritative import; serialize to Mermaid |
+| `mermaidTemplates.ts` | Starters for flowchart + official mindmap example |
 | `flowchartLibrary.ts` + `flowchartLibraryStore` | Firestore CRUD for named flowcharts |
 | `firestore.rules` → `flowcharts/{id}` | Owner-only read/write |
-| `src/vendor/mermaid-visual-editor/*` | Vendored editor (relative imports for Vite) |
-| Popovers / Import modal | Portaled to `document.body` (escape overflow / transform clipping) |
+| `src/vendor/mermaid-visual-editor/*` | Vendored editor + mindmap layout / nodes / edges |
+| Popovers / Import modal | Portaled to `document.body` |
 | `canvasStore.addProcessChart` | Inserts a `process-chart` card (`contentFill: true`, `autoFit: false`) |
-| `MermaidView` | Renders card / export Mermaid SVG |
+| `MermaidView` | Card / export SVG (`fillContainer` = vector at card size) |
 | `mermaidTheme.ts` | Studio dark init, source prep, layout-safe paint |
-| `CanvasItemView` | Wraps `MermaidView` in `FitContent` (`fitMethod="transform"`) |
-| `FitContent` | Fits async content into the card; remeasures when Mermaid finishes |
-| Color pickers | Shared defaults + recent colors via `ColorPicker` / `recentColors` |
+| `CanvasCardBody` | Process → `MermaidView` fillContainer |
 
 ```
 Process panel
@@ -60,10 +69,9 @@ Process panel
   addProcessChart / updateItem  (type: process-chart)
          │
          ▼
-  CanvasItemView
-    └─ FitContent (transform, contentFill)
-         └─ MermaidView
-              └─ renderMermaidSvg → paintStudioSvg → SVG in .mermaid-host
+  CanvasCardBody
+    └─ MermaidView fillContainer
+         └─ renderMermaidSvg → paintStudioSvg → SVG (viewBox, 100% × 100%)
 ```
 
 ---
@@ -85,13 +93,11 @@ Default process cards use **studio dark** so diagrams match zinc UI chrome.
 
 1. **`mermaid.initialize`** — `theme: 'base'` + `themeVariables` (`MERMAID_DARK_THEME_VARIABLES`), `htmlLabels: true`.
 2. **`prepareStudioDarkSource`** — YAML frontmatter with the same palette; for
-   **flowchart/graph only**, append `classDef default …` (never for sequence,
-   state, class, ER, pie, mindmap — those reject `classDef`).
+   **flowchart/graph only**, append `classDef default …` (never for mindmap —
+   mindmap rejects `classDef`).
 3. **`mermaid.render`** — serialized queue (one site config mutation at a time).
-4. **`paintStudioSvg`** — rewrite pale fills (e.g. `#ECECFF`) **inside** Mermaid’s
-   injected `<style>` (keep font metrics), plus id-scoped color overrides and
-   presentation attributes. Do **not** delete Mermaid’s stylesheet wholesale
-   (that causes label overflow).
+4. **`paintStudioSvg`** — rewrite pale fills inside Mermaid’s injected `<style>`,
+   plus id-scoped color overrides. Keep Mermaid’s stylesheet (label metrics).
 5. **Host CSS** — `color-scheme: dark` and `forced-color-adjust: none` on
    `html` / `.mermaid-host` / SVG so Chrome Auto Dark does not invert painted fills.
 6. **`MermaidView`** — paint after render and again after React commit
@@ -107,34 +113,22 @@ Forest (and non-studio themes) skip the studio path when selected.
 |-------|-------------------------------|
 | `type` | `process-chart` |
 | `mermaidTheme` | `dark` |
-| `contentFill` | `true` — scale diagram up/down to the card body |
+| `contentFill` | `true` — diagram fills the card body |
 | `autoFit` | `false` — card size is fixed at insert (default ~420×320); user resizes |
-| Fit method | CSS `transform` (not font-size; SVG is not KaTeX) |
+| Render path | `MermaidView` `fillContainer` — SVG with viewBox at card display size (vector) |
+| `keepAspectRatio` | `true` by default — SVG `preserveAspectRatio` meet; stretch uses `none` |
 
-`FitContent` observes the card box **and** inner content, and remeasures when
-Mermaid’s async SVG appears (`onRendered` + delayed passes). Toggle
-**Scale content to fill card** in Properties to cap at shrink-only (`maxScale: 1`)
-vs fill (`maxScale` up to 64).
-
-PDF export uses the same `MermaidView` path on print pages.
+PDF export uses the same `MermaidView` path on print pages
+([vector-graphics.md](./vector-graphics.md)).
 
 ---
 
-## Templates & kinds
-
-Process panel **Diagram type** buttons load `mermaidTemplate(kind, direction)`:
-
-| Kind | Interactive editor | Canvas card |
-|------|--------------------|-------------|
-| Flowchart | Yes (React Flow) | Serialized flowchart |
-| Sequence, state, class, ER, pie, mindmap | Preview only (`MermaidView`) | Template source as-is |
-
-Direction controls apply only to flowcharts (rewrites header + reloads editor).
-
-Unit coverage:
+## Unit coverage
 
 - `src/lib/mermaidTheme.test.ts` — init, prepare source, paint, classDef gating  
 - `src/lib/mermaidTemplates.test.ts` / `mermaidTemplates.render.test.ts` — templates  
+- `src/vendor/mermaid-visual-editor/lib/flowchartShapes.test.ts` — 14-shape contract  
+- `src/vendor/mermaid-visual-editor/lib/mindmap.test.ts` — radial layout / serialize  
 
 ---
 
@@ -150,14 +144,14 @@ server on `dist/`). It is **not** required for normal product use.
 
 | Path | Notes |
 |------|--------|
-| `src/components/tools/CreateProcessChartPanel.tsx` | Process tool shell |
+| `src/components/tools/CreateProcessChartPanel.tsx` | Process tool shell (flowchart + mindmap chips) |
 | `src/components/tools/MermaidVisualEditor.tsx` | Visual editor host + serialize helpers |
-| `src/vendor/mermaid-visual-editor/` | Vendored MIT editor + `NOTICE.md` / `LICENSE` |
-| `src/components/math/MermaidView.tsx` | SVG render + measure |
+| `src/vendor/mermaid-visual-editor/` | Vendored MIT editor + mindmap + shapes |
+| `src/components/math/MermaidView.tsx` | SVG render + fillContainer vector paint |
 | `src/lib/mermaidTheme.ts` | Theme, prepare, paint, `renderMermaidSvg` |
 | `src/lib/mermaidTemplates.ts` | Template sources / helpers |
-| `src/components/math/FitContent.tsx` | Scale-to-card |
-| `src/components/canvas/CanvasItemView.tsx` | Card body + FitContent wrap |
+| `src/components/canvas/CanvasCardBody.tsx` | Process → MermaidView fillContainer |
+| `src/components/canvas/CanvasItemView.tsx` | Card chrome + free-transform + CanvasCardBody |
 | `src/stores/canvasStore.ts` | `addProcessChart` |
 | `src/index.css` | `.mermaid-host`, forced-color-adjust |
 | `index.html` | `color-scheme` meta |
@@ -168,7 +162,7 @@ server on `dist/`). It is **not** required for normal product use.
 
 - [Theme configuration](https://mermaid.js.org/config/theming.html)  
 - [Flowchart syntax](https://mermaid.js.org/syntax/flowchart.html)  
+- [Mindmap syntax](https://mermaid.js.org/syntax/mindmap.html)  
 
-*Do not reintroduce long trial/proof markdown under `docs/`. Product behavior
-belongs in this file and the README; temporary debug scripts live under
-`scripts/` if needed.*
+*Product behavior lives in this file, [vector-graphics.md](./vector-graphics.md),
+and the root README. Temporary debug scripts stay under `scripts/` if needed.*

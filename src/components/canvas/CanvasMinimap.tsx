@@ -5,7 +5,9 @@ import {
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
+  type WheelEvent as ReactWheelEvent,
 } from 'react'
+import { Maximize2, Minimize2, Minus, Plus } from 'lucide-react'
 import {
   computePrintPageOrigins,
   multiPageLayoutBounds,
@@ -15,22 +17,26 @@ import {
 import { isFigureLike } from '@/lib/cardDefaults'
 import type { CanvasItem, SheetCanvas } from '@/types'
 
-const MAP_W = 168
-const MAP_H = 120
-const PAD = 6
+const SIZE_SMALL = { w: 168, h: 120 } as const
+const SIZE_LARGE = { w: 340, h: 260 } as const
+const PAD = 8
+const MAP_ZOOM_MIN = 1
+const MAP_ZOOM_MAX = 6
+const MAP_ZOOM_STEP = 0.35
 
 type Props = {
   canvas: SheetCanvas
   items: CanvasItem[]
   selectedIds: string[]
   zoom: number
-  /** Scroll container for the main board */
   viewportEl: HTMLElement | null
+  /** Select a card from the minimap (main canvas selection). */
+  onSelectItem: (id: string, multi: boolean) => void
 }
 
 /**
  * Bottom-right overview of the board: print pages, cards, and live viewport.
- * Click / drag the view rect (or empty map) to pan the main canvas.
+ * Expandable size, in-map zoom, click cards to select (dims the rest).
  */
 export function CanvasMinimap({
   canvas,
@@ -38,21 +44,35 @@ export function CanvasMinimap({
   selectedIds,
   zoom,
   viewportEl,
+  onSelectItem,
 }: Props) {
   const mapRef = useRef<HTMLDivElement>(null)
+  const [expanded, setExpanded] = useState(false)
+  const [mapZoom, setMapZoom] = useState(1)
+  /** Pan of the map content when mapZoom > 1 (map-space pixels). */
+  const [mapPan, setMapPan] = useState({ x: 0, y: 0 })
   const [view, setView] = useState({
     left: 0,
     top: 0,
     width: 40,
     height: 30,
   })
+
   const dragRef = useRef<{
-    mode: 'pan' | 'grab'
+    kind: 'viewport' | 'map' | 'none'
     startClientX: number
     startClientY: number
     startScrollL: number
     startScrollT: number
+    startMapPanX: number
+    startMapPanY: number
+    moved: boolean
+    hitItemId: string | null
+    multi: boolean
   } | null>(null)
+
+  const mapW = expanded ? SIZE_LARGE.w : SIZE_SMALL.w
+  const mapH = expanded ? SIZE_LARGE.h : SIZE_SMALL.h
 
   const page = useMemo(
     () =>
@@ -89,18 +109,45 @@ export function CanvasMinimap({
     [page, pageCount, layout, canvas.printPagePositions],
   )
 
-  // World extent: board size, at least print layout
   const worldW = Math.max(canvas.width || 1, bounds.maxX, page.width, 1)
   const worldH = Math.max(canvas.height || 1, bounds.maxY, page.height, 1)
 
-  const scale = Math.min(
-    (MAP_W - PAD * 2) / worldW,
-    (MAP_H - PAD * 2) / worldH,
+  // Fit world into map box, then apply user map-zoom
+  const fitScale = Math.min(
+    (mapW - PAD * 2) / worldW,
+    (mapH - PAD * 2) / worldH,
   )
+  const scale = fitScale * mapZoom
   const contentW = worldW * scale
   const contentH = worldH * scale
-  const offsetX = PAD + (MAP_W - PAD * 2 - contentW) / 2
-  const offsetY = PAD + (MAP_H - PAD * 2 - contentH) / 2
+  // Center content when smaller than box; apply pan when larger
+  const baseOffsetX = PAD + Math.max(0, (mapW - PAD * 2 - contentW) / 2)
+  const baseOffsetY = PAD + Math.max(0, (mapH - PAD * 2 - contentH) / 2)
+  const offsetX = baseOffsetX + mapPan.x
+  const offsetY = baseOffsetY + mapPan.y
+
+  const clampPan = useCallback(
+    (pan: { x: number; y: number }) => {
+      // Allow panning so content stays reachable
+      const minX = Math.min(0, mapW - PAD - contentW - baseOffsetX + PAD)
+      const maxX = Math.max(0, PAD - baseOffsetX)
+      const minY = Math.min(0, mapH - PAD - contentH - baseOffsetY + PAD)
+      const maxY = Math.max(0, PAD - baseOffsetY)
+      // When content smaller than map, keep centered (pan ~ 0)
+      if (contentW <= mapW - PAD * 2 && contentH <= mapH - PAD * 2) {
+        return { x: 0, y: 0 }
+      }
+      return {
+        x: Math.min(maxX, Math.max(minX, pan.x)),
+        y: Math.min(maxY, Math.max(minY, pan.y)),
+      }
+    },
+    [mapW, mapH, contentW, contentH, baseOffsetX, baseOffsetY],
+  )
+
+  useEffect(() => {
+    setMapPan((p) => clampPan(p))
+  }, [mapZoom, expanded, clampPan])
 
   const worldToMap = useCallback(
     (wx: number, wy: number) => ({
@@ -112,17 +159,56 @@ export function CanvasMinimap({
 
   const mapToWorld = useCallback(
     (mx: number, my: number) => ({
-      x: (mx - offsetX) / scale,
-      y: (my - offsetY) / scale,
+      x: (mx - offsetX) / Math.max(scale, 1e-6),
+      y: (my - offsetY) / Math.max(scale, 1e-6),
     }),
     [offsetX, offsetY, scale],
+  )
+
+  const visibleItems = useMemo(
+    () =>
+      items
+        .filter((i) => !i.hidden)
+        .slice()
+        .sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0)),
+    [items],
+  )
+
+  const hitTestItem = useCallback(
+    (mx: number, my: number): CanvasItem | null => {
+      // Topmost first
+      for (let i = visibleItems.length - 1; i >= 0; i--) {
+        const it = visibleItems[i]!
+        const x = Number.isFinite(it.x) ? it.x : 0
+        const y = Number.isFinite(it.y) ? it.y : 0
+        const w = it.width || 40
+        const h = it.height || 24
+        const p0 = worldToMap(x, y)
+        const p1 = worldToMap(x + w, y + h)
+        const left = Math.min(p0.x, p1.x)
+        const top = Math.min(p0.y, p1.y)
+        const right = Math.max(p0.x, p1.x)
+        const bottom = Math.max(p0.y, p1.y)
+        // Slight hit padding for tiny cards
+        const pad = 2
+        if (
+          mx >= left - pad &&
+          mx <= right + pad &&
+          my >= top - pad &&
+          my <= bottom + pad
+        ) {
+          return it
+        }
+      }
+      return null
+    },
+    [visibleItems, worldToMap],
   )
 
   const syncView = useCallback(() => {
     const vp = viewportEl
     if (!vp || scale <= 0) return
     const z = zoom > 0.01 ? zoom : 1
-    // Visible region in canvas space
     const left = vp.scrollLeft / z
     const top = vp.scrollTop / z
     const width = vp.clientWidth / z
@@ -152,29 +238,43 @@ export function CanvasMinimap({
 
   useEffect(() => {
     syncView()
-  }, [zoom, canvas.width, canvas.height, syncView])
+  }, [zoom, canvas.width, canvas.height, mapZoom, mapPan, expanded, syncView])
 
   const scrollToWorldCenter = useCallback(
     (cx: number, cy: number) => {
       const vp = viewportEl
       if (!vp) return
       const z = zoom > 0.01 ? zoom : 1
-      const left = cx * z - vp.clientWidth / 2
-      const top = cy * z - vp.clientHeight / 2
       vp.scrollTo({
-        left: Math.max(0, left),
-        top: Math.max(0, top),
-        behavior: 'auto',
+        left: Math.max(0, cx * z - vp.clientWidth / 2),
+        top: Math.max(0, cy * z - vp.clientHeight / 2),
+        behavior: 'smooth',
       })
     },
     [viewportEl, zoom],
   )
 
+  const setMapZoomClamped = (next: number) => {
+    const z = Math.min(
+      MAP_ZOOM_MAX,
+      Math.max(MAP_ZOOM_MIN, Math.round(next * 100) / 100),
+    )
+    setMapZoom(z)
+    if (z <= 1) setMapPan({ x: 0, y: 0 })
+  }
+
+  const onWheel = (e: ReactWheelEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const delta = e.deltaY > 0 ? -MAP_ZOOM_STEP : MAP_ZOOM_STEP
+    setMapZoomClamped(mapZoom + delta)
+  }
+
   const onPointerDown = (e: ReactPointerEvent) => {
     if (e.button !== 0) return
     const map = mapRef.current
     const vp = viewportEl
-    if (!map || !vp) return
+    if (!map) return
     e.preventDefault()
     e.stopPropagation()
     map.setPointerCapture(e.pointerId)
@@ -182,40 +282,86 @@ export function CanvasMinimap({
     const rect = map.getBoundingClientRect()
     const mx = e.clientX - rect.left
     const my = e.clientY - rect.top
+    const hit = hitTestItem(mx, my)
+    const multi = e.shiftKey || e.metaKey || e.ctrlKey
 
-    // If click outside view rect, jump first
+    if (hit) {
+      // Select now for snappy feedback; drag still allowed lightly
+      onSelectItem(hit.id, multi)
+      const cx = (Number.isFinite(hit.x) ? hit.x : 0) + (hit.width || 40) / 2
+      const cy = (Number.isFinite(hit.y) ? hit.y : 0) + (hit.height || 24) / 2
+      scrollToWorldCenter(cx, cy)
+      dragRef.current = {
+        kind: 'none',
+        startClientX: e.clientX,
+        startClientY: e.clientY,
+        startScrollL: vp?.scrollLeft ?? 0,
+        startScrollT: vp?.scrollTop ?? 0,
+        startMapPanX: mapPan.x,
+        startMapPanY: mapPan.y,
+        moved: false,
+        hitItemId: hit.id,
+        multi,
+      }
+      return
+    }
+
+    // Empty map / viewport drag
     const inView =
       mx >= view.left &&
       mx <= view.left + view.width &&
       my >= view.top &&
       my <= view.top + view.height
 
-    if (!inView) {
+    if (!inView && mapZoom <= 1.01 && vp) {
       const w = mapToWorld(mx, my)
       scrollToWorldCenter(w.x, w.y)
     }
 
+    // Prefer map pan when zoomed in; otherwise pan main viewport
+    const kind: 'viewport' | 'map' =
+      mapZoom > 1.01 && !inView ? 'map' : 'viewport'
+
     dragRef.current = {
-      mode: inView ? 'grab' : 'pan',
+      kind,
       startClientX: e.clientX,
       startClientY: e.clientY,
-      startScrollL: vp.scrollLeft,
-      startScrollT: vp.scrollTop,
+      startScrollL: vp?.scrollLeft ?? 0,
+      startScrollT: vp?.scrollTop ?? 0,
+      startMapPanX: mapPan.x,
+      startMapPanY: mapPan.y,
+      moved: false,
+      hitItemId: null,
+      multi,
     }
   }
 
   const onPointerMove = (e: ReactPointerEvent) => {
     const d = dragRef.current
-    const vp = viewportEl
-    if (!d || !vp) return
-    const z = zoom > 0.01 ? zoom : 1
-    // Map delta → world delta → scroll delta
+    if (!d) return
     const dmx = e.clientX - d.startClientX
     const dmy = e.clientY - d.startClientY
-    const dwx = dmx / scale
-    const dwy = dmy / scale
-    vp.scrollLeft = d.startScrollL + dwx * z
-    vp.scrollTop = d.startScrollT + dwy * z
+    if (Math.abs(dmx) + Math.abs(dmy) > 3) d.moved = true
+
+    if (d.kind === 'map') {
+      setMapPan(
+        clampPan({
+          x: d.startMapPanX + dmx,
+          y: d.startMapPanY + dmy,
+        }),
+      )
+      return
+    }
+
+    if (d.kind === 'viewport') {
+      const vp = viewportEl
+      if (!vp) return
+      const z = zoom > 0.01 ? zoom : 1
+      const dwx = dmx / Math.max(scale, 1e-6)
+      const dwy = dmy / Math.max(scale, 1e-6)
+      vp.scrollLeft = d.startScrollL + dwx * z
+      vp.scrollTop = d.startScrollT + dwy * z
+    }
   }
 
   const onPointerUp = (e: ReactPointerEvent) => {
@@ -227,27 +373,81 @@ export function CanvasMinimap({
     }
   }
 
-  const visibleItems = items.filter((i) => !i.hidden).slice(0, 200)
   const selected = new Set(selectedIds)
+  const hasSelection = selected.size > 0
 
   return (
     <div
       className="overflow-hidden rounded-lg border border-zinc-700/80 bg-zinc-950/95 shadow-lg backdrop-blur"
       data-testid="canvas-minimap"
-      title="Minimap — click or drag to navigate"
+      data-expanded={expanded ? 'true' : 'false'}
     >
+      {/* Chrome: size + map zoom */}
+      <div className="flex items-center gap-0.5 border-b border-zinc-800/80 px-1 py-0.5">
+        <span className="mr-auto px-1 text-[9px] font-medium uppercase tracking-wide text-zinc-500">
+          Minimap
+        </span>
+        <button
+          type="button"
+          title="Zoom out map"
+          disabled={mapZoom <= MAP_ZOOM_MIN}
+          onClick={() => setMapZoomClamped(mapZoom - MAP_ZOOM_STEP)}
+          className="rounded p-1 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 disabled:opacity-30"
+        >
+          <Minus className="h-3 w-3" />
+        </button>
+        <button
+          type="button"
+          title="Reset map zoom"
+          onClick={() => {
+            setMapZoom(1)
+            setMapPan({ x: 0, y: 0 })
+          }}
+          className="min-w-[2.25rem] rounded px-0.5 py-0.5 text-[9px] tabular-nums text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+        >
+          {Math.round(mapZoom * 100)}%
+        </button>
+        <button
+          type="button"
+          title="Zoom in map"
+          disabled={mapZoom >= MAP_ZOOM_MAX}
+          onClick={() => setMapZoomClamped(mapZoom + MAP_ZOOM_STEP)}
+          className="rounded p-1 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 disabled:opacity-30"
+        >
+          <Plus className="h-3 w-3" />
+        </button>
+        <div className="mx-0.5 h-3 w-px bg-zinc-700" />
+        <button
+          type="button"
+          title={expanded ? 'Shrink minimap' : 'Enlarge minimap'}
+          onClick={() => setExpanded((v) => !v)}
+          className={`rounded p-1 hover:bg-zinc-800 ${
+            expanded ? 'text-indigo-300' : 'text-zinc-400 hover:text-zinc-100'
+          }`}
+          data-testid="minimap-size-toggle"
+        >
+          {expanded ? (
+            <Minimize2 className="h-3 w-3" />
+          ) : (
+            <Maximize2 className="h-3 w-3" />
+          )}
+        </button>
+      </div>
+
       <div
         ref={mapRef}
-        className="relative cursor-crosshair touch-none"
+        className="relative touch-none"
         style={{
-          width: MAP_W,
-          height: MAP_H,
+          width: mapW,
+          height: mapH,
           background: canvas.background || '#0f1115',
+          cursor: mapZoom > 1.01 ? 'grab' : 'crosshair',
         }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
+        onWheel={onWheel}
       >
         {/* Print pages */}
         {showPrint &&
@@ -267,19 +467,20 @@ export function CanvasMinimap({
             )
           })}
 
-        {/* Cards */}
+        {/* Cards — clickable via hit-test on parent; dim non-selected when selection active */}
         {visibleItems.map((it) => {
           const p = worldToMap(
             Number.isFinite(it.x) ? it.x : 0,
             Number.isFinite(it.y) ? it.y : 0,
           )
           const isSel = selected.has(it.id)
+          const dimmed = hasSelection && !isSel
           const fig = isFigureLike(it)
           const proc =
             it.type === 'process-chart' || Boolean(it.mermaidSource)
           const table = it.type === 'table' || Boolean(it.tableMarkdown)
           const bg = isSel
-            ? 'rgba(129, 140, 248, 0.9)'
+            ? 'rgba(129, 140, 248, 0.95)'
             : fig
               ? 'rgba(52, 211, 153, 0.55)'
               : proc
@@ -290,22 +491,30 @@ export function CanvasMinimap({
           return (
             <div
               key={it.id}
-              className="pointer-events-none absolute rounded-[1px]"
+              className={`absolute rounded-[1px] ${
+                isSel
+                  ? 'z-10 ring-1 ring-indigo-200/90'
+                  : ''
+              }`}
+              data-minimap-item={it.id}
+              data-selected={isSel ? 'true' : undefined}
               style={{
                 left: p.x,
                 top: p.y,
                 width: Math.max(2, (it.width || 40) * scale),
                 height: Math.max(2, (it.height || 24) * scale),
                 background: bg,
+                opacity: dimmed ? 0.2 : 1,
                 boxShadow: isSel
-                  ? '0 0 0 1px rgba(199, 210, 254, 0.9)'
+                  ? '0 0 0 1px rgba(199, 210, 254, 0.95), 0 0 8px rgba(99,102,241,0.5)'
                   : undefined,
               }}
+              title={it.title || it.type}
             />
           )
         })}
 
-        {/* Viewport window */}
+        {/* Main canvas viewport window */}
         <div
           className="pointer-events-none absolute box-border border-2 border-sky-400/90 bg-sky-400/10 shadow-[0_0_0_1px_rgba(0,0,0,0.35)]"
           style={{
@@ -316,8 +525,9 @@ export function CanvasMinimap({
           }}
         />
       </div>
+
       <div className="border-t border-zinc-800/80 px-1.5 py-0.5 text-center text-[8px] text-zinc-600">
-        Minimap · drag to pan
+        Click card · wheel zoom · drag to pan
       </div>
     </div>
   )

@@ -12,12 +12,23 @@ type Props = {
   className?: string
   scale?: number
   forceDark?: boolean
+  /**
+   * When true, SVG fills the host at display size (viewBox + 100% width/height).
+   * Vector-friendly — preferred for canvas cards (docs/vector-graphics.md).
+   */
+  fillContainer?: boolean
+  /**
+   * SVG preserveAspectRatio when fillContainer is on.
+   * meet = keep aspect (default); none = stretch to card.
+   */
+  preserveAspect?: 'meet' | 'none'
   onRendered?: (size: { width: number; height: number }) => void
 }
 
 /**
  * Renders Mermaid SVG for process-chart cards (and export).
  * Studio dark: prepareStudioDarkSource + paintStudioSvg (see docs/process-charts.md).
+ * fillContainer paints SVG at the card’s display size (vector resize).
  */
 export function MermaidView({
   source,
@@ -25,6 +36,8 @@ export function MermaidView({
   className = '',
   scale = 1,
   forceDark,
+  fillContainer = false,
+  preserveAspect = 'meet',
   onRendered,
 }: Props) {
   const reactId = useId().replace(/:/g, '')
@@ -76,12 +89,8 @@ export function MermaidView({
           if (studioDark) paintStudioSvg(svgEl)
 
           svgEl.style.maxWidth = 'none'
-          svgEl.style.width = 'auto'
-          svgEl.style.height = 'auto'
           svgEl.style.background = 'transparent'
           svgEl.style.overflow = 'visible'
-          svgEl.removeAttribute('width')
-          svgEl.removeAttribute('height')
 
           // Prefer bbox of content (includes label overflow) over tight viewBox
           let w = 0
@@ -110,8 +119,24 @@ export function MermaidView({
             w = Math.ceil(r.width) || w
             h = Math.ceil(r.height) || h
           }
-          if (w > 0) svgEl.setAttribute('width', String(w))
-          if (h > 0) svgEl.setAttribute('height', String(h))
+
+          if (fillContainer) {
+            // Vector fill: viewBox drives aspect; paint at host display size
+            svgEl.removeAttribute('width')
+            svgEl.removeAttribute('height')
+            svgEl.setAttribute('width', '100%')
+            svgEl.setAttribute('height', '100%')
+            svgEl.style.width = '100%'
+            svgEl.style.height = '100%'
+            const par =
+              preserveAspect === 'none' ? 'none' : 'xMidYMid meet'
+            svgEl.setAttribute('preserveAspectRatio', par)
+          } else {
+            svgEl.style.width = 'auto'
+            svgEl.style.height = 'auto'
+            if (w > 0) svgEl.setAttribute('width', String(w))
+            if (h > 0) svgEl.setAttribute('height', String(h))
+          }
 
           if (cancelled) return
           setMarkup(svgEl.outerHTML)
@@ -137,7 +162,7 @@ export function MermaidView({
     return () => {
       cancelled = true
     }
-  }, [source, theme, reactId, studioDark])
+  }, [source, theme, reactId, studioDark, fillContainer, preserveAspect])
 
   useLayoutEffect(() => {
     if (!studioDark || !markup || !hostRef.current) return
@@ -145,9 +170,45 @@ export function MermaidView({
     if (svg) paintStudioSvg(svg)
   }, [markup, studioDark])
 
+  // Keep preserveAspect in sync if SVG already mounted
+  useLayoutEffect(() => {
+    if (!fillContainer || !hostRef.current) return
+    const svg = hostRef.current.querySelector('svg')
+    if (!svg) return
+    const par = preserveAspect === 'none' ? 'none' : 'xMidYMid meet'
+    svg.setAttribute('preserveAspectRatio', par)
+  }, [fillContainer, preserveAspect, markup])
+
   const s = Number.isFinite(scale) && scale > 0 ? scale : 1
   const boxW = natural.width > 0 ? Math.ceil(natural.width * s) : undefined
   const boxH = natural.height > 0 ? Math.ceil(natural.height * s) : undefined
+
+  if (fillContainer) {
+    return (
+      <div
+        className={`relative flex h-full w-full min-h-0 min-w-0 items-center justify-center overflow-hidden ${className}`}
+      >
+        {busy && (
+          <span className="pointer-events-none absolute right-1 top-1 z-10 text-[9px] uppercase tracking-wide text-zinc-500">
+            Rendering…
+          </span>
+        )}
+        {error && (
+          <div className="rounded-md border border-rose-500/30 bg-rose-950/40 px-2 py-1.5 text-[10px] leading-snug text-rose-200">
+            Mermaid error: {error}
+          </div>
+        )}
+        <div
+          ref={hostRef}
+          className="mermaid-host h-full w-full min-h-0 min-w-0 [&_svg]:h-full [&_svg]:w-full"
+          data-testid="mermaid-view"
+          data-mermaid-dark={studioDark ? 'true' : 'false'}
+          data-mermaid-fill="true"
+          dangerouslySetInnerHTML={markup ? { __html: markup } : undefined}
+        />
+      </div>
+    )
+  }
 
   return (
     <div className={`relative min-h-0 min-w-0 ${className}`}>

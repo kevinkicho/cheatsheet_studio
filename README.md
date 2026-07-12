@@ -21,9 +21,18 @@ License: [MIT](./LICENSE) · Status: **active development** (v0.1.0)
 
 <br />
 
-A Firebase-backed app for building multi-page, print-aware cheat sheets from equations, tables, figures, and **Mermaid process charts**. Drag items from a curated library onto a freeform board, create custom KaTeX, import images (including seamless GIF loops), author dark-themed flowcharts for the zinc UI, export print pages to PDF/PNG/JPEG, organize layers in nested folders, and sync sheets per Google account.
+A Firebase-backed app for building multi-page, print-aware cheat sheets from
+**vector equations** (KaTeX), tables, **SVG figures**, and **Mermaid process
+charts** (flowchart + mind map). Drag items from a curated library onto a
+freeform board, free-transform cards, import images (including seamless GIF
+loops), author dark-themed diagrams, export print pages to PDF/PNG/JPEG,
+organize layers in nested folders, and sync sheets per Google account.
 
-> **Firebase is required for production use.** Auth, Firestore, Storage, and Hosting are part of the product. A built-in seed library loads offline; sign-in, cloud sheets, flowchart library, and durable image upload need a configured Firebase project. Local **Auth emulators** support automated E2E without a real Google login.
+> **Firebase is required for production use.** Auth, Firestore, Storage, and
+> Hosting are part of the product. A built-in seed library loads offline;
+> sign-in, cloud sheets, flowchart library, and durable image upload need a
+> configured Firebase project. Local **Auth emulators** support automated E2E
+> without a real Google login.
 
 ---
 
@@ -32,16 +41,18 @@ A Firebase-backed app for building multi-page, print-aware cheat sheets from equ
 | Area | Status |
 |------|--------|
 | Core workspace (canvas, library, properties) | **Stable / usable** |
+| Free-transform cards (8 handles, keep aspect default ON) | **Implemented** |
+| Vector equations / figures / process SVG | **Implemented** — [docs/vector-graphics.md](docs/vector-graphics.md) |
 | Multi-page print frames (scroll limited when frame on) | **Implemented** |
 | Canvas minimap + tool toggles | **Implemented** |
 | Per-page / printable / whole-board grids | **Implemented** |
-| PDF / PNG / JPEG export (print pages) | **Implemented** |
+| PDF / PNG / JPEG export (print pages, WYSIWYG capture) | **Implemented** |
 | Library cards + catalog list (multi-sort) | **Implemented** |
 | Nested outliner folders + multi-select | **Implemented** |
 | Local image persistence (IndexedDB) + Storage promote | **Implemented** |
 | GIF ping-pong bake at import | **Implemented** |
 | Undo / redo (document history) | **Implemented** |
-| Process charts (visual editor, dark theme, cloud library) | **Implemented** |
+| Process charts (flowchart + mind map interactive editor, cloud library) | **Implemented** |
 | My Sheets preview + card detail | **Implemented** |
 | Color pickers (defaults + recent) | **Implemented** |
 | Collapsible left / right / bottom chrome | **Implemented** |
@@ -49,9 +60,13 @@ A Firebase-backed app for building multi-page, print-aware cheat sheets from equ
 | E2E smoke + Auth-emulator workspace E2E | **Playwright** |
 | Firebase Hosting deploy path | **Supported** (`dist/`) |
 
-**Dev vs Hosting:** `npm run dev` → [http://localhost:5173](http://localhost:5173) serves **live source**. `firebase serve` → [http://localhost:5000](http://localhost:5000) serves **last `npm run build`** only. Rebuild before testing Hosting-style ports.
+**Dev vs Hosting:** `npm run dev` → [http://localhost:5173](http://localhost:5173)
+serves **live source**. `firebase serve` → [http://localhost:5000](http://localhost:5000)
+serves **last `npm run build`** only. Rebuild before testing Hosting-style ports.
 
-**Docs:** [docs/README.md](./docs/README.md) · Process charts: [docs/process-charts.md](./docs/process-charts.md)
+**Docs:** [docs/README.md](./docs/README.md) ·
+Process: [docs/process-charts.md](./docs/process-charts.md) ·
+Vector: [docs/vector-graphics.md](./docs/vector-graphics.md)
 
 ---
 
@@ -60,6 +75,7 @@ A Firebase-backed app for building multi-page, print-aware cheat sheets from equ
 ### Canvas & tools
 - Freeform board with **select (V)** and **pan (H)** tools  
 - Drag from library, marquee multi-select, multi-move / multi-resize  
+- **Free-transform** on selected cards: 8 handles (corners + edges); **Keep aspect ratio** default ON (Properties)  
 - Zoom (in/out/reset), **fit print layout**, **fit content**, focus selection  
 - **Minimap** (bottom-right overview; map icon toggles; drag to pan)  
 - Grid on/off, snap-to-grid, tunable spacing (left **Grid settings**)  
@@ -80,7 +96,7 @@ A Firebase-backed app for building multi-page, print-aware cheat sheets from equ
 - **Formats:** PDF (multi-page), PNG, JPEG (one file per page when multi-page)  
 - **Pages:** multi-select which frames to include  
 - **Color modes:** Color · Greyscale · Black & white (threshold)  
-- Capture uses **html2canvas-pro** (Tailwind v4 `oklch` safe)  
+- Capture uses **html2canvas-pro** (Tailwind v4 `oklch` safe) via shared `CanvasCardBody` (matches viewport)  
 - Only cards that intersect the dashed print frames are included  
 
 ### Library & content
@@ -92,17 +108,19 @@ A Firebase-backed app for building multi-page, print-aware cheat sheets from equ
 - Search ranking: title prefixes first; short queries ignore raw LaTeX  
 - Library card previews **zoom-to-fill** the thumbnail  
 - Custom equations (KaTeX), markdown tables, figure / image cards  
+- **Vector graphics:** equations use KaTeX with **font-size fit** (+ board paintZoom); catalog figures use **inline SVG**; process charts use Mermaid SVG fill — see [docs/vector-graphics.md](docs/vector-graphics.md)  
+- **New equations / figures** are authored as LaTeX or SVG (not raster diagrams)  
 - Create Equation panel — **Insert from catalog** (equations only)  
-- Import Image panel (preview, local persist, Storage upload when signed in)  
+- Import Image panel (preview, local persist, Storage upload when signed in; **SVG preferred for diagrams**)  
 - GIF seamless loop via bake-at-import  
 
 ### Process charts (Mermaid)
-- Right sidebar **Process** tool: **dark** visual flowchart canvas (vendored [saketkattu/mermaid-visual-editor](https://github.com/saketkattu/mermaid-visual-editor), MIT)  
-- **Templates** replace editor content (confirm if the viewport already has work)  
-- **Cloud library** (signed in): save / load / delete named flowcharts in Firestore (`flowcharts`)  
-- Flowchart → interactive editor (select / pan / shapes / inspector / zoom fit)  
-- Other kinds → studio-dark preview then **Add to canvas**  
-- Canvas cards: zinc studio dark + **Scale content to fill card** (`FitContent`)  
+- Right sidebar **Process** tool: **dark** interactive canvas (vendored [saketkattu/mermaid-visual-editor](https://github.com/saketkattu/mermaid-visual-editor), MIT)  
+- **Diagram types:** **Flowchart** and **Mind map** only — both use the interactive React Flow editor (no static Mermaid preview pane)  
+- Flowchart: 14 shapes (icon-only), inspector fill / border / text palette  
+- Mind map: radial layout, promote/demote, bang/cloud shapes  
+- **Cloud library** (signed in): save / load / delete named diagrams in Firestore (`flowcharts`)  
+- Canvas cards: zinc studio dark + SVG **fillContainer** (vector at card size)  
 - See [docs/process-charts.md](./docs/process-charts.md)  
 
 ### Layers & organization
@@ -122,7 +140,7 @@ A Firebase-backed app for building multi-page, print-aware cheat sheets from equ
 | Region | Role |
 |--------|------|
 | Top bar | Workspace / Library / Sheets, sheet switcher, print menu, **Export**, undo/redo, save, panel toggles, account |
-| Left | Properties — collapsible **Sheet properties** + **Grid settings**, or selected card(s) |
+| Left | Properties — collapsible **Sheet properties** + **Grid settings**, or selected card(s) (keep aspect, fill, style) |
 | Center | Freeform canvas + print frames + minimap / tool strip |
 | Right | Layers · Equation · **Process** · Image |
 | Bottom | Collapsible library (cards/list, filters, multi-sort catalog) |
@@ -137,7 +155,7 @@ A Firebase-backed app for building multi-page, print-aware cheat sheets from equ
 |-------|------|
 | UI | React 19, Vite 8, TypeScript, Tailwind CSS v4 |
 | State | Zustand (+ persist for UI prefs) |
-| Math | KaTeX |
+| Math | KaTeX (font-size fit on canvas) |
 | Diagrams | Mermaid 11 + vendored mermaid-visual-editor (Process tool) |
 | DnD / layout | @dnd-kit, react-resizable-panels, @xyflow/react |
 | Export | jspdf, html2canvas-pro |
@@ -261,8 +279,8 @@ firebase serve    # http://localhost:5000 — must rebuild to see latest code
 | `npm run preview` | Preview production build |
 | `npm test` | Vitest unit + component tests |
 | `npm run test:watch` | Vitest watch mode |
-| `npm run test:e2e` | Playwright smoke (landing / auth gate) |
-| `npm run test:e2e:emulators` | Auth emulator + signed-in workspace E2E |
+| `npm run test:e2e` | Playwright smoke only (`e2e/landing`, `e2e/workspace-grid`; **ignores** `e2e/emulator/`) |
+| `npm run test:e2e:emulators` | Auth emulator + signed-in workspace E2E (`playwright.emulator.config.ts`) |
 | `npm run test:e2e:emulators:full` | Auth+Firestore+Storage emulators (needs Java) |
 | `npm run test:ci` | `vitest` + `build` |
 | `npm run test:all` | Unit + smoke E2E + emulator E2E |
@@ -276,9 +294,13 @@ firebase serve    # http://localhost:5000 — must rebuild to see latest code
 
 ### Unit & component (Vitest + Testing Library)
 
-Covers grid opacity mapping, page layouts, grid coverage, print helpers, export helpers, canvas store (including print-limited workspace), sheets/auth (mocked Firebase), keyboard shortcuts, Properties / Print menu / sidebars, mermaid theme, and more.
+Covers grid opacity mapping, page layouts, grid coverage, print helpers, export
+helpers, canvas store, card defaults / free-transform aspect, sheets/auth
+(mocked Firebase), keyboard shortcuts, Properties / Print menu / sidebars,
+mermaid theme & templates, flowchart shapes / mindmap, and more.
 
-App TypeScript build (`tsc -b`) **excludes** `*.test.*` and `src/test/**`; Vitest uses a separate `vitest.config.ts`.
+App TypeScript build (`tsc -b`) **excludes** `*.test.*` and `src/test/**`; Vitest
+uses a separate `vitest.config.ts`.
 
 ```bash
 npm test
@@ -287,20 +309,28 @@ npm test
 ### E2E (Playwright)
 
 ```bash
-# No Firebase login required
+# Smoke only — landing + auth gate (no Firebase login)
 npm run test:e2e
 
-# Signed-in workspace (Auth emulator)
+# Signed-in workspace (Auth emulator + VITE_USE_FIREBASE_EMULATORS)
 npm run test:e2e:emulators
 ```
 
-CI (`.github/workflows/ci.yml`) runs unit tests, smoke E2E, Auth-emulator workspace E2E, and production build.
+CI (`.github/workflows/ci.yml`) runs, in order:
+
+1. Unit tests (`npm test`)  
+2. Smoke E2E (`npm run test:e2e`) — **does not** include `e2e/emulator/`  
+3. Auth-emulator workspace E2E (`npm run test:e2e:emulators`)  
+4. Production build (`npm run build`) + `dist/` checks  
 
 ---
 
 ## Architecture notes
 
 - **State:** Zustand stores (`canvasStore`, `sheetsStore`, `authStore`, `libraryStore`, `uiStore`, `flowchartLibraryStore`)  
+- **Shared card body:** `CanvasCardBody` — equations (KaTeX + FitContent fontSize), figures (FigureView SVG), process (MermaidView fillContainer); used by canvas + export  
+- **Free-transform:** `src/lib/resizeHandles.ts`, `CanvasItemView`, `MultiSelectFrame`  
+- **Vector policy:** [docs/vector-graphics.md](./docs/vector-graphics.md)  
 - **Print / grid pure logic:** `src/lib/printSizes.ts`, `src/lib/gridCoverage.ts`  
 - **Export:** `src/lib/exportPdf.ts`, `exportCapture.ts`, `runSheetExport.ts`, `components/export/`  
 - **Library search / multi-sort:** `src/lib/libraryFilter.ts`, `src/lib/multiSort.ts`  

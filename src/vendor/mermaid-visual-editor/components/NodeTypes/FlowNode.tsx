@@ -271,6 +271,25 @@ function NodeLabel({
   )
 }
 
+function IconBadge({ icon }: { icon?: string }) {
+  if (!icon) return null
+  // Compact text badge — FA fonts may not load; still shows which icon is set
+  const short = icon.replace(/^fa\s+fa-/, '').slice(0, 10)
+  return (
+    <span
+      title={icon}
+      className="absolute left-1 top-1 z-20 max-w-[4.5rem] truncate rounded px-1 text-[8px] font-medium leading-4"
+      style={{
+        background: 'var(--neu-surface, #1e2028)',
+        color: 'var(--neu-icon-active, #818cf8)',
+        border: '1px solid var(--neu-border, #3f3f46)',
+      }}
+    >
+      ★ {short}
+    </span>
+  )
+}
+
 // ─── Main FlowNode component ──────────────────────────────────────────────────
 export function FlowNode({ id, data, selected }: NodeProps) {
   const nodeData = data as FlowNodeData
@@ -302,13 +321,26 @@ export function FlowNode({ id, data, selected }: NodeProps) {
     [commitLabel]
   )
 
-  const shape = (nodeData.shape ?? 'rectangle') as NodeShape
-  // Studio dark defaults (CSS vars from .mermaid-visual-editor)
-  const fillColor = nodeData.fillColor || 'var(--node-fill, #27272a)'
+  // Map mindmap-only shapes if they leak onto a flowchart node
+  const rawShape = (nodeData.shape ?? 'rectangle') as NodeShape
+  const shape: NodeShape =
+    rawShape === 'bang'
+      ? 'asymmetric'
+      : rawShape === 'cloud'
+        ? 'stadium'
+        : rawShape
+  // Prefer explicit inspector colors (hex); fall back to studio CSS vars
+  const fillColor =
+    (typeof nodeData.fillColor === 'string' && nodeData.fillColor) ||
+    'var(--node-fill, #27272a)'
   const strokeColor =
-    nodeData.strokeColor ||
-    (selected ? 'var(--neu-icon-active, #818cf8)' : 'var(--node-stroke, #71717a)')
-  const textColor = nodeData.textColor || 'var(--node-text, #f4f4f5)'
+    (typeof nodeData.strokeColor === 'string' && nodeData.strokeColor) ||
+    (selected
+      ? 'var(--neu-icon-active, #818cf8)'
+      : 'var(--node-stroke, #71717a)')
+  const textColor =
+    (typeof nodeData.textColor === 'string' && nodeData.textColor) ||
+    'var(--node-text, #f4f4f5)'
   const strokeWidth = selected ? 3 : 2
 
   const labelProps: LabelProps = {
@@ -353,7 +385,10 @@ export function FlowNode({ id, data, selected }: NodeProps) {
     const isCylinder = shape === 'cylinder'
     return (
       <div
+        key={`svg-${shape}`}
         className="relative cursor-pointer select-none"
+        data-shape={shape}
+        data-fill={nodeData.fillColor ?? ''}
         style={{
           width: '100%',
           height: '100%',
@@ -364,6 +399,7 @@ export function FlowNode({ id, data, selected }: NodeProps) {
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
+        <IconBadge icon={nodeData.icon} />
         <NodeResizer
           minWidth={80}
           minHeight={isCylinder ? 60 : 54}
@@ -402,6 +438,7 @@ export function FlowNode({ id, data, selected }: NodeProps) {
       extraStyle = { borderRadius: 12 }
       break
     case 'stadium':
+      // Pill — not cloud (cloud is mindmap-only)
       extraStyle = { borderRadius: 9999, paddingLeft: 20, paddingRight: 20 }
       break
     case 'subroutine':
@@ -422,7 +459,8 @@ export function FlowNode({ id, data, selected }: NodeProps) {
       }
       extraClass = '!min-w-[80px] !min-h-[80px] !aspect-square'
       break
-    default: // rectangle
+    case 'rectangle':
+    default:
       extraStyle = { borderRadius: 4 }
   }
 
@@ -430,12 +468,16 @@ export function FlowNode({ id, data, selected }: NodeProps) {
 
   return (
     <div
+      key={`css-${shape}`}
       className={`relative flex items-center justify-center px-4 py-2.5 cursor-pointer select-none min-w-[100px] ${extraClass}`}
+      data-shape={shape}
+      data-fill={nodeData.fillColor ?? ''}
       style={{ ...baseStyle, ...extraStyle, height: '100%' }}
       onDoubleClick={handleDoubleClick}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
+      <IconBadge icon={nodeData.icon} />
       <NodeResizer
         minWidth={80}
         minHeight={isCircleShape ? 80 : 40}
