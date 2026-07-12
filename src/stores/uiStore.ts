@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
 export type AppView = 'workspace' | 'library' | 'sheets'
-export type RightTool = 'layers' | 'equation' | 'image'
+export type RightTool = 'layers' | 'equation' | 'image' | 'process'
 /** Canvas pointer tool — exclusive (only one active). */
 export type CanvasTool = 'select' | 'pan'
 /** Bottom / full library presentation. */

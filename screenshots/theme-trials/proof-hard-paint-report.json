@@ -1,0 +1,48 @@
+{
+  "generatedAt": "2026-07-12T01:16:57.993Z",
+  "mermaidVersion": "11.16.0",
+  "method": "Playwright + host PNG grid sample (System.Drawing)",
+  "criteria": {
+    "studioOk": "near1f2020>=3 AND white===0 AND dark>=pale AND fillAttr===#1f2020",
+    "defOk": "pale/white present AND fillAttr #ECECFF"
+  },
+  "meta": {
+    "def": {
+      "fillAttr": "#ECECFF",
+      "style": "",
+      "computed": "rgb(236, 236, 255)"
+    },
+    "studio": {
+      "fillAttr": "#1f2020",
+      "style": "fill: rgb(31, 32, 32) !important; stroke: rgb(204, 204, 204) !important;",
+      "computed": "rgb(31, 32, 32)"
+    },
+    "mermaidVersion": "11.16.0"
+  },
+  "scores": {
+    "default": {
+      "nodeish": 60,
+      "pale": 20,
+      "dark": 39,
+      "white": 18,
+      "near1f2020": 1
+    },
+    "studio": {
+      "nodeish": 59,
+      "pale": 1,
+      "dark": 57,
+      "white": 0,
+      "near1f2020": 18
+    }
+  },
+  "checks": {
+    "defOk": true,
+    "studioOk": true
+  },
+  "screenshots": {
+    "full": "screenshots/theme-trials/proof-hard-paint-full.png",
+    "defaultHost": "screenshots/theme-trials/proof-hard-paint-default-host.png",
+    "studioHost": "screenshots/theme-trials/proof-hard-paint-studio-host.png"
+  },
+  "verdict": "PROOF_OK"
+}

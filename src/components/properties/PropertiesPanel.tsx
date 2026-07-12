@@ -637,6 +637,26 @@ export function PropertiesPanel() {
 
       {!multi &&
         single &&
+        (single.type === 'process-chart' || single.mermaidSource !== undefined) && (
+          <>
+            <Field label="Mermaid source">
+              <textarea
+                value={single.mermaidSource ?? ''}
+                onChange={(e) => patch({ mermaidSource: e.target.value })}
+                rows={6}
+                className="field-input font-mono text-[11px]"
+                spellCheck={false}
+              />
+            </Field>
+            <p className="text-[10px] text-zinc-500">
+              Tip: open the right sidebar <strong className="text-zinc-400">Process</strong> tool
+              for templates, themes, and a larger preview.
+            </p>
+          </>
+        )}
+
+      {!multi &&
+        single &&
         (single.type === 'figure' ||
           single.type === 'custom-image' ||
           single.imageUrl) && (

@@ -1,0 +1,482 @@
+import type { MermaidThemeId } from '@/types'
+import type { MermaidConfig } from 'mermaid'
+import mermaid from 'mermaid'
+
+/**
+ * Studio Process theming — user-confirmed working 2026-07-11 (app 185123 + mermaid-test).
+ *
+ * Full record: docs/MERMAID_DARK_THEME_WORKING_RECORD.md
+ *
+ * Stack:
+ *  1) initialize(base + themeVariables) + frontmatter + classDef  (verify-app-stack)
+ *  2) htmlLabels:true so node boxes match label metrics
+ *  3) paintStudioSvg: rewrite pale fills in Mermaid <style> (keep fonts!) +
+ *     id-scoped color CSS + attr/style !important
+ *  4) forced-color-adjust:none — Chrome Auto Dark must not invert SVG
+ *
+ * Do NOT delete Mermaid's injected <style> wholesale (causes label overflow).
+ */
+
+export const STUDIO_PREVIEW_BG = '#12141a' as const
+
+/**
+ * Palette from verify-app-stack (proven dark host pixels).
+ * Slightly elevated zinc so nodes read on #12141a preview chrome.
+ */
+export const STUDIO_DARK = {
+  nodeFill: '#27272a',
+  nodeStroke: '#71717a',
+  nodeText: '#f4f4f5',
+  edge: '#a1a1aa',
+  edgeLabelBg: '#3f3f46',
+  clusterFill: '#18181b',
+  clusterStroke: '#3f3f46',
+  bg: STUDIO_PREVIEW_BG,
+} as const
+
+export type StudioColors = typeof STUDIO_DARK
+
+export const MERMAID_DARK_THEME_VARIABLES: Record<string, string | boolean> = {
+  darkMode: true,
+  background: STUDIO_DARK.bg,
+  primaryColor: STUDIO_DARK.nodeFill,
+  primaryTextColor: STUDIO_DARK.nodeText,
+  primaryBorderColor: STUDIO_DARK.nodeStroke,
+  secondaryColor: STUDIO_DARK.edgeLabelBg,
+  secondaryTextColor: STUDIO_DARK.nodeText,
+  secondaryBorderColor: STUDIO_DARK.nodeStroke,
+  tertiaryColor: STUDIO_DARK.clusterFill,
+  tertiaryTextColor: STUDIO_DARK.nodeText,
+  tertiaryBorderColor: STUDIO_DARK.clusterStroke,
+  lineColor: STUDIO_DARK.edge,
+  textColor: STUDIO_DARK.nodeText,
+  mainBkg: STUDIO_DARK.nodeFill,
+  nodeBorder: STUDIO_DARK.nodeStroke,
+  clusterBkg: STUDIO_DARK.clusterFill,
+  clusterBorder: STUDIO_DARK.clusterStroke,
+  titleColor: STUDIO_DARK.nodeText,
+  edgeLabelBackground: STUDIO_DARK.edgeLabelBg,
+  nodeTextColor: STUDIO_DARK.nodeText,
+  actorBkg: STUDIO_DARK.nodeFill,
+  actorBorder: STUDIO_DARK.nodeStroke,
+  actorTextColor: STUDIO_DARK.nodeText,
+  actorLineColor: STUDIO_DARK.edge,
+  signalColor: STUDIO_DARK.edge,
+  signalTextColor: STUDIO_DARK.nodeText,
+  labelBoxBkgColor: STUDIO_DARK.edgeLabelBg,
+  labelBoxBorderColor: STUDIO_DARK.nodeStroke,
+  labelTextColor: STUDIO_DARK.nodeText,
+  loopTextColor: STUDIO_DARK.nodeText,
+  noteBkgColor: STUDIO_DARK.edgeLabelBg,
+  noteTextColor: STUDIO_DARK.nodeText,
+  noteBorderColor: STUDIO_DARK.nodeStroke,
+  classText: STUDIO_DARK.nodeText,
+  // Match Mermaid flowchart layout metrics (default inject is 16px + trebuchet-like).
+  // If paint CSS uses a different size after we strip Mermaid <style>, labels overflow.
+  fontFamily:
+    'trebuchet ms, verdana, arial, sans-serif',
+  fontSize: '16px',
+}
+
+export function usesStudioDarkVariables(theme: MermaidThemeId): boolean {
+  return (
+    theme === 'dark' ||
+    theme === 'base' ||
+    theme === 'neutral' ||
+    theme === 'default'
+  )
+}
+
+/** Same family Mermaid uses when laying out flowchart node boxes. */
+const FONT = 'trebuchet ms, verdana, arial, sans-serif'
+
+const FLOW = {
+  // htmlLabels:true → Mermaid sizes boxes from real label metrics (no clipped text).
+  // We still hard-paint shapes + foreignObject colors for dark studio chrome.
+  htmlLabels: true as const,
+  curve: 'basis' as const,
+  padding: 18,
+  nodeSpacing: 50,
+  rankSpacing: 55,
+  useMaxWidth: false,
+  wrappingWidth: 200,
+}
+
+export function mermaidInitOptions(
+  theme: MermaidThemeId,
+  opts?: { studioDark?: boolean },
+): MermaidConfig {
+  const studioDark = opts?.studioDark ?? usesStudioDarkVariables(theme)
+
+  if (studioDark) {
+    return {
+      startOnLoad: false,
+      securityLevel: 'loose',
+      theme: 'base',
+      themeVariables: { ...MERMAID_DARK_THEME_VARIABLES },
+      fontFamily: FONT,
+      // Root htmlLabels takes precedence in Mermaid 11
+      htmlLabels: true,
+      flowchart: { ...FLOW },
+    }
+  }
+
+  return {
+    startOnLoad: false,
+    securityLevel: 'loose',
+    theme,
+    fontFamily: FONT,
+    htmlLabels: true,
+    flowchart: { ...FLOW },
+  }
+}
+
+// ── Source prep (verify-app-stack method) ────────────────────────────────────
+
+/**
+ * Prepend official frontmatter + classDef default — same as
+ * scripts/verify-studio-theme-screenshot.mjs (produced STUDIO_DARK_OK).
+ * Skips if source already has frontmatter or classDef default.
+ */
+export function prepareStudioDarkSource(
+  source: string,
+  colors: StudioColors = STUDIO_DARK,
+): string {
+  let text = source.trim()
+  if (!text) return text
+
+  const hasFrontmatter = /^---\s*\r?\n/.test(text)
+  if (!hasFrontmatter) {
+    const fm = `---
+config:
+  theme: base
+  themeVariables:
+    darkMode: true
+    background: "${colors.bg}"
+    primaryColor: "${colors.nodeFill}"
+    primaryTextColor: "${colors.nodeText}"
+    primaryBorderColor: "${colors.nodeStroke}"
+    mainBkg: "${colors.nodeFill}"
+    lineColor: "${colors.edge}"
+    nodeBorder: "${colors.nodeStroke}"
+    nodeTextColor: "${colors.nodeText}"
+    textColor: "${colors.nodeText}"
+    classText: "${colors.nodeText}"
+    edgeLabelBackground: "${colors.edgeLabelBg}"
+    clusterBkg: "${colors.clusterFill}"
+    clusterBorder: "${colors.clusterStroke}"
+---
+`
+    text = fm + text
+  }
+
+  if (!/classDef\s+default\b/i.test(text)) {
+    text += `\n    classDef default fill:${colors.nodeFill},stroke:${colors.nodeStroke},color:${colors.nodeText}`
+  }
+
+  return text
+}
+
+// ── Hard paint (verify-v5-again method) ──────────────────────────────────────
+
+const NONE = new Set(['none', 'transparent'])
+
+function force(
+  el: Element,
+  fill?: string,
+  stroke?: string,
+  color?: string,
+): void {
+  const s = el as SVGElement
+  if (fill !== undefined) {
+    el.setAttribute('fill', fill)
+    s.style.setProperty('fill', fill, 'important')
+  }
+  if (stroke !== undefined) {
+    el.setAttribute('stroke', stroke)
+    s.style.setProperty('stroke', stroke, 'important')
+  }
+  if (color !== undefined) {
+    s.style.setProperty('color', color, 'important')
+  }
+}
+
+/**
+ * Rewrite Mermaid-injected CSS fills (keep font-size/family so labels still fit
+ * the boxes Mermaid already laid out). Then inject id-scoped overrides.
+ */
+function rewriteAndInjectStudioStyles(
+  root: Element,
+  colors: StudioColors,
+): void {
+  const svg =
+    root.tagName.toLowerCase() === 'svg'
+      ? root
+      : root.querySelector('svg')
+  if (!svg) return
+
+  // Rewrite pale fills in Mermaid's own sheet — do NOT delete font-size rules
+  svg.querySelectorAll('style').forEach((st) => {
+    if (st.getAttribute('data-studio-paint') === '1') return
+    let css = st.textContent || ''
+    css = css
+      .replace(/#ECECFF/gi, colors.nodeFill)
+      .replace(/#ececff/gi, colors.nodeFill)
+      .replace(/#EAEAEA/gi, colors.nodeFill)
+      .replace(/#eaeaea/gi, colors.nodeFill)
+      // common light label chips
+      .replace(/#f9f9f9/gi, colors.edgeLabelBg)
+      .replace(/#fff(?:fff)?\b/gi, colors.nodeFill)
+    st.textContent = css
+  })
+
+  const doc = svg.ownerDocument || document
+  if (!svg.getAttribute('id')) {
+    svg.setAttribute(
+      'id',
+      `studio-mmd-${Math.random().toString(36).slice(2, 9)}`,
+    )
+  }
+  const sid = svg.getAttribute('id') || 'studio-mmd'
+  svg.setAttribute(
+    'style',
+    [
+      svg.getAttribute('style') || '',
+      'color-scheme:dark',
+      'forced-color-adjust:none',
+      '-webkit-print-color-adjust:exact',
+      'print-color-adjust:exact',
+      'overflow:visible',
+    ]
+      .filter(Boolean)
+      .join(';'),
+  )
+
+  svg.querySelectorAll('style[data-studio-paint="1"]').forEach((s) => s.remove())
+  const st = doc.createElementNS
+    ? doc.createElementNS('http://www.w3.org/2000/svg', 'style')
+    : doc.createElement('style')
+  st.setAttribute('data-studio-paint', '1')
+  // Colors only — never override font-size (layout already baked node widths)
+  st.textContent = `
+    #${sid} {
+      color-scheme: dark;
+      forced-color-adjust: none;
+      overflow: visible;
+    }
+    #${sid} g.node > path, #${sid} g.node > rect, #${sid} g.node > polygon,
+    #${sid} g.node > circle, #${sid} g.node > ellipse,
+    #${sid} g.node path.label-container, #${sid} g.node rect.label-container,
+    #${sid} g.node .basic.label-container {
+      fill: ${colors.nodeFill} !important;
+      stroke: ${colors.nodeStroke} !important;
+    }
+    #${sid} g.node path[fill="none"], #${sid} g.node path[fill="transparent"],
+    #${sid} g.node rect[fill="none"], #${sid} g.node rect[fill="transparent"] {
+      fill: none !important;
+    }
+    #${sid} g.node text, #${sid} g.node tspan {
+      fill: ${colors.nodeText} !important;
+      color: ${colors.nodeText} !important;
+    }
+    #${sid} g.node foreignObject,
+    #${sid} g.node foreignObject div,
+    #${sid} g.node .nodeLabel,
+    #${sid} g.node span {
+      color: ${colors.nodeText} !important;
+      background: transparent !important;
+      background-color: transparent !important;
+    }
+    #${sid} .edgePath path, #${sid} .flowchart-link, #${sid} path.flowchart-link,
+    #${sid} .edgePaths path {
+      fill: none !important;
+      stroke: ${colors.edge} !important;
+    }
+    #${sid} marker path, #${sid} .arrowheadPath {
+      fill: ${colors.edge} !important;
+      stroke: ${colors.edge} !important;
+    }
+    #${sid} .edgeLabel rect, #${sid} .labelBkg, #${sid} g.edgeLabel > rect {
+      fill: ${colors.edgeLabelBg} !important;
+      stroke: ${colors.clusterStroke} !important;
+    }
+    #${sid} .edgeLabel text, #${sid} .edgeLabel tspan,
+    #${sid} g.edgeLabel text, #${sid} g.edgeLabel tspan {
+      fill: ${colors.nodeText} !important;
+      color: ${colors.nodeText} !important;
+    }
+    #${sid} g.edgeLabel foreignObject,
+    #${sid} g.edgeLabel foreignObject div,
+    #${sid} g.edgeLabel span {
+      color: ${colors.nodeText} !important;
+      background: ${colors.edgeLabelBg} !important;
+      background-color: ${colors.edgeLabelBg} !important;
+    }
+    #${sid} g.cluster rect {
+      fill: ${colors.clusterFill} !important;
+      stroke: ${colors.clusterStroke} !important;
+    }
+  `
+  svg.insertBefore(st, svg.firstChild)
+}
+
+/**
+ * Force node/edge paints — rewrite Mermaid CSS, inject overrides, set attrs.
+ * Preserves Mermaid font metrics so labels stay inside node boxes.
+ */
+export function paintStudioSvg(
+  root: Element,
+  colors: StudioColors = STUDIO_DARK,
+): void {
+  rewriteAndInjectStudioStyles(root, colors)
+
+  root.querySelectorAll('g.node').forEach((g) => {
+    g.querySelectorAll('path, rect, polygon, circle, ellipse').forEach((el) => {
+      if (el.closest('.katex')) return
+      // Skip zero-size layout helpers (often class="background")
+      try {
+        const bb = (el as SVGGraphicsElement).getBBox?.()
+        if (bb && bb.width < 0.5 && bb.height < 0.5) return
+      } catch {
+        /* not rendered yet */
+      }
+      const fa = (el.getAttribute('fill') || '').toLowerCase()
+      if (NONE.has(fa)) {
+        force(el, undefined, colors.nodeStroke)
+        return
+      }
+      force(el, colors.nodeFill, colors.nodeStroke)
+    })
+    g.querySelectorAll('text, tspan').forEach((el) => {
+      if (el.closest('.katex')) return
+      force(el, colors.nodeText, undefined, colors.nodeText)
+      el.setAttribute('fill', colors.nodeText)
+    })
+    // htmlLabels: true — paint foreignObject label chrome
+    g.querySelectorAll('foreignObject div, foreignObject span, .nodeLabel').forEach(
+      (el) => {
+        const h = el as HTMLElement
+        if (!h.style) return
+        h.style.setProperty('color', colors.nodeText, 'important')
+        h.style.setProperty('background', 'transparent', 'important')
+        h.style.setProperty('background-color', 'transparent', 'important')
+      },
+    )
+  })
+
+  root
+    .querySelectorAll(
+      '.edgePath path, .flowchart-link, path.flowchart-link, .edgePaths path',
+    )
+    .forEach((el) => {
+      force(el, 'none', colors.edge)
+    })
+
+  root.querySelectorAll('marker path, .arrowheadPath').forEach((el) => {
+    force(el, colors.edge, colors.edge)
+  })
+
+  root
+    .querySelectorAll('.edgeLabel rect, .labelBkg, g.edgeLabel > rect')
+    .forEach((el) => {
+      force(el, colors.edgeLabelBg, colors.clusterStroke)
+    })
+
+  root.querySelectorAll('g.cluster rect').forEach((el) => {
+    force(el, colors.clusterFill, colors.clusterStroke)
+  })
+
+  root
+    .querySelectorAll(
+      '.edgeLabel text, .edgeLabel tspan, g.edgeLabel text, g.edgeLabel tspan, .cluster text',
+    )
+    .forEach((el) => {
+      force(el, colors.nodeText, undefined, colors.nodeText)
+      el.setAttribute('fill', colors.nodeText)
+    })
+
+  root
+    .querySelectorAll(
+      'g.edgeLabel foreignObject div, g.edgeLabel foreignObject span',
+    )
+    .forEach((el) => {
+      const h = el as HTMLElement
+      if (!h.style) return
+      h.style.setProperty('color', colors.nodeText, 'important')
+      h.style.setProperty('background', colors.edgeLabelBg, 'important')
+      h.style.setProperty('background-color', colors.edgeLabelBg, 'important')
+    })
+}
+
+/** Paint SVG markup string; return new markup. */
+export function applyStudioPaintToSvgString(
+  svg: string,
+  colors: StudioColors = STUDIO_DARK,
+): string {
+  if (typeof DOMParser === 'undefined' || typeof XMLSerializer === 'undefined') {
+    return svg
+  }
+  const doc = new DOMParser().parseFromString(svg, 'image/svg+xml')
+  const root = doc.documentElement
+  if (!root || root.querySelector('parsererror')) return svg
+  paintStudioSvg(root, colors)
+  return new XMLSerializer().serializeToString(root)
+}
+
+// ── Serialized render ────────────────────────────────────────────────────────
+
+let renderChain: Promise<unknown> = Promise.resolve()
+
+export type MermaidRenderRequest = {
+  id: string
+  source: string
+  theme: MermaidThemeId
+  studioDark?: boolean
+}
+
+export type MermaidRenderResult = {
+  svg: string
+  mainBkg?: string
+  theme?: string
+}
+
+export function renderMermaidSvg(
+  req: MermaidRenderRequest,
+): Promise<MermaidRenderResult> {
+  const run = async (): Promise<MermaidRenderResult> => {
+    const studioDark =
+      req.studioDark !== undefined
+        ? req.studioDark
+        : usesStudioDarkVariables(req.theme)
+
+    mermaid.initialize(mermaidInitOptions(req.theme, { studioDark }))
+
+    // verify-app-stack path: frontmatter + classDef before render
+    const source = studioDark
+      ? prepareStudioDarkSource(req.source)
+      : req.source
+
+    const { svg: raw } = await mermaid.render(req.id, source)
+
+    // verify-v5 path: hard paint after render
+    const svg = studioDark ? applyStudioPaintToSvgString(raw) : raw
+
+    let mainBkg: string | undefined
+    let themeName: string | undefined
+    try {
+      const cfg = mermaid.mermaidAPI.getConfig()
+      mainBkg = cfg.themeVariables?.mainBkg as string | undefined
+      themeName = cfg.theme as string | undefined
+    } catch {
+      /* ignore */
+    }
+    return { svg, mainBkg, theme: themeName }
+  }
+
+  const next = renderChain.then(run, run)
+  renderChain = next.then(
+    () => undefined,
+    () => undefined,
+  )
+  return next
+}

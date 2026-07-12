@@ -16,6 +16,7 @@ import {
   Eye,
   EyeOff,
   FolderPlus,
+  GitBranch,
   ImageIcon,
   Lock,
   LockOpen,
@@ -1144,6 +1145,7 @@ function OutlinerRow({
 }
 
 function typeIcon(item: CanvasItem) {
+  if (item.type === 'process-chart' || item.mermaidSource) return GitBranch
   if (item.type === 'table' || item.tableMarkdown) return Table2
   if (
     item.type === 'figure' ||
@@ -1156,6 +1158,8 @@ function typeIcon(item: CanvasItem) {
 }
 
 function typeColor(item: CanvasItem) {
+  if (item.type === 'process-chart' || item.mermaidSource)
+    return 'text-[#c4b5fd]'
   if (item.type === 'table' || item.tableMarkdown) return 'text-[#7ec8e3]'
   if (
     item.type === 'figure' ||

@@ -1,0 +1,85 @@
+{
+  "base": "http://localhost:5000",
+  "pages": {
+    "mermaidTest": {
+      "url": "http://localhost:5000/mermaid-test.html?t=1783820206364",
+      "status": 200,
+      "meta": {
+        "title": "Mermaid paint — app stack + v5",
+        "log": "{\n  \"v\": \"app-stack+v5\",\n  \"stack\": \"initialize base+vars + frontmatter + classDef + hard paint (verify-app-stack + verify-v5)\",\n  \"palette\": \"#27272a\",\n  \"def\": {\n    \"fillAttr\": \"#ECECFF\",\n    \"style\": \"\",\n    \"computed\": \"rgb(39, 39, 42)\"\n  },\n  \"studio\": {\n    \"fillAttr\": \"#27272a\",\n    \"style\": \"fill:#27272a !important;stroke:#71717a !important\",\n    \"computed\": \"rgb(39, 39, 42)\"\n  },\n  \"styledStart\": {\n    \"fillAttr\": \"#4CAF50\",\n    \"style\": \"fill:#4CAF50 !important;stroke:#333 !important;stroke-width:2px !important\",\n    \"computed\": \"rgb(76, 175, 80)\"\n  },\n  \"studioOk\": true,\n  \"greenOk\": true,\n  \"defPale\": true\n}",
+        "shapes": [
+          {
+            "tag": "path",
+            "fillAttr": "#27272a",
+            "style": "fill:#27272a !important;stroke:#71717a !important",
+            "computed": "rgb(39, 39, 42)",
+            "className": null
+          },
+          {
+            "tag": "path",
+            "fillAttr": "none",
+            "style": "fill:#27272a !important;stroke:#71717a !important",
+            "computed": "rgb(39, 39, 42)",
+            "className": null
+          },
+          {
+            "tag": "rect",
+            "fillAttr": "#27272a",
+            "style": "fill: rgb(39, 39, 42) !important; stroke: rgb(113, 113, 122) !important;",
+            "computed": "rgb(39, 39, 42)",
+            "className": null
+          },
+          {
+            "tag": "rect",
+            "fillAttr": "#27272a",
+            "style": "stroke: rgb(113, 113, 122) !important; fill: rgb(39, 39, 42) !important;",
+            "computed": "rgb(39, 39, 42)",
+            "className": "background"
+          },
+          {
+            "tag": "rect",
+            "fillAttr": "#27272a",
+            "style": "fill:#27272a !important;stroke:#71717a !important",
+            "computed": "rgb(39, 39, 42)",
+            "className": "basic label-container"
+          },
+          {
+            "tag": "rect",
+            "fillAttr": "#27272a",
+            "style": "fill: rgb(39, 39, 42) !important; stroke: rgb(113, 113, 122) !important;",
+            "computed": "rgb(39, 39, 42)",
+            "className": null
+          }
+        ],
+        "styleSheetsWith27272a": 0
+      },
+      "studioHostPixels": {
+        "pale": 390,
+        "samples": "(76,24)=rgb(244,244,245); (78,24)=rgb(244,244,245); (84,24)=rgb(244,244,245)",
+        "near27272a": 5367,
+        "total": 6493,
+        "white": 112
+      },
+      "fullShot": "screenshots/theme-trials/diag-mermaid-test-full.png"
+    },
+    "app": {
+      "url": "http://localhost:5000/app?t=1783820209827",
+      "status": 200,
+      "meta": {
+        "url": "http://localhost:5000/",
+        "title": "CheatSheet Studio",
+        "bodySnippet": "Σ\nCheatSheet Studio\nSign in with Google\nUse redirect instead\n\nMath · Science · Economics · Finance\n\nBuild living cheat sheets from equations, tables & figures\n\nDrag formulas from a curated library onto a freeform canvas. Create custom LaTeX, import images, resize panels, and save everything to Firebase under your Google account.\n\nSign in with Google\nUse redirect instead\nSign-in not working? Check ",
+        "mermaidHostCount": 0,
+        "hosts": [],
+        "cssHasMermaidDark": true,
+        "cssHas27272a": false,
+        "cssHasEcecff": false,
+        "scripts": [
+          "index-BNVvAa4s.js"
+        ]
+      },
+      "hostPixels": null,
+      "fullShot": "screenshots/theme-trials/diag-app-full.png"
+    }
+  }
+}

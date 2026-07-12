@@ -59,6 +59,84 @@ body {
   margin: 0;
 }
 
+/*
+ * Mermaid host — CRITICAL for real Chrome:
+ * User screenshots (e.g. 183700) measure WHITE node pixels while DOM
+ * fillAttr/computed still report #27272a. Playwright headless measures DARK.
+ * That split is Chrome Auto Dark Mode / forced-colors inverting SVG fills.
+ * forced-color-adjust: none keeps our paints as authored.
+ */
+.mermaid-host {
+  color-scheme: dark;
+  forced-color-adjust: none;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+  font-family: 'trebuchet ms', verdana, arial, sans-serif;
+  font-size: 16px;
+  overflow: visible;
+}
+.mermaid-host svg {
+  background: transparent;
+  display: block;
+  color-scheme: dark;
+  forced-color-adjust: none;
+  overflow: visible;
+}
+/* htmlLabels foreignObject — keep transparent so node fill shows through */
+.mermaid-host[data-mermaid-dark='true'] foreignObject div,
+.mermaid-host[data-mermaid-dark='true'] foreignObject span,
+.mermaid-host[data-mermaid-dark='true'] .nodeLabel {
+  color: #f4f4f5 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+/*
+ * Studio dark Process charts (verify-app-stack palette #27272a).
+ * data-mermaid-dark is set by MermaidView when studioDark/forceDark.
+ * Use #id-level strength via .mermaid-host + attribute + g.node.
+ */
+.mermaid-host[data-mermaid-dark='true'] g.node path,
+.mermaid-host[data-mermaid-dark='true'] g.node rect,
+.mermaid-host[data-mermaid-dark='true'] g.node polygon,
+.mermaid-host[data-mermaid-dark='true'] g.node circle,
+.mermaid-host[data-mermaid-dark='true'] g.node ellipse {
+  fill: #27272a !important;
+  stroke: #71717a !important;
+}
+.mermaid-host[data-mermaid-dark='true'] g.node path[fill='none'],
+.mermaid-host[data-mermaid-dark='true'] g.node path[fill='transparent'],
+.mermaid-host[data-mermaid-dark='true'] g.node rect[fill='none'],
+.mermaid-host[data-mermaid-dark='true'] g.node rect[fill='transparent'] {
+  fill: none !important;
+}
+.mermaid-host[data-mermaid-dark='true'] g.node text,
+.mermaid-host[data-mermaid-dark='true'] g.node tspan {
+  fill: #f4f4f5 !important;
+  color: #f4f4f5 !important;
+}
+.mermaid-host[data-mermaid-dark='true'] .edgePath path,
+.mermaid-host[data-mermaid-dark='true'] .flowchart-link,
+.mermaid-host[data-mermaid-dark='true'] path.flowchart-link,
+.mermaid-host[data-mermaid-dark='true'] .edgePaths path {
+  fill: none !important;
+  stroke: #a1a1aa !important;
+}
+.mermaid-host[data-mermaid-dark='true'] marker path,
+.mermaid-host[data-mermaid-dark='true'] .arrowheadPath {
+  fill: #a1a1aa !important;
+  stroke: #a1a1aa !important;
+}
+.mermaid-host[data-mermaid-dark='true'] .edgeLabel rect,
+.mermaid-host[data-mermaid-dark='true'] .labelBkg {
+  fill: #3f3f46 !important;
+  stroke: #3f3f46 !important;
+}
+.mermaid-host[data-mermaid-dark='true'] g.cluster rect {
+  fill: #18181b !important;
+  stroke: #3f3f46 !important;
+}
+
 .katex-error {
   color: #fca5a5;
   font-size: 0.75rem;

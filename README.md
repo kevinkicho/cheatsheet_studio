@@ -21,7 +21,7 @@ License: [MIT](./LICENSE) · Status: **active development** (v0.1.0)
 
 <br />
 
-A Firebase-backed app for building multi-page, print-aware cheat sheets from equations, tables, and figures. Drag items from a curated library onto a freeform board, create custom KaTeX, import images (including seamless GIF loops), export print pages to PDF/PNG/JPEG, organize layers in nested folders, and sync sheets per Google account.
+A Firebase-backed app for building multi-page, print-aware cheat sheets from equations, tables, figures, and **Mermaid process charts**. Drag items from a curated library onto a freeform board, create custom KaTeX, import images (including seamless GIF loops), author dark-themed flowcharts for the zinc UI, export print pages to PDF/PNG/JPEG, organize layers in nested folders, and sync sheets per Google account.
 
 > **Firebase is required for production use.** Auth, Firestore, Storage, and Hosting are part of the product. A built-in seed library loads offline; sign-in, cloud sheets, and durable image upload need a configured Firebase project. Local **Auth emulators** support automated E2E without a real Google login.
 
@@ -40,11 +40,14 @@ A Firebase-backed app for building multi-page, print-aware cheat sheets from equ
 | Local image persistence (IndexedDB) + Storage promote | **Implemented** |
 | GIF ping-pong bake at import | **Implemented** |
 | Undo / redo (document history) | **Implemented** |
-| Unit + component tests (Vitest) | **199 tests** |
+| Process charts (Mermaid) + studio dark theme | **Implemented** (user-confirmed 2026-07-11) |
+| Unit + component tests (Vitest) | **Vitest** |
 | E2E smoke + Auth-emulator workspace E2E | **Playwright** |
 | Firebase Hosting deploy path | **Supported** (`dist/`) |
 
 **Dev vs Hosting:** `npm run dev` → [http://localhost:5173](http://localhost:5173) serves **live source**. `firebase serve` → [http://localhost:5000](http://localhost:5000) serves **last `npm run build`** only. Rebuild before testing Hosting-style ports.
+
+**Process chart dark theme:** Theme Dark uses zinc node fills (`#27272a`), light labels, and `forced-color-adjust: none` so Chrome Auto Dark does not invert SVG. Full write-up: [docs/MERMAID_DARK_THEME_WORKING_RECORD.md](./docs/MERMAID_DARK_THEME_WORKING_RECORD.md). Isolation harness: `public/mermaid-test.html` (serve `dist/` after build).
 
 ---
 
@@ -88,6 +91,14 @@ A Firebase-backed app for building multi-page, print-aware cheat sheets from equ
 - Import Image panel (preview, local persist, Storage upload when signed in)  
 - GIF seamless loop via bake-at-import (avoids Storage CORS reverse-play issues)  
 
+### Process charts (Mermaid)
+- Right sidebar **Process** tool: flowchart / sequence / etc. templates, Mermaid source editor, live preview  
+- **Theme Dark** (default for Process) paints studio zinc nodes for the dark app chrome — not Mermaid’s pale lavender default  
+- Stack: `theme: base` + themeVariables + YAML frontmatter + `classDef default`, then layout-safe post-render paint (rewrites fills **without** stripping Mermaid font metrics)  
+- Preview zoom / pan / fit; add chart to canvas as a process-chart card  
+- Isolation page for paint checks: `public/mermaid-test.html` (card 1 = raw pale control; cards 2–3 = studio dark)  
+- Record + regression notes: [docs/MERMAID_DARK_THEME_WORKING_RECORD.md](./docs/MERMAID_DARK_THEME_WORKING_RECORD.md)  
+
 ### Layers & organization
 - Outliner with **nested folders**, reparent, hide/lock per item or folder  
 - Multi-select style/property edits  
@@ -105,7 +116,7 @@ A Firebase-backed app for building multi-page, print-aware cheat sheets from equ
 | Top bar | Workspace / Library / Sheets, sheet switcher, print menu, **Export**, undo/redo, save, account |
 | Left | Properties — sheet (grid covers, background) or selected card(s) |
 | Center | Freeform canvas + print frames |
-| Right | Layers · Equation · Image |
+| Right | Layers · Equation · **Process** · Image |
 | Bottom | Collapsible library (cards/list, filters, resizable catalog preview) |
 
 ---
@@ -117,6 +128,7 @@ A Firebase-backed app for building multi-page, print-aware cheat sheets from equ
 | UI | React 19, Vite 8, TypeScript, Tailwind CSS v4 |
 | State | Zustand (+ persist for UI prefs) |
 | Math | KaTeX |
+| Diagrams | Mermaid 11 (process charts / flowcharts) |
 | DnD / layout | @dnd-kit, react-resizable-panels |
 | Export | jspdf, html2canvas-pro |
 | Backend | Firebase Auth, Firestore, Storage, Hosting |

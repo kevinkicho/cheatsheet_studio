@@ -1,12 +1,14 @@
-import { ImagePlus, Layers, Sigma } from 'lucide-react'
+import { GitBranch, ImagePlus, Layers, Sigma } from 'lucide-react'
 import { useUiStore, type RightTool } from '@/stores/uiStore'
 import { LayersPanel } from '@/components/tools/LayersPanel'
 import { CreateEquationPanel } from '@/components/tools/CreateEquationPanel'
+import { CreateProcessChartPanel } from '@/components/tools/CreateProcessChartPanel'
 import { ImportImagePanel } from '@/components/tools/ImportImagePanel'
 
 const tools: { id: RightTool; label: string; icon: typeof Layers }[] = [
   { id: 'layers', label: 'Layers', icon: Layers },
   { id: 'equation', label: 'Equation', icon: Sigma },
+  { id: 'process', label: 'Process', icon: GitBranch },
   { id: 'image', label: 'Image', icon: ImagePlus },
 ]
 
@@ -35,13 +37,16 @@ export function RightSidebar() {
       </div>
       <div
         className={`min-h-0 flex-1 ${
-          rightTool === 'equation' || rightTool === 'layers'
+          rightTool === 'equation' ||
+          rightTool === 'layers' ||
+          rightTool === 'process'
             ? 'overflow-hidden'
             : 'overflow-y-auto'
         }`}
       >
         {rightTool === 'layers' && <LayersPanel />}
         {rightTool === 'equation' && <CreateEquationPanel />}
+        {rightTool === 'process' && <CreateProcessChartPanel />}
         {rightTool === 'image' && <ImportImagePanel />}
       </div>
     </div>

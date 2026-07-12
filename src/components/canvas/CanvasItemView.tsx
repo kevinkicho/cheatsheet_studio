@@ -12,6 +12,7 @@ import { FitContent } from '@/components/math/FitContent'
 import { FigureView } from '@/components/math/FigureView'
 import { LatexView } from '@/components/math/LatexView'
 import { MarkdownTable } from '@/components/math/MarkdownTable'
+import { MermaidView } from '@/components/math/MermaidView'
 import {
   CARD_DEFAULTS,
   composeBorderCss,
@@ -32,8 +33,18 @@ const DRAG_THRESHOLD_PX = 3
 /** Title row + margin — reserved so showing the title grows the card instead of shrinking math. */
 const TITLE_BAND = 22
 
-/** Equations/tables only — figures use a dedicated crisp layout path. */
+/** Equations/tables/mermaid — figures use a dedicated crisp layout path. */
 function ItemBody({ item }: { item: CanvasItem }) {
+  if (item.type === 'process-chart' || item.mermaidSource) {
+    return (
+      <MermaidView
+        source={item.mermaidSource ?? ''}
+        theme={item.mermaidTheme ?? 'dark'}
+        forceDark={(item.mermaidTheme ?? 'dark') !== 'forest'}
+        className="h-full w-full"
+      />
+    )
+  }
   return (
     <>
       {(item.type === 'equation' ||
@@ -153,6 +164,8 @@ export function CanvasItemView({
     item.id,
     item.latex,
     item.tableMarkdown,
+    item.mermaidSource,
+    item.mermaidTheme,
     item.imageUrl,
     item.title,
     item.style?.fontSize,
@@ -529,6 +542,13 @@ export function CanvasItemView({
             <FigureView
               src={item.imageUrl}
               alt={item.title ?? 'figure'}
+            />
+          ) : item.type === 'process-chart' || item.mermaidSource ? (
+            <MermaidView
+              source={item.mermaidSource ?? ''}
+              theme={item.mermaidTheme ?? 'dark'}
+              forceDark={(item.mermaidTheme ?? 'dark') !== 'forest'}
+              className="h-full w-full"
             />
           ) : (
             <FitContent

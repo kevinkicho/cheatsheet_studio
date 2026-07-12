@@ -1,0 +1,83 @@
+{
+  "url": "http://localhost:5000/mermaid-test.html?nocache=1783819339073",
+  "studioFillHistogram": {
+    "#1f2020 || computed=rgb(31, 32, 32)": 15,
+    "none || computed=rgb(31, 32, 32)": 2
+  },
+  "studioNodeCount": 5,
+  "firstNode": {
+    "id": "d2-flowchart-Start-0",
+    "foreignObjects": 0,
+    "shapeCount": 4,
+    "shapes": [
+      {
+        "tag": "path",
+        "class": "",
+        "fillAttr": "#1f2020",
+        "strokeAttr": "#cccccc",
+        "style": "fill: rgb(31, 32, 32) !important; stroke: rgb(204, 204, 204) !important;",
+        "computedFill": "rgb(31, 32, 32)",
+        "computedStroke": "rgb(204, 204, 204)",
+        "bbox": {
+          "w": 59,
+          "h": 34,
+          "x": -30,
+          "y": -17
+        }
+      },
+      {
+        "tag": "path",
+        "class": "",
+        "fillAttr": "none",
+        "strokeAttr": "#cccccc",
+        "style": "stroke: rgb(204, 204, 204) !important;",
+        "computedFill": "rgb(31, 32, 32)",
+        "computedStroke": "rgb(204, 204, 204)",
+        "bbox": {
+          "w": 59,
+          "h": 34,
+          "x": -30,
+          "y": -17
+        }
+      },
+      {
+        "tag": "rect",
+        "class": "",
+        "fillAttr": "#1f2020",
+        "strokeAttr": "#cccccc",
+        "style": "fill: rgb(31, 32, 32) !important; stroke: rgb(204, 204, 204) !important;",
+        "computedFill": "rgb(31, 32, 32)",
+        "computedStroke": "rgb(204, 204, 204)",
+        "bbox": {
+          "w": 0,
+          "h": 0,
+          "x": 0,
+          "y": 0
+        }
+      },
+      {
+        "tag": "rect",
+        "class": "background",
+        "fillAttr": "#1f2020",
+        "strokeAttr": "#cccccc",
+        "style": "stroke: rgb(204, 204, 204) !important; fill: rgb(31, 32, 32) !important;",
+        "computedFill": "rgb(31, 32, 32)",
+        "computedStroke": "rgb(204, 204, 204)",
+        "bbox": {
+          "w": 0,
+          "h": 0,
+          "x": 0,
+          "y": 0
+        }
+      }
+    ]
+  },
+  "styleTagPreview": "#d2{font-family:\"trebuchet ms\",verdana,arial,sans-serif;font-size:16px;fill:#e0dfdf;}@keyframes edge-animation-frame{from{stroke-dashoffset:0;}}@keyframes dash{to{stroke-dashoffset:0;}}#d2 .edge-animation-slow{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 50s linear infinite;stroke-linecap:round;}#d2 .edge-animation-fast{stroke-dasharray:9,5!important;stroke-dashoffset:900;an",
+  "hostPixelScore": {
+    "near1f2020": 4822,
+    "pale": 642,
+    "total": 6111,
+    "white": 0
+  },
+  "log": "{\n  \"v\": 5,\n  \"restoredTo\": \"verify-v5-again layout + hard paint\",\n  \"def\": {\n    \"fillAttr\": \"#ECECFF\",\n    \"style\": \"\",\n    \"computed\": \"rgb(236, 236, 255)\"\n  },\n  \"studio\": {\n    \"fillAttr\": \"#1f2020\",\n    \"style\": \"fill: rgb(31, 32, 32) !important; stroke: rgb(204, 204, 204) !important;\",\n    \"computed\": \"rgb(31, 32, 32)\"\n  },\n  \"styledStart\": {\n    \"fillAttr\": \"#4CAF50\",\n    \"style\": \"fill:#4CAF50 !important;stroke:#333 !important;stroke-width:2px !important\",\n    \"computed\": \"rgb(76, 175, 80)\"\n  }\n}"
+}

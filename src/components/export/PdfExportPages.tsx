@@ -3,6 +3,7 @@ import { FitContent } from '@/components/math/FitContent'
 import { FigureView } from '@/components/math/FigureView'
 import { LatexView } from '@/components/math/LatexView'
 import { MarkdownTable } from '@/components/math/MarkdownTable'
+import { MermaidView } from '@/components/math/MermaidView'
 import {
   CARD_DEFAULTS,
   composeBorderCss,
@@ -123,6 +124,14 @@ function ExportCard({
               className=""
             />
           </div>
+        ) : item.type === 'process-chart' || item.mermaidSource ? (
+          <MermaidView
+            source={item.mermaidSource ?? ''}
+            // Print on white paper — light Mermaid theme, no dark polish
+            theme="default"
+            forceDark={false}
+            className="h-full w-full"
+          />
         ) : (
           <FitContent
             className=""

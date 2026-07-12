@@ -170,6 +170,18 @@ interface CanvasState {
     title?: string,
     imagePath?: string,
   ) => string
+  /** Insert a Mermaid process-chart card. */
+  addProcessChart: (
+    mermaidSource: string,
+    opts?: {
+      title?: string
+      mermaidTheme?: import('@/types').MermaidThemeId
+      mermaidKind?: import('@/types').MermaidDiagramKind
+      mermaidDirection?: import('@/types').MermaidFlowDirection
+      width?: number
+      height?: number
+    },
+  ) => string
   updateItem: (id: string, partial: Partial<CanvasItem>) => void
   /** Apply the same partial to every selected id (or explicit ids). */
   updateItems: (ids: string[], partial: Partial<CanvasItem>) => void
@@ -876,6 +888,34 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       zIndex: z,
       imageUrl,
       imagePath,
+    })
+    set((s) => ({
+      items: [...s.items, item],
+      selectedIds: [id],
+      maxZ: z,
+      dirty: true,
+    }))
+    return id
+  },
+
+  addProcessChart: (mermaidSource, opts) => {
+    const id = createId('item')
+    const z = get().maxZ + 1
+    const n = get().items.length
+    const item = newCardBase('process-chart', {
+      id,
+      title: opts?.title?.trim() || 'Process chart',
+      x: 90 + (n % 5) * 28,
+      y: 90 + (n % 5) * 28,
+      width: opts?.width ?? 420,
+      height: opts?.height ?? 320,
+      zIndex: z,
+      mermaidSource,
+      mermaidTheme: opts?.mermaidTheme ?? 'dark',
+      mermaidKind: opts?.mermaidKind ?? 'flowchart',
+      mermaidDirection: opts?.mermaidDirection ?? 'TD',
+      autoFit: false,
+      contentFill: false,
     })
     set((s) => ({
       items: [...s.items, item],

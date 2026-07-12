@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="en" style="color-scheme: dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="color-scheme" content="dark" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <title>Mermaid paint — app stack + v5</title>
+    <style>
+      html,
+      body,
+      .card,
+      .mermaid-host,
+      svg {
+        color-scheme: dark;
+        forced-color-adjust: none;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      body {
+        margin: 0;
+        background: #09090b;
+        color: #e4e4e7;
+        font: 14px Inter, system-ui, sans-serif;
+        padding: 24px;
+      }
+      h1 {
+        font-size: 16px;
+        margin: 0 0 8px;
+      }
+      .note {
+        color: #a1a1aa;
+        font-size: 13px;
+        max-width: 48rem;
+        line-height: 1.45;
+        margin: 0 0 16px;
+      }
+      .row {
+        display: flex;
+        gap: 16px;
+        flex-wrap: wrap;
+      }
+      .card {
+        background: #12141a;
+        border: 1px solid #27272a;
+        border-radius: 8px;
+        padding: 16px;
+        min-width: 260px;
+      }
+      h2 {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #71717a;
+        margin: 0 0 12px;
+      }
+      .mermaid-host {
+        color-scheme: dark;
+        forced-color-adjust: none;
+        overflow: visible;
+      }
+      .mermaid-host svg {
+        display: block;
+        overflow: visible;
+        forced-color-adjust: none;
+      }
+      #log {
+        font: 12px ui-monospace, monospace;
+        color: #71717a;
+        margin-top: 16px;
+        white-space: pre-wrap;
+      }
+      code {
+        color: #a5b4fc;
+      }
+      .ok {
+        color: #4ade80;
+        font-weight: 600;
+      }
+      .bad {
+        color: #f87171;
+        font-weight: 600;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Mermaid: app stack + v5 hard paint — Ctrl+Shift+R</h1>
+    <p class="note">
+      Card 1 = raw default (pale, no paint). Card 2–3 = dark paint that
+      <strong>rewrites fills only</strong> — keeps Mermaid font metrics so labels
+      stay inside node boxes (184747 overflow was from deleting Mermaid
+      <code>&lt;style&gt;</code>).
+    </p>
+    <div class="row">
+      <div class="card">
+        <h2>1 · raw default</h2>
+        <div id="def" class="mermaid-host"></div>
+      </div>
+      <div class="card">
+        <h2>2 · app stack dark</h2>
+        <div id="studio" class="mermaid-host" data-paint="1"></div>
+      </div>
+      <div class="card">
+        <h2>3 · + green Start</h2>
+        <div id="styled" class="mermaid-host" data-paint="1"></div>
+      </div>
+    </div>
+    <pre id="log"></pre>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11.16.0/dist/mermaid.min.js"></script>
+    <script>
+      const STUDIO = {
+        nodeFill: '#27272a',
+        nodeStroke: '#71717a',
+        nodeText: '#f4f4f5',
+        edge: '#a1a1aa',
+        edgeLabelBg: '#3f3f46',
+        clusterFill: '#18181b',
+        clusterStroke: '#3f3f46',
+        bg: '#12141a',
+      }
+      // Same family Mermaid uses for flowchart layout measurements
+      const FONT = 'trebuchet ms, verdana, arial, sans-serif'
+
+      const base = `flowchart TD
+    Start([Start]) --> Input[Collect input]
+    Input --> Check{Valid?}
+    Check -->|Yes| Process[Process data]
+    Check -->|No| Input
+    Process --> Done([Done])`
+
+      function prepareStudioDarkSource(source) {
+        const fm = `---
+config:
+  theme: base
+  themeVariables:
+    darkMode: true
+    background: "${STUDIO.bg}"
+    primaryColor: "${STUDIO.nodeFill}"
+    primaryTextColor: "${STUDIO.nodeText}"
+    primaryBorderColor: "${STUDIO.nodeStroke}"
+    mainBkg: "${STUDIO.nodeFill}"
+    lineColor: "${STUDIO.edge}"
+    nodeBorder: "${STUDIO.nodeStroke}"
+    nodeTextColor: "${STUDIO.nodeText}"
+    textColor: "${STUDIO.nodeText}"
+    classText: "${STUDIO.nodeText}"
+    edgeLabelBackground: "${STUDIO.edgeLabelBg}"
+    clusterBkg: "${STUDIO.clusterFill}"
+    clusterBorder: "${STUDIO.clusterStroke}"
+    fontFamily: "${FONT}"
+    fontSize: "16px"
+---
+`
+        return (
+          fm +
+          source.trim() +
+          `\n    classDef default fill:${STUDIO.nodeFill},stroke:${STUDIO.nodeStroke},color:${STUDIO.nodeText}`
+        )
+      }
+
+      function force(el, fill, stroke) {
+        if (fill !== undefined) {
+          el.setAttribute('fill', fill)
+          el.style.setProperty('fill', fill, 'important')
+        }
+        if (stroke !== undefined) {
+          el.setAttribute('stroke', stroke)
+          el.style.setProperty('stroke', stroke, 'important')
+        }
+      }
+
+      /**
+       * CRITICAL: do NOT delete Mermaid's <style> (it has font-size used for layout).
+       * Rewrite pale fills in place, then add id-scoped color overrides only.
+       */
+      function hardPaint(root, greenStart) {
+        const svg = root.querySelector('svg')
+        if (!svg) return
+        if (!svg.id) svg.id = 'mmd-' + Math.random().toString(36).slice(2, 8)
+        const sid = svg.id
+        svg.style.colorScheme = 'dark'
+        svg.style.setProperty('forced-color-adjust', 'none')
+        svg.style.overflow = 'visible'
+
+        // Keep Mermaid font rules; only recolor pale fills
+        svg.querySelectorAll('style').forEach((st) => {
+          if (st.getAttribute('data-studio-paint') === '1') return
+          let css = st.textContent || ''
+          css = css
+            .replace(/#ECECFF/gi, STUDIO.nodeFill)
+            .replace(/#ececff/gi, STUDIO.nodeFill)
+            .replace(/#EAEAEA/gi, STUDIO.nodeFill)
+            .replace(/#eaeaea/gi, STUDIO.nodeFill)
+            .replace(/#f9f9f9/gi, STUDIO.edgeLabelBg)
+          st.textContent = css
+        })
+
+        svg.querySelectorAll('style[data-studio-paint="1"]').forEach((s) => s.remove())
+        const st = document.createElement('style')
+        st.setAttribute('data-studio-paint', '1')
+        st.textContent = `
+          #${sid} {
+            color-scheme: dark;
+            forced-color-adjust: none;
+            overflow: visible;
+          }
+          /* Do NOT set font-size here — Mermaid already sized boxes for its font */
+          #${sid} g.node > path,
+          #${sid} g.node > rect,
+          #${sid} g.node > polygon,
+          #${sid} g.node > circle,
+          #${sid} g.node > ellipse,
+          #${sid} g.node .label-container,
+          #${sid} g.node .basic {
+            fill: ${STUDIO.nodeFill} !important;
+            stroke: ${STUDIO.nodeStroke} !important;
+          }
+          #${sid} g.node path[fill="none"],
+          #${sid} g.node path[fill="transparent"],
+          #${sid} g.node rect[fill="none"] {
+            fill: none !important;
+          }
+          #${sid} g.node text,
+          #${sid} g.node tspan {
+            fill: ${STUDIO.nodeText} !important;
+          }
+          #${sid} g.node foreignObject div,
+          #${sid} g.node foreignObject span,
+          #${sid} g.node .nodeLabel {
+            color: ${STUDIO.nodeText} !important;
+            background: transparent !important;
+            background-color: transparent !important;
+          }
+          #${sid} .edgePath path,
+          #${sid} .flowchart-link {
+            fill: none !important;
+            stroke: ${STUDIO.edge} !important;
+          }
+          #${sid} marker path,
+          #${sid} .arrowheadPath {
+            fill: ${STUDIO.edge} !important;
+            stroke: ${STUDIO.edge} !important;
+          }
+          #${sid} g.edgeLabel > rect,
+          #${sid} .edgeLabel rect,
+          #${sid} .labelBkg {
+            fill: ${STUDIO.edgeLabelBg} !important;
+            stroke: ${STUDIO.clusterStroke} !important;
+          }
+          #${sid} g.edgeLabel text,
+          #${sid} g.edgeLabel tspan,
+          #${sid} .edgeLabel text,
+          #${sid} .edgeLabel tspan {
+            fill: ${STUDIO.nodeText} !important;
+          }
+          #${sid} g.edgeLabel foreignObject div,
+          #${sid} g.edgeLabel foreignObject span {
+            color: ${STUDIO.nodeText} !important;
+            background: ${STUDIO.edgeLabelBg} !important;
+          }
+        `
+        svg.insertBefore(st, svg.firstChild)
+
+        root.querySelectorAll('g.node').forEach((g) => {
+          const id = g.getAttribute('id') || ''
+          const isStart = greenStart && /flowchart-Start/i.test(id)
+          const fill = isStart ? '#4CAF50' : STUDIO.nodeFill
+          const stroke = isStart ? '#333' : STUDIO.nodeStroke
+          const text = isStart ? '#fff' : STUDIO.nodeText
+
+          if (isStart) {
+            const ost = document.createElement('style')
+            ost.setAttribute('data-studio-paint', '1')
+            ost.textContent = `
+              g#${CSS.escape(id)} > path,
+              g#${CSS.escape(id)} > rect,
+              g#${CSS.escape(id)} > polygon,
+              g#${CSS.escape(id)} .label-container,
+              g#${CSS.escape(id)} .basic {
+                fill: ${fill} !important;
+                stroke: ${stroke} !important;
+              }
+              g#${CSS.escape(id)} path[fill="none"] { fill: none !important; }
+              g#${CSS.escape(id)} text, g#${CSS.escape(id)} tspan { fill: ${text} !important; }
+              g#${CSS.escape(id)} foreignObject div,
+              g#${CSS.escape(id)} foreignObject span { color: ${text} !important; }
+            `
+            svg.appendChild(ost)
+          }
+
+          g.querySelectorAll('path,rect,polygon,circle,ellipse').forEach((el) => {
+            // Skip zero-size helpers
+            try {
+              const bb = el.getBBox()
+              if (bb.width < 0.5 && bb.height < 0.5) return
+            } catch (_) {}
+            const fa = (el.getAttribute('fill') || '').toLowerCase()
+            if (fa === 'none' || fa === 'transparent') {
+              force(el, undefined, stroke)
+              return
+            }
+            force(el, fill, stroke)
+          })
+          g.querySelectorAll('text,tspan').forEach((el) => {
+            force(el, text, undefined)
+            el.setAttribute('fill', text)
+          })
+          g.querySelectorAll('foreignObject div, foreignObject span, .nodeLabel').forEach(
+            (el) => {
+              el.style.setProperty('color', text, 'important')
+              el.style.setProperty('background', 'transparent', 'important')
+              el.style.setProperty('background-color', 'transparent', 'important')
+            },
+          )
+        })
+
+        root
+          .querySelectorAll('.edgePath path, .flowchart-link')
+          .forEach((el) => force(el, 'none', STUDIO.edge))
+        root
+          .querySelectorAll('marker path, .arrowheadPath')
+          .forEach((el) => force(el, STUDIO.edge, STUDIO.edge))
+        root
+          .querySelectorAll('g.edgeLabel > rect, .edgeLabel rect, .labelBkg')
+          .forEach((el) => force(el, STUDIO.edgeLabelBg, STUDIO.clusterStroke))
+        root
+          .querySelectorAll('g.edgeLabel text, g.edgeLabel tspan, .edgeLabel text, .edgeLabel tspan')
+          .forEach((el) => {
+            force(el, STUDIO.nodeText, undefined)
+            el.setAttribute('fill', STUDIO.nodeText)
+          })
+        root
+          .querySelectorAll('g.edgeLabel foreignObject div, g.edgeLabel foreignObject span')
+          .forEach((el) => {
+            el.style.setProperty('color', STUDIO.nodeText, 'important')
+            el.style.setProperty('background', STUDIO.edgeLabelBg, 'important')
+          })
+      }
+
+      function put(id, svg, paint, greenStart) {
+        const host = document.getElementById(id)
+        host.innerHTML = svg
+        if (paint) hardPaint(host, !!greenStart)
+      }
+
+      function sample(sel) {
+        const el = document.querySelector(
+          sel + ' g.node path, ' + sel + ' g.node rect',
+        )
+        if (!el) return null
+        return {
+          fillAttr: el.getAttribute('fill'),
+          style: el.getAttribute('style'),
+          computed: getComputedStyle(el).fill,
+        }
+      }
+
+      const vars = {
+        darkMode: true,
+        background: STUDIO.bg,
+        primaryColor: STUDIO.nodeFill,
+        primaryTextColor: STUDIO.nodeText,
+        primaryBorderColor: STUDIO.nodeStroke,
+        mainBkg: STUDIO.nodeFill,
+        lineColor: STUDIO.edge,
+        textColor: STUDIO.nodeText,
+        nodeBorder: STUDIO.nodeStroke,
+        nodeTextColor: STUDIO.nodeText,
+        edgeLabelBackground: STUDIO.edgeLabelBg,
+        clusterBkg: STUDIO.clusterFill,
+        clusterBorder: STUDIO.clusterStroke,
+        classText: STUDIO.nodeText,
+        fontFamily: FONT,
+        fontSize: '16px',
+      }
+
+      ;(async () => {
+        // htmlLabels true = boxes sized from real label metrics (no clip)
+        mermaid.initialize({
+          startOnLoad: false,
+          theme: 'default',
+          securityLevel: 'loose',
+          htmlLabels: true,
+          flowchart: {
+            htmlLabels: true,
+            useMaxWidth: false,
+            padding: 18,
+            wrappingWidth: 200,
+          },
+          fontFamily: FONT,
+        })
+        put('def', (await mermaid.render('d1', base)).svg, false)
+
+        const prepared = prepareStudioDarkSource(base)
+        mermaid.initialize({
+          startOnLoad: false,
+          theme: 'base',
+          securityLevel: 'loose',
+          themeVariables: vars,
+          htmlLabels: true,
+          fontFamily: FONT,
+          flowchart: {
+            htmlLabels: true,
+            useMaxWidth: false,
+            padding: 18,
+            wrappingWidth: 200,
+          },
+        })
+        put('studio', (await mermaid.render('d2', prepared)).svg, true, false)
+
+        const preparedGreen =
+          prepareStudioDarkSource(base) +
+          '\n    style Start fill:#4CAF50,stroke:#333,stroke-width:2px,color:#fff'
+        mermaid.initialize({
+          startOnLoad: false,
+          theme: 'base',
+          securityLevel: 'loose',
+          themeVariables: vars,
+          htmlLabels: true,
+          fontFamily: FONT,
+          flowchart: {
+            htmlLabels: true,
+            useMaxWidth: false,
+            padding: 18,
+            wrappingWidth: 200,
+          },
+        })
+        put(
+          'styled',
+          (await mermaid.render('d3', preparedGreen)).svg,
+          true,
+          true,
+        )
+
+        const report = {
+          v: 'app-stack+v5-layout-safe',
+          note: 'paint rewrites fills only; keeps Mermaid font metrics',
+          palette: STUDIO.nodeFill,
+          def: sample('#def'),
+          studio: sample('#studio'),
+          styledStart: sample('#styled'),
+        }
+        const studioOk = /27272a|39,\s*39,\s*42/i.test(
+          (report.studio?.fillAttr || '') + (report.studio?.computed || ''),
+        )
+        const greenOk = /4caf50|76,\s*175,\s*80/i.test(
+          (report.styledStart?.fillAttr || '') +
+            (report.styledStart?.computed || '') +
+            (report.styledStart?.style || ''),
+        )
+        const defPale = /ececff|236,\s*236,\s*255/i.test(
+          (report.def?.fillAttr || '') + (report.def?.computed || ''),
+        )
+
+        document.getElementById('log').textContent = JSON.stringify(
+          { ...report, studioOk, greenOk, defPale },
+          null,
+          2,
+        )
+        const p = document.createElement('p')
+        p.innerHTML =
+          (studioOk
+            ? '<span class="ok">PASS dark</span>'
+            : '<span class="bad">FAIL dark</span>') +
+          ' · ' +
+          (greenOk
+            ? '<span class="ok">PASS green</span>'
+            : '<span class="bad">FAIL green</span>') +
+          ' · ' +
+          (defPale
+            ? '<span class="ok">PASS raw pale</span>'
+            : '<span class="bad">FAIL raw pale</span>')
+        document.body.appendChild(p)
+      })().catch((e) => {
+        document.getElementById('log').textContent = String(e?.stack || e)
+      })
+    </script>
+  </body>
+</html>

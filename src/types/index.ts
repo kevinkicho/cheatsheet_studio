@@ -26,6 +26,28 @@ export type CanvasItemType =
   | LibraryItemType
   | 'custom-equation'
   | 'custom-image'
+  /** Mermaid process / flowchart card (source in mermaidSource). */
+  | 'process-chart'
+
+/** Mermaid diagram family used for templates + config UI. */
+export type MermaidDiagramKind =
+  | 'flowchart'
+  | 'sequence'
+  | 'state'
+  | 'class'
+  | 'er'
+  | 'pie'
+  | 'mindmap'
+
+export type MermaidThemeId =
+  | 'dark'
+  | 'default'
+  | 'forest'
+  | 'neutral'
+  | 'base'
+
+/** Flowchart / graph direction. */
+export type MermaidFlowDirection = 'TD' | 'LR' | 'BT' | 'RL'
 
 export type TitleAlign = 'left' | 'center' | 'right'
 
@@ -114,6 +136,17 @@ export interface CanvasItem {
   tableMarkdown?: string
   imageUrl?: string
   imagePath?: string
+  /**
+   * Mermaid diagram source (process-chart cards).
+   * Rendered via MermaidView; persisted with the sheet payload.
+   */
+  mermaidSource?: string
+  /** Mermaid theme id for this card (default dark). */
+  mermaidTheme?: MermaidThemeId
+  /** Last diagram kind used in the editor (templates). */
+  mermaidKind?: MermaidDiagramKind
+  /** Flowchart direction when kind is flowchart. */
+  mermaidDirection?: MermaidFlowDirection
   style?: ItemStyle
 }
 

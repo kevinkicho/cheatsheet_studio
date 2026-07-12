@@ -1,0 +1,601 @@
+{
+  "studio": {
+    "nodes": [
+      {
+        "id": "d2-flowchart-Start-0",
+        "foreignObjects": 0,
+        "shapeCount": 4,
+        "shapes": [
+          {
+            "tag": "path",
+            "class": "",
+            "fillAttr": "#1f2020",
+            "strokeAttr": "#cccccc",
+            "style": "fill: rgb(31, 32, 32) !important; stroke: rgb(204, 204, 204) !important;",
+            "computedFill": "rgb(31, 32, 32)",
+            "computedStroke": "rgb(204, 204, 204)",
+            "bbox": {
+              "w": 59,
+              "h": 34,
+              "x": -30,
+              "y": -17
+            }
+          },
+          {
+            "tag": "path",
+            "class": "",
+            "fillAttr": "none",
+            "strokeAttr": "#cccccc",
+            "style": "stroke: rgb(204, 204, 204) !important;",
+            "computedFill": "rgb(31, 32, 32)",
+            "computedStroke": "rgb(204, 204, 204)",
+            "bbox": {
+              "w": 59,
+              "h": 34,
+              "x": -30,
+              "y": -17
+            }
+          },
+          {
+            "tag": "rect",
+            "class": "",
+            "fillAttr": "#1f2020",
+            "strokeAttr": "#cccccc",
+            "style": "fill: rgb(31, 32, 32) !important; stroke: rgb(204, 204, 204) !important;",
+            "computedFill": "rgb(31, 32, 32)",
+            "computedStroke": "rgb(204, 204, 204)",
+            "bbox": {
+              "w": 0,
+              "h": 0,
+              "x": 0,
+              "y": 0
+            }
+          },
+          {
+            "tag": "rect",
+            "class": "background",
+            "fillAttr": "#1f2020",
+            "strokeAttr": "#cccccc",
+            "style": "stroke: rgb(204, 204, 204) !important; fill: rgb(31, 32, 32) !important;",
+            "computedFill": "rgb(31, 32, 32)",
+            "computedStroke": "rgb(204, 204, 204)",
+            "bbox": {
+              "w": 0,
+              "h": 0,
+              "x": 0,
+              "y": 0
+            }
+          }
+        ]
+      },
+      {
+        "id": "d2-flowchart-Input-1",
+        "foreignObjects": 0,
+        "shapeCount": 3,
+        "shapes": [
+          {
+            "tag": "rect",
+            "class": "basic label-container",
+            "fillAttr": "#1f2020",
+            "strokeAttr": "#cccccc",
+            "style": "fill: rgb(31, 32, 32) !important; stroke: rgb(204, 204, 204) !important;",
+            "computedFill": "rgb(31, 32, 32)",
+            "computedStroke": "rgb(204, 204, 204)",
+            "bbox": {
+              "w": 153,
+              "h": 49,
+              "x": -77,
+              "y": -24
+            }
+          },
+          {
+            "tag": "rect",
+            "class": "",
+            "fillAttr": "#1f2020",
+            "strokeAttr": "#cccccc",
+            "style": "fill: rgb(31, 32, 32) !important; stroke: rgb(204, 204, 204) !important;",
+            "computedFill": "rgb(31, 32, 32)",
+            "computedStroke": "rgb(204, 204, 204)",
+            "bbox": {
+              "w": 0,
+              "h": 0,
+              "x": 0,
+              "y": 0
+            }
+          },
+          {
+            "tag": "rect",
+            "class": "background",
+            "fillAttr": "#1f2020",
+            "strokeAttr": "#cccccc",
+            "style": "stroke: rgb(204, 204, 204) !important; fill: rgb(31, 32, 32) !important;",
+            "computedFill": "rgb(31, 32, 32)",
+            "computedStroke": "rgb(204, 204, 204)",
+            "bbox": {
+              "w": 0,
+              "h": 0,
+              "x": 0,
+              "y": 0
+            }
+          }
+        ]
+      },
+      {
+        "id": "d2-flowchart-Check-3",
+        "foreignObjects": 0,
+        "shapeCount": 3,
+        "shapes": [
+          {
+            "tag": "polygon",
+            "class": "label-container",
+            "fillAttr": "#1f2020",
+            "strokeAttr": "#cccccc",
+            "style": "fill: rgb(31, 32, 32) !important; stroke: rgb(204, 204, 204) !important;",
+            "computedFill": "rgb(31, 32, 32)",
+            "computedStroke": "rgb(204, 204, 204)",
+            "bbox": {
+              "w": 91,
+              "h": 91,
+              "x": 0,
+              "y": -91
+            }
+          },
+          {
+            "tag": "rect",
+            "class": "",
+            "fillAttr": "#1f2020",
+            "strokeAttr": "#cccccc",
+            "style": "fill: rgb(31, 32, 32) !important; stroke: rgb(204, 204, 204) !important;",
+            "computedFill": "rgb(31, 32, 32)",
+            "computedStroke": "rgb(204, 204, 204)",
+            "bbox": {
+              "w": 0,
+              "h": 0,
+              "x": 0,
+              "y": 0
+            }
+          },
+          {
+            "tag": "rect",
+            "class": "background",
+            "fillAttr": "#1f2020",
+            "strokeAttr": "#cccccc",
+            "style": "stroke: rgb(204, 204, 204) !important; fill: rgb(31, 32, 32) !important;",
+            "computedFill": "rgb(31, 32, 32)",
+            "computedStroke": "rgb(204, 204, 204)",
+            "bbox": {
+              "w": 0,
+              "h": 0,
+              "x": 0,
+              "y": 0
+            }
+          }
+        ]
+      },
+      {
+        "id": "d2-flowchart-Process-5",
+        "foreignObjects": 0,
+        "shapeCount": 3,
+        "shapes": [
+          {
+            "tag": "rect",
+            "class": "basic label-container",
+            "fillAttr": "#1f2020",
+            "strokeAttr": "#cccccc",
+            "style": "fill: rgb(31, 32, 32) !important; stroke: rgb(204, 204, 204) !important;",
+            "computedFill": "rgb(31, 32, 32)",
+            "computedStroke": "rgb(204, 204, 204)",
+            "bbox": {
+              "w": 150,
+              "h": 49,
+              "x": -75,
+              "y": -24
+            }
+          },
+          {
+            "tag": "rect",
+            "class": "",
+            "fillAttr": "#1f2020",
+            "strokeAttr": "#cccccc",
+            "style": "fill: rgb(31, 32, 32) !important; stroke: rgb(204, 204, 204) !important;",
+            "computedFill": "rgb(31, 32, 32)",
+            "computedStroke": "rgb(204, 204, 204)",
+            "bbox": {
+              "w": 0,
+              "h": 0,
+              "x": 0,
+              "y": 0
+            }
+          },
+          {
+            "tag": "rect",
+            "class": "background",
+            "fillAttr": "#1f2020",
+            "strokeAttr": "#cccccc",
+            "style": "stroke: rgb(204, 204, 204) !important; fill: rgb(31, 32, 32) !important;",
+            "computedFill": "rgb(31, 32, 32)",
+            "computedStroke": "rgb(204, 204, 204)",
+            "bbox": {
+              "w": 0,
+              "h": 0,
+              "x": 0,
+              "y": 0
+            }
+          }
+        ]
+      },
+      {
+        "id": "d2-flowchart-Done-9",
+        "foreignObjects": 0,
+        "shapeCount": 4,
+        "shapes": [
+          {
+            "tag": "path",
+            "class": "",
+            "fillAttr": "#1f2020",
+            "strokeAttr": "#cccccc",
+            "style": "fill: rgb(31, 32, 32) !important; stroke: rgb(204, 204, 204) !important;",
+            "computedFill": "rgb(31, 32, 32)",
+            "computedStroke": "rgb(204, 204, 204)",
+            "bbox": {
+              "w": 60,
+              "h": 34,
+              "x": -30,
+              "y": -17
+            }
+          },
+          {
+            "tag": "path",
+            "class": "",
+            "fillAttr": "none",
+            "strokeAttr": "#cccccc",
+            "style": "stroke: rgb(204, 204, 204) !important;",
+            "computedFill": "rgb(31, 32, 32)",
+            "computedStroke": "rgb(204, 204, 204)",
+            "bbox": {
+              "w": 60,
+              "h": 34,
+              "x": -30,
+              "y": -17
+            }
+          },
+          {
+            "tag": "rect",
+            "class": "",
+            "fillAttr": "#1f2020",
+            "strokeAttr": "#cccccc",
+            "style": "fill: rgb(31, 32, 32) !important; stroke: rgb(204, 204, 204) !important;",
+            "computedFill": "rgb(31, 32, 32)",
+            "computedStroke": "rgb(204, 204, 204)",
+            "bbox": {
+              "w": 0,
+              "h": 0,
+              "x": 0,
+              "y": 0
+            }
+          },
+          {
+            "tag": "rect",
+            "class": "background",
+            "fillAttr": "#1f2020",
+            "strokeAttr": "#cccccc",
+            "style": "stroke: rgb(204, 204, 204) !important; fill: rgb(31, 32, 32) !important;",
+            "computedFill": "rgb(31, 32, 32)",
+            "computedStroke": "rgb(204, 204, 204)",
+            "bbox": {
+              "w": 0,
+              "h": 0,
+              "x": 0,
+              "y": 0
+            }
+          }
+        ]
+      }
+    ],
+    "styleTags": [
+      "#d2{font-family:\"trebuchet ms\",verdana,arial,sans-serif;font-size:16px;fill:#e0dfdf;}@keyframes edge-animation-frame{from{stroke-dashoffset:0;}}@keyframes dash{to{stroke-dashoffset:0;}}#d2 .edge-animation-slow{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 50s linear infinite;stroke-linecap:round;}#d2 .edge-animation-fast{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 20s linear infinite;stroke-linecap:round;}#d2 .error-icon{fill:hsl(0, 1.5873015873%, 17.3529411765%);}#d2 .error-text{fill:rgb(210.0476190475, 211.4523809523, 211.4523809523);stroke:rgb(210.0476190475, 211.4523809523, 211.4523809523);}#d2 .edge-thickness-normal{stroke-width:1px;}#d2 .edge-thickness-thick{stroke-width:3.5px;}#d2 .edge-pattern-solid{stroke-dasharray:0;}#d2 .edge-thickne"
+    ],
+    "svgClasses": "flowchart",
+    "svgStyle": null
+  },
+  "def": {
+    "nodes": [
+      {
+        "id": "d1-flowchart-Start-0",
+        "foreignObjects": 0,
+        "shapeCount": 4,
+        "shapes": [
+          {
+            "tag": "path",
+            "class": "",
+            "fillAttr": "#ECECFF",
+            "strokeAttr": "none",
+            "style": "",
+            "computedFill": "rgb(236, 236, 255)",
+            "computedStroke": "rgb(147, 112, 219)",
+            "bbox": {
+              "w": 59,
+              "h": 34,
+              "x": -30,
+              "y": -17
+            }
+          },
+          {
+            "tag": "path",
+            "class": "",
+            "fillAttr": "none",
+            "strokeAttr": "#9370DB",
+            "style": "",
+            "computedFill": "rgb(236, 236, 255)",
+            "computedStroke": "rgb(147, 112, 219)",
+            "bbox": {
+              "w": 59,
+              "h": 34,
+              "x": -30,
+              "y": -17
+            }
+          },
+          {
+            "tag": "rect",
+            "class": "",
+            "fillAttr": null,
+            "strokeAttr": null,
+            "style": "",
+            "computedFill": "rgb(236, 236, 255)",
+            "computedStroke": "rgb(147, 112, 219)",
+            "bbox": {
+              "w": 0,
+              "h": 0,
+              "x": 0,
+              "y": 0
+            }
+          },
+          {
+            "tag": "rect",
+            "class": "background",
+            "fillAttr": null,
+            "strokeAttr": null,
+            "style": "stroke: none",
+            "computedFill": "rgb(236, 236, 255)",
+            "computedStroke": "none",
+            "bbox": {
+              "w": 0,
+              "h": 0,
+              "x": 0,
+              "y": 0
+            }
+          }
+        ]
+      },
+      {
+        "id": "d1-flowchart-Input-1",
+        "foreignObjects": 0,
+        "shapeCount": 3,
+        "shapes": [
+          {
+            "tag": "rect",
+            "class": "basic label-container",
+            "fillAttr": null,
+            "strokeAttr": null,
+            "style": "",
+            "computedFill": "rgb(236, 236, 255)",
+            "computedStroke": "rgb(147, 112, 219)",
+            "bbox": {
+              "w": 153,
+              "h": 49,
+              "x": -77,
+              "y": -24
+            }
+          },
+          {
+            "tag": "rect",
+            "class": "",
+            "fillAttr": null,
+            "strokeAttr": null,
+            "style": "",
+            "computedFill": "rgb(236, 236, 255)",
+            "computedStroke": "rgb(147, 112, 219)",
+            "bbox": {
+              "w": 0,
+              "h": 0,
+              "x": 0,
+              "y": 0
+            }
+          },
+          {
+            "tag": "rect",
+            "class": "background",
+            "fillAttr": null,
+            "strokeAttr": null,
+            "style": "stroke: none",
+            "computedFill": "rgb(236, 236, 255)",
+            "computedStroke": "none",
+            "bbox": {
+              "w": 0,
+              "h": 0,
+              "x": 0,
+              "y": 0
+            }
+          }
+        ]
+      },
+      {
+        "id": "d1-flowchart-Check-3",
+        "foreignObjects": 0,
+        "shapeCount": 3,
+        "shapes": [
+          {
+            "tag": "polygon",
+            "class": "label-container",
+            "fillAttr": null,
+            "strokeAttr": null,
+            "style": "",
+            "computedFill": "rgb(236, 236, 255)",
+            "computedStroke": "rgb(147, 112, 219)",
+            "bbox": {
+              "w": 91,
+              "h": 91,
+              "x": 0,
+              "y": -91
+            }
+          },
+          {
+            "tag": "rect",
+            "class": "",
+            "fillAttr": null,
+            "strokeAttr": null,
+            "style": "",
+            "computedFill": "rgb(236, 236, 255)",
+            "computedStroke": "rgb(147, 112, 219)",
+            "bbox": {
+              "w": 0,
+              "h": 0,
+              "x": 0,
+              "y": 0
+            }
+          },
+          {
+            "tag": "rect",
+            "class": "background",
+            "fillAttr": null,
+            "strokeAttr": null,
+            "style": "stroke: none",
+            "computedFill": "rgb(236, 236, 255)",
+            "computedStroke": "none",
+            "bbox": {
+              "w": 0,
+              "h": 0,
+              "x": 0,
+              "y": 0
+            }
+          }
+        ]
+      },
+      {
+        "id": "d1-flowchart-Process-5",
+        "foreignObjects": 0,
+        "shapeCount": 3,
+        "shapes": [
+          {
+            "tag": "rect",
+            "class": "basic label-container",
+            "fillAttr": null,
+            "strokeAttr": null,
+            "style": "",
+            "computedFill": "rgb(236, 236, 255)",
+            "computedStroke": "rgb(147, 112, 219)",
+            "bbox": {
+              "w": 150,
+              "h": 49,
+              "x": -75,
+              "y": -24
+            }
+          },
+          {
+            "tag": "rect",
+            "class": "",
+            "fillAttr": null,
+            "strokeAttr": null,
+            "style": "",
+            "computedFill": "rgb(236, 236, 255)",
+            "computedStroke": "rgb(147, 112, 219)",
+            "bbox": {
+              "w": 0,
+              "h": 0,
+              "x": 0,
+              "y": 0
+            }
+          },
+          {
+            "tag": "rect",
+            "class": "background",
+            "fillAttr": null,
+            "strokeAttr": null,
+            "style": "stroke: none",
+            "computedFill": "rgb(236, 236, 255)",
+            "computedStroke": "none",
+            "bbox": {
+              "w": 0,
+              "h": 0,
+              "x": 0,
+              "y": 0
+            }
+          }
+        ]
+      },
+      {
+        "id": "d1-flowchart-Done-9",
+        "foreignObjects": 0,
+        "shapeCount": 4,
+        "shapes": [
+          {
+            "tag": "path",
+            "class": "",
+            "fillAttr": "#ECECFF",
+            "strokeAttr": "none",
+            "style": "",
+            "computedFill": "rgb(236, 236, 255)",
+            "computedStroke": "rgb(147, 112, 219)",
+            "bbox": {
+              "w": 60,
+              "h": 34,
+              "x": -30,
+              "y": -17
+            }
+          },
+          {
+            "tag": "path",
+            "class": "",
+            "fillAttr": "none",
+            "strokeAttr": "#9370DB",
+            "style": "",
+            "computedFill": "rgb(236, 236, 255)",
+            "computedStroke": "rgb(147, 112, 219)",
+            "bbox": {
+              "w": 60,
+              "h": 34,
+              "x": -30,
+              "y": -17
+            }
+          },
+          {
+            "tag": "rect",
+            "class": "",
+            "fillAttr": null,
+            "strokeAttr": null,
+            "style": "",
+            "computedFill": "rgb(236, 236, 255)",
+            "computedStroke": "rgb(147, 112, 219)",
+            "bbox": {
+              "w": 0,
+              "h": 0,
+              "x": 0,
+              "y": 0
+            }
+          },
+          {
+            "tag": "rect",
+            "class": "background",
+            "fillAttr": null,
+            "strokeAttr": null,
+            "style": "stroke: none",
+            "computedFill": "rgb(236, 236, 255)",
+            "computedStroke": "none",
+            "bbox": {
+              "w": 0,
+              "h": 0,
+              "x": 0,
+              "y": 0
+            }
+          }
+        ]
+      }
+    ],
+    "styleTags": [
+      "#d1{font-family:\"trebuchet ms\",verdana,arial,sans-serif;font-size:16px;fill:#333;}@keyframes edge-animation-frame{from{stroke-dashoffset:0;}}@keyframes dash{to{stroke-dashoffset:0;}}#d1 .edge-animation-slow{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 50s linear infinite;stroke-linecap:round;}#d1 .edge-animation-fast{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 20s linear infinite;stroke-linecap:round;}#d1 .error-icon{fill:#552222;}#d1 .error-text{fill:#552222;stroke:#552222;}#d1 .edge-thickness-normal{stroke-width:1px;}#d1 .edge-thickness-thick{stroke-width:3.5px;}#d1 .edge-pattern-solid{stroke-dasharray:0;}#d1 .edge-thickness-invisible{stroke-width:0;fill:none;}#d1 .edge-pattern-dashed{stroke-dasharray:3;}#d1 .edge-pattern-dotted{stroke-dasha"
+    ],
+    "svgClasses": "flowchart",
+    "svgStyle": null
+  },
+  "log": "{\n  \"v\": 5,\n  \"restoredTo\": \"verify-v5-again layout + hard paint\",\n  \"def\": {\n    \"fillAttr\": \"#ECECFF\",\n    \"style\": \"\",\n    \"computed\": \"rgb(236, 236, 255)\"\n  },\n  \"studio\": {\n    \"fillAttr\": \"#1f2020\",\n    \"style\": \"fill: rgb(31, 32, 32) !important; stroke: rgb(204, 204, 204) !important;\",\n    \"computed\": \"rgb(31, 32, 32)\"\n  },\n  \"styledStart\": {\n    \"fillAttr\": \"#4CAF50\",\n    \"style\": \"fill:#4CAF50 !important;stroke:#333 !important;stroke-width:2px !important\",\n    \"computed\": \"rgb(76, 175, 80)\"\n  }\n}"
+}

@@ -1,0 +1,824 @@
+{
+  "generatedAt": "2026-07-12T01:05:14.168Z",
+  "mermaidVersion": "11.16.0",
+  "method": "Playwright render + #host PNG screenshot + System.Drawing grid sample (no canvas getImageData)",
+  "criteria": {
+    "pale": "luma > 0.55",
+    "dark": "0.02 < luma < 0.4",
+    "successNonControl": "dark>=4 AND not (pale>dark OR white>=4 OR lavender>=3) AND centerDark>=1",
+    "successControl": "pale>=3 OR lavender>=2 OR centerPale>=2"
+  },
+  "results": [
+    {
+      "id": "1-default-control",
+      "label": "CONTROL: theme default (expect pale)",
+      "expectPale": true,
+      "ok": true,
+      "cfg": {
+        "theme": "default",
+        "mainBkg": "#ECECFF",
+        "primaryColor": "#ECECFF"
+      },
+      "fillAttrs": [
+        {
+          "fill": "#ECECFF",
+          "computed": "rgb(236, 236, 255)",
+          "tag": "path",
+          "cls": null
+        },
+        {
+          "fill": "none",
+          "computed": "rgb(236, 236, 255)",
+          "tag": "path",
+          "cls": null
+        },
+        {
+          "fill": null,
+          "computed": "rgb(236, 236, 255)",
+          "tag": "rect",
+          "cls": null
+        },
+        {
+          "fill": null,
+          "computed": "rgb(236, 236, 255)",
+          "tag": "rect",
+          "cls": "basic label-container"
+        },
+        {
+          "fill": null,
+          "computed": "rgb(236, 236, 255)",
+          "tag": "rect",
+          "cls": null
+        },
+        {
+          "fill": null,
+          "computed": "rgb(236, 236, 255)",
+          "tag": "rect",
+          "cls": null
+        }
+      ],
+      "grid": {
+        "total": 60,
+        "nodeish": 60,
+        "pale": 9,
+        "dark": 50,
+        "white": 6,
+        "lavender": 7
+      },
+      "center": {
+        "samples": [
+          {
+            "x": 80,
+            "y": 40,
+            "r": 18,
+            "g": 20,
+            "b": 26
+          },
+          {
+            "x": 100,
+            "y": 80,
+            "r": 18,
+            "g": 20,
+            "b": 26
+          },
+          {
+            "x": 100,
+            "y": 120,
+            "r": 18,
+            "g": 20,
+            "b": 26
+          },
+          {
+            "x": 100,
+            "y": 160,
+            "r": 236,
+            "g": 236,
+            "b": 255
+          },
+          {
+            "x": 100,
+            "y": 200,
+            "r": 18,
+            "g": 20,
+            "b": 26
+          },
+          {
+            "x": 100,
+            "y": 240,
+            "r": 18,
+            "g": 20,
+            "b": 26
+          },
+          {
+            "x": 100,
+            "y": 280,
+            "r": 236,
+            "g": 236,
+            "b": 255
+          },
+          {
+            "x": 100,
+            "y": 320,
+            "r": 236,
+            "g": 236,
+            "b": 255
+          }
+        ],
+        "pale": 3,
+        "dark": 5
+      },
+      "avgPale": {
+        "r": 232,
+        "g": 231,
+        "b": 247
+      },
+      "avgDark": {
+        "r": 20,
+        "g": 21,
+        "b": 27
+      },
+      "screenshot": "screenshots/theme-trials/1-default-control.png",
+      "screenshotHost": "screenshots/theme-trials/1-default-control-host.png"
+    },
+    {
+      "id": "2-builtin-dark",
+      "label": "TRY1: theme dark only",
+      "expectPale": false,
+      "ok": true,
+      "cfg": {
+        "theme": "dark",
+        "mainBkg": "#1f2020",
+        "primaryColor": "#1f2020"
+      },
+      "fillAttrs": [
+        {
+          "fill": "#1f2020",
+          "computed": "rgb(31, 32, 32)",
+          "tag": "path",
+          "cls": null
+        },
+        {
+          "fill": "none",
+          "computed": "rgb(31, 32, 32)",
+          "tag": "path",
+          "cls": null
+        },
+        {
+          "fill": null,
+          "computed": "rgb(31, 32, 32)",
+          "tag": "rect",
+          "cls": null
+        },
+        {
+          "fill": null,
+          "computed": "rgb(31, 32, 32)",
+          "tag": "rect",
+          "cls": "basic label-container"
+        },
+        {
+          "fill": null,
+          "computed": "rgb(31, 32, 32)",
+          "tag": "rect",
+          "cls": null
+        },
+        {
+          "fill": null,
+          "computed": "rgb(31, 32, 32)",
+          "tag": "rect",
+          "cls": null
+        }
+      ],
+      "grid": {
+        "total": 60,
+        "nodeish": 60,
+        "pale": 2,
+        "dark": 58,
+        "white": 0,
+        "lavender": 0
+      },
+      "center": {
+        "samples": [
+          {
+            "x": 80,
+            "y": 40,
+            "r": 18,
+            "g": 20,
+            "b": 26
+          },
+          {
+            "x": 100,
+            "y": 80,
+            "r": 18,
+            "g": 20,
+            "b": 26
+          },
+          {
+            "x": 100,
+            "y": 120,
+            "r": 18,
+            "g": 20,
+            "b": 26
+          },
+          {
+            "x": 100,
+            "y": 160,
+            "r": 31,
+            "g": 32,
+            "b": 32
+          },
+          {
+            "x": 100,
+            "y": 200,
+            "r": 18,
+            "g": 20,
+            "b": 26
+          },
+          {
+            "x": 100,
+            "y": 240,
+            "r": 18,
+            "g": 20,
+            "b": 26
+          },
+          {
+            "x": 100,
+            "y": 280,
+            "r": 31,
+            "g": 32,
+            "b": 32
+          },
+          {
+            "x": 100,
+            "y": 320,
+            "r": 31,
+            "g": 32,
+            "b": 32
+          }
+        ],
+        "pale": 0,
+        "dark": 8
+      },
+      "avgPale": {
+        "r": 150,
+        "g": 188,
+        "b": 204
+      },
+      "avgDark": {
+        "r": 21,
+        "g": 23,
+        "b": 29
+      },
+      "screenshot": "screenshots/theme-trials/2-builtin-dark.png",
+      "screenshotHost": "screenshots/theme-trials/2-builtin-dark-host.png"
+    },
+    {
+      "id": "3-base-variables",
+      "label": "TRY2a: theme base + themeVariables",
+      "expectPale": false,
+      "ok": true,
+      "cfg": {
+        "theme": "base",
+        "mainBkg": "#27272a",
+        "primaryColor": "#27272a",
+        "darkMode": true
+      },
+      "fillAttrs": [
+        {
+          "fill": "#27272a",
+          "computed": "rgb(39, 39, 42)",
+          "tag": "path",
+          "cls": null
+        },
+        {
+          "fill": "none",
+          "computed": "rgb(39, 39, 42)",
+          "tag": "path",
+          "cls": null
+        },
+        {
+          "fill": null,
+          "computed": "rgb(39, 39, 42)",
+          "tag": "rect",
+          "cls": null
+        },
+        {
+          "fill": null,
+          "computed": "rgb(39, 39, 42)",
+          "tag": "rect",
+          "cls": "basic label-container"
+        },
+        {
+          "fill": null,
+          "computed": "rgb(39, 39, 42)",
+          "tag": "rect",
+          "cls": null
+        },
+        {
+          "fill": null,
+          "computed": "rgb(39, 39, 42)",
+          "tag": "rect",
+          "cls": null
+        }
+      ],
+      "grid": {
+        "total": 60,
+        "nodeish": 60,
+        "pale": 1,
+        "dark": 59,
+        "white": 0,
+        "lavender": 0
+      },
+      "center": {
+        "samples": [
+          {
+            "x": 80,
+            "y": 40,
+            "r": 18,
+            "g": 20,
+            "b": 26
+          },
+          {
+            "x": 100,
+            "y": 80,
+            "r": 18,
+            "g": 20,
+            "b": 26
+          },
+          {
+            "x": 100,
+            "y": 120,
+            "r": 39,
+            "g": 39,
+            "b": 42
+          },
+          {
+            "x": 100,
+            "y": 160,
+            "r": 39,
+            "g": 39,
+            "b": 42
+          },
+          {
+            "x": 100,
+            "y": 200,
+            "r": 18,
+            "g": 20,
+            "b": 26
+          },
+          {
+            "x": 100,
+            "y": 240,
+            "r": 159,
+            "g": 159,
+            "b": 168
+          },
+          {
+            "x": 100,
+            "y": 280,
+            "r": 39,
+            "g": 39,
+            "b": 42
+          },
+          {
+            "x": 100,
+            "y": 320,
+            "r": 39,
+            "g": 39,
+            "b": 42
+          }
+        ],
+        "pale": 1,
+        "dark": 7
+      },
+      "avgPale": {
+        "r": 244,
+        "g": 211,
+        "b": 168
+      },
+      "avgDark": {
+        "r": 23,
+        "g": 25,
+        "b": 31
+      },
+      "screenshot": "screenshots/theme-trials/3-base-variables.png",
+      "screenshotHost": "screenshots/theme-trials/3-base-variables-host.png"
+    },
+    {
+      "id": "4-frontmatter",
+      "label": "TRY2b: frontmatter base + themeVariables",
+      "expectPale": false,
+      "ok": true,
+      "cfg": {
+        "theme": "default",
+        "mainBkg": "#ECECFF",
+        "primaryColor": "#ECECFF"
+      },
+      "fillAttrs": [
+        {
+          "fill": "#27272a",
+          "computed": "rgb(39, 39, 42)",
+          "tag": "path",
+          "cls": null
+        },
+        {
+          "fill": "none",
+          "computed": "rgb(39, 39, 42)",
+          "tag": "path",
+          "cls": null
+        },
+        {
+          "fill": null,
+          "computed": "rgb(39, 39, 42)",
+          "tag": "rect",
+          "cls": null
+        },
+        {
+          "fill": null,
+          "computed": "rgb(39, 39, 42)",
+          "tag": "rect",
+          "cls": "basic label-container"
+        },
+        {
+          "fill": null,
+          "computed": "rgb(39, 39, 42)",
+          "tag": "rect",
+          "cls": null
+        },
+        {
+          "fill": null,
+          "computed": "rgb(39, 39, 42)",
+          "tag": "rect",
+          "cls": null
+        }
+      ],
+      "grid": {
+        "total": 60,
+        "nodeish": 60,
+        "pale": 2,
+        "dark": 58,
+        "white": 0,
+        "lavender": 1
+      },
+      "center": {
+        "samples": [
+          {
+            "x": 80,
+            "y": 40,
+            "r": 18,
+            "g": 20,
+            "b": 26
+          },
+          {
+            "x": 100,
+            "y": 80,
+            "r": 18,
+            "g": 20,
+            "b": 26
+          },
+          {
+            "x": 100,
+            "y": 120,
+            "r": 18,
+            "g": 20,
+            "b": 26
+          },
+          {
+            "x": 100,
+            "y": 160,
+            "r": 39,
+            "g": 39,
+            "b": 42
+          },
+          {
+            "x": 100,
+            "y": 200,
+            "r": 18,
+            "g": 20,
+            "b": 26
+          },
+          {
+            "x": 100,
+            "y": 240,
+            "r": 18,
+            "g": 20,
+            "b": 26
+          },
+          {
+            "x": 100,
+            "y": 280,
+            "r": 39,
+            "g": 39,
+            "b": 42
+          },
+          {
+            "x": 100,
+            "y": 320,
+            "r": 39,
+            "g": 39,
+            "b": 42
+          }
+        ],
+        "pale": 0,
+        "dark": 8
+      },
+      "avgPale": {
+        "r": 189,
+        "g": 228,
+        "b": 245
+      },
+      "avgDark": {
+        "r": 22,
+        "g": 24,
+        "b": 31
+      },
+      "screenshot": "screenshots/theme-trials/4-frontmatter.png",
+      "screenshotHost": "screenshots/theme-trials/4-frontmatter-host.png"
+    },
+    {
+      "id": "5-classdef",
+      "label": "TRY3: classDef default + base + vars",
+      "expectPale": false,
+      "ok": true,
+      "cfg": {
+        "theme": "base",
+        "mainBkg": "#27272a",
+        "primaryColor": "#27272a",
+        "darkMode": true
+      },
+      "fillAttrs": [
+        {
+          "fill": "#27272a",
+          "computed": "rgb(39, 39, 42)",
+          "tag": "path",
+          "cls": null
+        },
+        {
+          "fill": "none",
+          "computed": "rgb(39, 39, 42)",
+          "tag": "path",
+          "cls": null
+        },
+        {
+          "fill": null,
+          "computed": "rgb(39, 39, 42)",
+          "tag": "rect",
+          "cls": null
+        },
+        {
+          "fill": null,
+          "computed": "rgb(39, 39, 42)",
+          "tag": "rect",
+          "cls": "basic label-container"
+        },
+        {
+          "fill": null,
+          "computed": "rgb(39, 39, 42)",
+          "tag": "rect",
+          "cls": null
+        },
+        {
+          "fill": null,
+          "computed": "rgb(39, 39, 42)",
+          "tag": "rect",
+          "cls": null
+        }
+      ],
+      "grid": {
+        "total": 60,
+        "nodeish": 60,
+        "pale": 1,
+        "dark": 59,
+        "white": 0,
+        "lavender": 0
+      },
+      "center": {
+        "samples": [
+          {
+            "x": 80,
+            "y": 40,
+            "r": 18,
+            "g": 20,
+            "b": 26
+          },
+          {
+            "x": 100,
+            "y": 80,
+            "r": 18,
+            "g": 20,
+            "b": 26
+          },
+          {
+            "x": 100,
+            "y": 120,
+            "r": 39,
+            "g": 39,
+            "b": 42
+          },
+          {
+            "x": 100,
+            "y": 160,
+            "r": 39,
+            "g": 39,
+            "b": 42
+          },
+          {
+            "x": 100,
+            "y": 200,
+            "r": 18,
+            "g": 20,
+            "b": 26
+          },
+          {
+            "x": 100,
+            "y": 240,
+            "r": 159,
+            "g": 159,
+            "b": 168
+          },
+          {
+            "x": 100,
+            "y": 280,
+            "r": 39,
+            "g": 39,
+            "b": 42
+          },
+          {
+            "x": 100,
+            "y": 320,
+            "r": 39,
+            "g": 39,
+            "b": 42
+          }
+        ],
+        "pale": 1,
+        "dark": 7
+      },
+      "avgPale": {
+        "r": 244,
+        "g": 211,
+        "b": 168
+      },
+      "avgDark": {
+        "r": 23,
+        "g": 25,
+        "b": 31
+      },
+      "screenshot": "screenshots/theme-trials/5-classdef.png",
+      "screenshotHost": "screenshots/theme-trials/5-classdef-host.png"
+    },
+    {
+      "id": "6-frontmatter-classdef",
+      "label": "TRY4: frontmatter + classDef",
+      "expectPale": false,
+      "ok": true,
+      "cfg": {
+        "theme": "default",
+        "mainBkg": "#ECECFF",
+        "primaryColor": "#ECECFF"
+      },
+      "fillAttrs": [
+        {
+          "fill": "#27272a",
+          "computed": "rgb(39, 39, 42)",
+          "tag": "path",
+          "cls": null
+        },
+        {
+          "fill": "none",
+          "computed": "rgb(39, 39, 42)",
+          "tag": "path",
+          "cls": null
+        },
+        {
+          "fill": null,
+          "computed": "rgb(39, 39, 42)",
+          "tag": "rect",
+          "cls": null
+        },
+        {
+          "fill": null,
+          "computed": "rgb(39, 39, 42)",
+          "tag": "rect",
+          "cls": "basic label-container"
+        },
+        {
+          "fill": null,
+          "computed": "rgb(39, 39, 42)",
+          "tag": "rect",
+          "cls": null
+        },
+        {
+          "fill": null,
+          "computed": "rgb(39, 39, 42)",
+          "tag": "rect",
+          "cls": null
+        }
+      ],
+      "grid": {
+        "total": 60,
+        "nodeish": 60,
+        "pale": 2,
+        "dark": 58,
+        "white": 0,
+        "lavender": 1
+      },
+      "center": {
+        "samples": [
+          {
+            "x": 80,
+            "y": 40,
+            "r": 18,
+            "g": 20,
+            "b": 26
+          },
+          {
+            "x": 100,
+            "y": 80,
+            "r": 18,
+            "g": 20,
+            "b": 26
+          },
+          {
+            "x": 100,
+            "y": 120,
+            "r": 18,
+            "g": 20,
+            "b": 26
+          },
+          {
+            "x": 100,
+            "y": 160,
+            "r": 39,
+            "g": 39,
+            "b": 42
+          },
+          {
+            "x": 100,
+            "y": 200,
+            "r": 18,
+            "g": 20,
+            "b": 26
+          },
+          {
+            "x": 100,
+            "y": 240,
+            "r": 18,
+            "g": 20,
+            "b": 26
+          },
+          {
+            "x": 100,
+            "y": 280,
+            "r": 39,
+            "g": 39,
+            "b": 42
+          },
+          {
+            "x": 100,
+            "y": 320,
+            "r": 39,
+            "g": 39,
+            "b": 42
+          }
+        ],
+        "pale": 0,
+        "dark": 8
+      },
+      "avgPale": {
+        "r": 189,
+        "g": 228,
+        "b": 245
+      },
+      "avgDark": {
+        "r": 22,
+        "g": 24,
+        "b": 31
+      },
+      "screenshot": "screenshots/theme-trials/6-frontmatter-classdef.png",
+      "screenshotHost": "screenshots/theme-trials/6-frontmatter-classdef-host.png"
+    }
+  ],
+  "winners": [
+    {
+      "id": "2-builtin-dark",
+      "label": "TRY1: theme dark only"
+    },
+    {
+      "id": "3-base-variables",
+      "label": "TRY2a: theme base + themeVariables"
+    },
+    {
+      "id": "4-frontmatter",
+      "label": "TRY2b: frontmatter base + themeVariables"
+    },
+    {
+      "id": "5-classdef",
+      "label": "TRY3: classDef default + base + vars"
+    },
+    {
+      "id": "6-frontmatter-classdef",
+      "label": "TRY4: frontmatter + classDef"
+    }
+  ],
+  "recommendation": "Apply first winner in app: 2-builtin-dark — TRY1: theme dark only"
+}

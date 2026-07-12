@@ -48,14 +48,21 @@ export function withBorderStyle(
 export function isFigureLike(
   item: Pick<
     CanvasItem,
-    'type' | 'imageUrl' | 'latex' | 'tableMarkdown'
+    'type' | 'imageUrl' | 'latex' | 'tableMarkdown' | 'mermaidSource'
   >,
 ): boolean {
+  if (item.type === 'process-chart' || item.mermaidSource) return false
   return (
     item.type === 'figure' ||
     item.type === 'custom-image' ||
     (Boolean(item.imageUrl) && !item.latex && !item.tableMarkdown)
   )
+}
+
+export function isProcessChart(
+  item: Pick<CanvasItem, 'type' | 'mermaidSource'>,
+): boolean {
+  return item.type === 'process-chart' || Boolean(item.mermaidSource)
 }
 
 /**
@@ -165,17 +172,21 @@ export function newCardBase(
   const figure =
     type === 'figure' ||
     type === 'custom-image' ||
-    (Boolean(partial.imageUrl) && !partial.latex && !partial.tableMarkdown)
+    (Boolean(partial.imageUrl) &&
+      !partial.latex &&
+      !partial.tableMarkdown &&
+      !partial.mermaidSource)
+  const processChart = type === 'process-chart' || Boolean(partial.mermaidSource)
 
   return normalizeCanvasItem({
     type,
-    contentFill: CARD_DEFAULTS.contentFill,
+    contentFill: processChart ? false : CARD_DEFAULTS.contentFill,
     showTitle: CARD_DEFAULTS.showTitle,
     titleAlign: CARD_DEFAULTS.titleAlign,
-    autoFit: !figure,
+    autoFit: !figure && !processChart,
     style: figure
       ? solidPanelStyle({ padding: 8 })
-      : solidPanelStyle(),
+      : solidPanelStyle({ padding: processChart ? 10 : undefined }),
     ...partial,
     // Solid panel for equations AND figures unless caller forces transparent
     transparentBackground: partial.transparentBackground === true,
