@@ -27,8 +27,10 @@ function CanvasInner({ onOpenPalette }: CanvasInnerProps) {
     undo, redo, duplicateSelected, copySelected, pasteClipboard,
     pushHistory, assignToSubgraph,
     drawingShape, setDrawingShape,
+    interactionMode, setInteractionMode,
   } = useFlowStore()
   const { screenToFlowPosition } = useReactFlow()
+  const panMode = !drawingShape && interactionMode === 'pan'
 
   // ── Draw-mode state ─────────────────────────────────────────────────────────
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null)
@@ -41,11 +43,22 @@ function CanvasInner({ onOpenPalette }: CanvasInnerProps) {
       const target = e.target as HTMLElement
       const isTyping = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA'
 
-      // Escape → cancel draw mode
+      // Escape → cancel draw mode → back to select
       if (e.key === 'Escape') {
         setDrawingShape(null)
+        setInteractionMode('select')
         setDragStart(null)
         setDragCurrent(null)
+        return
+      }
+
+      // H → pan (hand), V → select (when not typing)
+      if (!isTyping && (e.key === 'h' || e.key === 'H')) {
+        setInteractionMode('pan')
+        return
+      }
+      if (!isTyping && (e.key === 'v' || e.key === 'V')) {
+        setInteractionMode('select')
         return
       }
 
@@ -101,7 +114,17 @@ function CanvasInner({ onOpenPalette }: CanvasInnerProps) {
     }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
-  }, [addNode, undo, redo, duplicateSelected, copySelected, pasteClipboard, setDrawingShape, onOpenPalette])
+  }, [
+    addNode,
+    undo,
+    redo,
+    duplicateSelected,
+    copySelected,
+    pasteClipboard,
+    setDrawingShape,
+    setInteractionMode,
+    onOpenPalette,
+  ])
 
   // ── Double-click on blank canvas → add node at cursor ─────────────────────
   const handleDoubleClick = (e: MouseEvent) => {
@@ -254,7 +277,9 @@ function CanvasInner({ onOpenPalette }: CanvasInnerProps) {
   return (
     <div
       ref={wrapperRef}
-      className={`w-full h-full relative ${drawingShape ? 'cursor-crosshair' : ''}`}
+      className={`w-full h-full relative ${
+        drawingShape ? 'cursor-crosshair' : panMode ? 'cursor-grab' : ''
+      }`}
       onDoubleClick={handleDoubleClick}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
@@ -271,30 +296,52 @@ function CanvasInner({ onOpenPalette }: CanvasInnerProps) {
         onNodeDragStop={handleNodeDragStop}
         fitView
         deleteKeyCode={['Backspace', 'Delete']}
-        panOnDrag={drawingShape ? false : [1, 2]}
-        selectionOnDrag={!drawingShape}
+        // Draw: no pan. Pan mode: left-drag pans. Select: middle/right pan only.
+        panOnDrag={drawingShape ? false : panMode ? true : [1, 2]}
+        selectionOnDrag={!drawingShape && !panMode}
         multiSelectionKeyCode={['Shift', 'Control']}
-        nodesDraggable={!drawingShape}
+        nodesDraggable={!drawingShape && !panMode}
+        elementsSelectable={!drawingShape}
+        panOnScroll
+        zoomOnScroll
         style={{ background: 'var(--neu-bg)' }}
       >
-        <Background variant={BackgroundVariant.Dots} gap={24} size={2} color="#d1d9e6" />
+        <Background
+          variant={BackgroundVariant.Dots}
+          gap={24}
+          size={1.5}
+          color="var(--neu-dot, #3f3f46)"
+        />
       </ReactFlow>
 
       {relativePreview && relativePreview.width > 4 && relativePreview.height > 4 && (
         <div
-          className="absolute pointer-events-none border-2 border-dashed border-blue-500 bg-blue-50/30 rounded"
+          className="absolute pointer-events-none rounded border-2 border-dashed border-indigo-400/70 bg-indigo-500/10"
           style={relativePreview}
         />
       )}
 
       {nodes.length === 0 && !drawingShape && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="text-center text-gray-400">
-            <p className="text-lg font-medium">Canvas is empty</p>
-            <p className="text-sm mt-1">
-                Select a shape above and drag to draw, double-click canvas, or press{' '}
-              <kbd className="px-1 py-0.5 rounded bg-gray-100 text-gray-500 text-xs font-mono">N</kbd>{' '}
-              to add a node. Drag on empty canvas to select multiple nodes.
+          <div
+            className="max-w-[16rem] text-center"
+            style={{ color: 'var(--neu-text-muted, #a1a1aa)' }}
+          >
+            <p className="text-sm font-medium" style={{ color: 'var(--neu-text, #e4e4e7)' }}>
+              Canvas is empty
+            </p>
+            <p className="mt-1 text-xs leading-relaxed">
+              Pick a template above, draw a shape, double-click, or press{' '}
+              <kbd
+                className="rounded px-1 py-0.5 font-mono text-[10px]"
+                style={{
+                  background: 'var(--neu-kbd-bg, #27272a)',
+                  color: 'var(--neu-text-muted, #a1a1aa)',
+                }}
+              >
+                N
+              </kbd>{' '}
+              to add a node.
             </p>
           </div>
         </div>

@@ -23,6 +23,8 @@ interface UiState {
   leftOpen: boolean
   rightOpen: boolean
   bottomOpen: boolean
+  /** Main canvas minimap (bottom-right overview). */
+  minimapOpen: boolean
   rightTool: RightTool
   /** Subject id or `'all'`. */
   librarySubject: string
@@ -52,7 +54,11 @@ interface UiState {
   setLeftOpen: (open: boolean) => void
   setRightOpen: (open: boolean) => void
   setBottomOpen: (open: boolean) => void
+  setMinimapOpen: (open: boolean) => void
+  toggleLeft: () => void
+  toggleRight: () => void
   toggleBottom: () => void
+  toggleMinimap: () => void
   setRightTool: (tool: RightTool) => void
   setLibrarySubject: (subject: string) => void
   setLibrarySearch: (q: string) => void
@@ -82,6 +88,7 @@ export const useUiStore = create<UiState>()(
       leftOpen: true,
       rightOpen: true,
       bottomOpen: true,
+      minimapOpen: true,
       rightTool: 'layers',
       librarySubject: 'all',
       librarySearch: '',
@@ -98,7 +105,11 @@ export const useUiStore = create<UiState>()(
       setLeftOpen: (leftOpen) => set({ leftOpen }),
       setRightOpen: (rightOpen) => set({ rightOpen }),
       setBottomOpen: (bottomOpen) => set({ bottomOpen }),
+      setMinimapOpen: (minimapOpen) => set({ minimapOpen }),
+      toggleLeft: () => set({ leftOpen: !get().leftOpen }),
+      toggleRight: () => set({ rightOpen: !get().rightOpen }),
       toggleBottom: () => set({ bottomOpen: !get().bottomOpen }),
+      toggleMinimap: () => set({ minimapOpen: !get().minimapOpen }),
       setRightTool: (rightTool) => set({ rightTool, rightOpen: true }),
       setLibrarySubject: (librarySubject) =>
         set({ librarySubject, libraryTopic: 'all' }),
@@ -189,6 +200,7 @@ export const useUiStore = create<UiState>()(
         leftOpen: s.leftOpen,
         rightOpen: s.rightOpen,
         bottomOpen: s.bottomOpen,
+        minimapOpen: s.minimapOpen,
         librarySubject: s.librarySubject,
         librarySearch: s.librarySearch,
         libraryTopic: s.libraryTopic,

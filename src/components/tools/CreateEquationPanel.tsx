@@ -6,7 +6,6 @@ import {
 } from 'react-resizable-panels'
 import {
   ArrowDownAZ,
-  ArrowDownWideNarrow,
   ChevronDown,
   ChevronRight,
   Plus,
@@ -19,6 +18,12 @@ import { useLibraryStore } from '@/stores/libraryStore'
 import { FitContent } from '@/components/math/FitContent'
 import { LatexView } from '@/components/math/LatexView'
 import { filterLibraryItems } from '@/lib/libraryFilter'
+import {
+  cycleSortLevel,
+  multiSortStable,
+  sortLevelIndex,
+  type SortLevel,
+} from '@/lib/multiSort'
 
 type SortKey = 'title' | 'topic' | 'subject'
 
@@ -30,6 +35,22 @@ const SORT_LABELS: Record<SortKey, string> = {
 
 function cmpStr(a: string, b: string): number {
   return a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true })
+}
+
+function compareCatalog(
+  a: LibraryItem,
+  b: LibraryItem,
+  key: string,
+): number {
+  if (key === 'topic') return cmpStr(a.topic ?? '', b.topic ?? '')
+  if (key === 'subject') {
+    const la =
+      SUBJECTS.find((s) => s.id === a.subject)?.label ?? a.subject ?? ''
+    const lb =
+      SUBJECTS.find((s) => s.id === b.subject)?.label ?? b.subject ?? ''
+    return cmpStr(la, lb)
+  }
+  return cmpStr(a.title ?? '', b.title ?? '')
 }
 
 function isEquationItem(i: LibraryItem): boolean {
@@ -56,8 +77,8 @@ export function CreateEquationPanel() {
   const [catSubject, setCatSubject] = useState<Subject | 'all'>('all')
   const [catTopic, setCatTopic] = useState<string>('all')
   const [catSearch, setCatSearch] = useState('')
-  const [sortKey, setSortKey] = useState<SortKey>('title')
-  const [sortAsc, setSortAsc] = useState(true)
+  /** Empty = relevance / original catalog order */
+  const [sortLevels, setSortLevels] = useState<SortLevel<SortKey>[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [appendFlash, setAppendFlash] = useState(false)
 
@@ -90,37 +111,15 @@ export function CreateEquationPanel() {
       search: catSearch,
     })
 
-    const q = catSearch.trim()
-    if (q && sortKey === 'title' && sortAsc) {
-      return filtered
-    }
+    // No explicit sort levels → keep filter ranking (search relevance)
+    if (sortLevels.length === 0) return filtered
 
-    const dir = sortAsc ? 1 : -1
-    const next = [...filtered]
-    next.sort((a, b) => {
-      let cmp = 0
-      if (sortKey === 'title') {
-        cmp = cmpStr(a.title ?? '', b.title ?? '')
-      } else if (sortKey === 'topic') {
-        cmp = cmpStr(a.topic ?? '', b.topic ?? '')
-        if (cmp === 0) cmp = cmpStr(a.title ?? '', b.title ?? '')
-      } else {
-        const la =
-          SUBJECTS.find((s) => s.id === a.subject)?.label ?? a.subject ?? ''
-        const lb =
-          SUBJECTS.find((s) => s.id === b.subject)?.label ?? b.subject ?? ''
-        cmp = cmpStr(la, lb)
-        if (cmp === 0) cmp = cmpStr(a.topic ?? '', b.topic ?? '')
-        if (cmp === 0) cmp = cmpStr(a.title ?? '', b.title ?? '')
-      }
-      return cmp * dir
-    })
-    return next
-  }, [catalogPool, catSubject, catTopic, catSearch, sortKey, sortAsc])
+    return multiSortStable(filtered, sortLevels, compareCatalog)
+  }, [catalogPool, catSubject, catTopic, catSearch, sortLevels])
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: 0 })
-  }, [catSubject, catTopic, catSearch, sortKey, sortAsc])
+  }, [catSubject, catTopic, catSearch, sortLevels])
 
   useEffect(() => {
     if (catTopic !== 'all' && !topicOptions.includes(catTopic)) {
@@ -166,22 +165,21 @@ export function CreateEquationPanel() {
     SUBJECTS.find((s) => s.id === id)?.label ?? id
 
   const setSort = (key: SortKey) => {
-    if (key === sortKey) {
-      setSortAsc((a) => !a)
-    } else {
-      setSortKey(key)
-      setSortAsc(true)
-    }
+    setSortLevels((prev) => cycleSortLevel(prev, key))
   }
 
   const clearFilters = () => {
     setCatSubject('all')
     setCatTopic('all')
     setCatSearch('')
+    setSortLevels([])
   }
 
   const hasActiveFilters =
-    catSubject !== 'all' || catTopic !== 'all' || catSearch.trim().length > 0
+    catSubject !== 'all' ||
+    catTopic !== 'all' ||
+    catSearch.trim().length > 0 ||
+    sortLevels.length > 0
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -372,12 +370,21 @@ export function CreateEquationPanel() {
                       Sort
                     </span>
                     {(['title', 'topic', 'subject'] as SortKey[]).map((key) => {
-                      const active = sortKey === key
+                      const idx = sortLevelIndex(sortLevels, key)
+                      const active = idx >= 0
+                      const dir = active ? sortLevels[idx]!.dir : 'asc'
                       return (
                         <button
                           key={key}
                           type="button"
                           onClick={() => setSort(key)}
+                          title={
+                            active
+                              ? dir === 'asc'
+                                ? 'Ascending — click for descending'
+                                : 'Descending — click to clear this sort'
+                              : 'Add multi-column sort'
+                          }
                           className={`rounded px-2 py-0.5 text-[10px] font-medium transition ${
                             active
                               ? 'bg-indigo-500/30 text-indigo-100 ring-1 ring-indigo-400/40'
@@ -385,24 +392,28 @@ export function CreateEquationPanel() {
                           }`}
                         >
                           {SORT_LABELS[key]}
-                          {active ? (sortAsc ? ' ↑' : ' ↓') : ''}
+                          {active
+                            ? `${dir === 'asc' ? ' ↑' : ' ↓'}${
+                                sortLevels.length > 1 ? ` ${idx + 1}` : ''
+                              }`
+                            : ''}
                         </button>
                       )
                     })}
-                    <button
-                      type="button"
-                      title="Toggle sort direction"
-                      onClick={() => setSortAsc((a) => !a)}
-                      className="ml-auto rounded border border-zinc-700 p-1 text-zinc-500 hover:text-zinc-300"
-                    >
-                      <ArrowDownWideNarrow
-                        className={`h-3 w-3 transition ${sortAsc ? '' : 'rotate-180'}`}
-                      />
-                    </button>
+                    {hasActiveFilters && (
+                      <button
+                        type="button"
+                        onClick={clearFilters}
+                        className="ml-auto rounded border border-zinc-700 px-1.5 py-0.5 text-[9px] text-zinc-400 hover:border-zinc-600 hover:text-zinc-200"
+                        title="Clear search, filters, and sort"
+                      >
+                        Clear all
+                      </button>
+                    )}
                   </div>
                 </div>
 
-                {/* Column headers (also sort) */}
+                {/* Column headers (also multi-sort) */}
                 <div className="flex shrink-0 items-center gap-2 border-b border-zinc-800 bg-[#222] px-2 py-1 text-[9px] font-semibold uppercase tracking-wide text-zinc-600">
                   {(
                     [
@@ -410,19 +421,28 @@ export function CreateEquationPanel() {
                       ['topic', 'Topic', 'w-[28%] shrink-0'],
                       ['subject', 'Subject', 'w-[22%] shrink-0'],
                     ] as const
-                  ).map(([key, label, cls]) => (
-                    <button
-                      key={key}
-                      type="button"
-                      className={`${cls} text-left transition hover:text-zinc-300 ${
-                        sortKey === key ? 'text-indigo-300' : ''
-                      }`}
-                      onClick={() => setSort(key)}
-                    >
-                      {label}
-                      {sortKey === key ? (sortAsc ? ' ↑' : ' ↓') : ''}
-                    </button>
-                  ))}
+                  ).map(([key, label, cls]) => {
+                    const idx = sortLevelIndex(sortLevels, key)
+                    const active = idx >= 0
+                    const dir = active ? sortLevels[idx]!.dir : 'asc'
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        className={`${cls} text-left transition hover:text-zinc-300 ${
+                          active ? 'text-indigo-300' : ''
+                        }`}
+                        onClick={() => setSort(key)}
+                      >
+                        {label}
+                        {active
+                          ? `${dir === 'asc' ? ' ↑' : ' ↓'}${
+                              sortLevels.length > 1 ? ` ${idx + 1}` : ''
+                            }`
+                          : ''}
+                      </button>
+                    )
+                  })}
                 </div>
 
                 {/* Rows */}
@@ -449,7 +469,7 @@ export function CreateEquationPanel() {
                     </p>
                   ) : (
                     <ul
-                      key={`list-${sortKey}-${sortAsc}-${catSubject}-${catTopic}`}
+                      key={`list-${sortLevels.map((s) => `${s.key}${s.dir}`).join('-')}-${catSubject}-${catTopic}-${catSearch}`}
                       className="divide-y divide-zinc-800/80"
                     >
                       {catalogItems.map((item, index) => {

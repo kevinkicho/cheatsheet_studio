@@ -38,33 +38,64 @@ import {
   withBorderStyle,
 } from '@/lib/cardDefaults'
 
-/** Workspace never shrinks below freeform or the print page stack. */
-function ensureWorkspaceSize(
+/** Padding around the free board (print frame off). */
+const FREEFORM_PAD = 200
+
+/**
+ * Padding around print page layout when print frame is on.
+ * Scrollable workspace is limited to the print stack + this pad.
+ */
+const PRINT_SCROLL_PAD = 96
+
+/** Large freeform workspace (print frame off). */
+function freeformWorkspaceSize(
   width: number,
   height: number,
-  printW: number,
-  printH: number,
-  /** Extra space needed when free pages sit away from origin. */
-  maxExtentX = printW,
-  maxExtentY = printH,
+  extraMaxX = 0,
+  extraMaxY = 0,
 ) {
   return {
     width: Math.max(
-      width,
       FREEFORM_WORKSPACE.width,
-      printW + 200,
-      Math.ceil(maxExtentX) + 200,
+      width,
+      Math.ceil(extraMaxX) + FREEFORM_PAD,
     ),
     height: Math.max(
-      height,
       FREEFORM_WORKSPACE.height,
-      printH + 200,
-      Math.ceil(maxExtentY) + 200,
+      height,
+      Math.ceil(extraMaxY) + FREEFORM_PAD,
     ),
   }
 }
 
-/** Ensure board fits current page size × count × layout. */
+/**
+ * Tight workspace = multi-page print layout bounds + pad.
+ * Used when showPrintArea is on so pan/scroll cannot roam a 3200×2400 void.
+ */
+function printFrameWorkspaceSize(bounds: {
+  maxX: number
+  maxY: number
+  width: number
+  height: number
+}) {
+  return {
+    width: Math.max(
+      Math.ceil(bounds.maxX) + PRINT_SCROLL_PAD,
+      Math.ceil(bounds.width) + PRINT_SCROLL_PAD,
+      320,
+    ),
+    height: Math.max(
+      Math.ceil(bounds.maxY) + PRINT_SCROLL_PAD,
+      Math.ceil(bounds.height) + PRINT_SCROLL_PAD,
+      320,
+    ),
+  }
+}
+
+/**
+ * Board size for current print config.
+ * @param showPrint when true, clamp scroll area to page frames; when false, freeform.
+ */
 function workspaceForPages(
   canvas: SheetCanvas,
   printSizeId: PrintSizeId,
@@ -72,21 +103,24 @@ function workspaceForPages(
   pageCount: number,
   layout?: PrintPageLayout,
   freePositions?: PrintPageOrigin[] | null,
+  showPrint?: boolean,
 ) {
   const page = resolvePagePixels(printSizeId, orientation)
   const mode = normalizePrintPageLayout(
     layout ?? canvas.printPageLayout ?? 'vertical',
   )
   const positions =
-    freePositions !== undefined
-      ? freePositions
-      : canvas.printPagePositions
+    freePositions !== undefined ? freePositions : canvas.printPagePositions
   const bounds = multiPageLayoutBounds(page, pageCount, mode, positions)
-  return ensureWorkspaceSize(
+  const printOn =
+    showPrint !== undefined ? showPrint : canvas.showPrintArea !== false
+
+  if (printOn) {
+    return printFrameWorkspaceSize(bounds)
+  }
+  return freeformWorkspaceSize(
     canvas.width,
     canvas.height,
-    bounds.width,
-    bounds.height,
     bounds.maxX,
     bounds.maxY,
   )
@@ -373,21 +407,15 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
               y: Number(p?.y) || 0,
             }))
           : []
-    // Never shrink workspace to letter-only — that made cards "vanish" when
-    // print frame toggled and board size jumped. Keep a large free board.
-    const bounds = multiPageLayoutBounds(
-      page,
+    // Print frame on → scroll limited to page layout; off → freeform board.
+    const workspace = workspaceForPages(
+      { ...merged, printPagePositions, printPageLayout, printPageCount: pageCount },
+      printSizeId,
+      orientation,
       pageCount,
       printPageLayout,
       printPagePositions,
-    )
-    const workspace = ensureWorkspaceSize(
-      merged.width,
-      merged.height,
-      bounds.width,
-      bounds.height,
-      bounds.maxX,
-      bounds.maxY,
+      showPrintArea,
     )
     applyingHistory = true
     set({
@@ -507,6 +535,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         pageCount,
         layout,
         s.canvas.printPagePositions,
+        true,
       )
       return {
         canvas: {
@@ -528,6 +557,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       const printSizeId = s.canvas.printSizeId ?? 'letter'
       const pageCount = clampPrintPageCount(s.canvas.printPageCount ?? 1)
       const layout = normalizePrintPageLayout(s.canvas.printPageLayout)
+      const printOn = s.canvas.showPrintArea !== false
       const workspace = workspaceForPages(
         s.canvas,
         printSizeId,
@@ -535,6 +565,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         pageCount,
         layout,
         s.canvas.printPagePositions,
+        printOn,
       )
       return {
         canvas: {
@@ -564,6 +595,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         pageCount,
         layout,
         s.canvas.printPagePositions,
+        show,
       )
       return {
         canvas: {
@@ -606,6 +638,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         pageCount,
         layout,
         printPagePositions,
+        true,
       )
       return {
         canvas: {
@@ -664,6 +697,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         pageCount,
         mode,
         printPagePositions,
+        true,
       )
       return {
         canvas: {
@@ -702,6 +736,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         pageCount,
         'free',
         positions,
+        s.canvas.showPrintArea !== false,
       )
       return {
         canvas: {
@@ -730,6 +765,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         pageCount,
         'free',
         next,
+        s.canvas.showPrintArea !== false,
       )
       return {
         canvas: {
@@ -915,7 +951,8 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       mermaidKind: opts?.mermaidKind ?? 'flowchart',
       mermaidDirection: opts?.mermaidDirection ?? 'TD',
       autoFit: false,
-      contentFill: false,
+      // Scale Mermaid SVG to card via FitContent (Properties: “Scale content to fill card”)
+      contentFill: true,
     })
     set((s) => ({
       items: [...s.items, item],

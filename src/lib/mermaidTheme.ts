@@ -3,12 +3,11 @@ import type { MermaidConfig } from 'mermaid'
 import mermaid from 'mermaid'
 
 /**
- * Studio Process theming — user-confirmed working 2026-07-11 (app 185123 + mermaid-test).
- *
- * Full record: docs/MERMAID_DARK_THEME_WORKING_RECORD.md
+ * Studio Process theming for process-chart cards and MermaidView.
+ * Product docs: docs/process-charts.md
  *
  * Stack:
- *  1) initialize(base + themeVariables) + frontmatter + classDef  (verify-app-stack)
+ *  1) initialize(base + themeVariables) + frontmatter + flowchart-only classDef
  *  2) htmlLabels:true so node boxes match label metrics
  *  3) paintStudioSvg: rewrite pale fills in Mermaid <style> (keep fonts!) +
  *     id-scoped color CSS + attr/style !important
@@ -19,10 +18,7 @@ import mermaid from 'mermaid'
 
 export const STUDIO_PREVIEW_BG = '#12141a' as const
 
-/**
- * Palette from verify-app-stack (proven dark host pixels).
- * Slightly elevated zinc so nodes read on #12141a preview chrome.
- */
+/** Zinc palette for studio dark process charts (nodes on dark chrome). */
 export const STUDIO_DARK = {
   nodeFill: '#27272a',
   nodeStroke: '#71717a',
@@ -131,7 +127,7 @@ export function mermaidInitOptions(
   }
 }
 
-// ── Source prep (verify-app-stack method) ────────────────────────────────────
+// ── Source prep (frontmatter + flowchart classDef) ───────────────────────────
 
 /**
  * True when Mermaid source is a flowchart/graph (only family that accepts
@@ -203,7 +199,7 @@ config:
   return text
 }
 
-// ── Hard paint (verify-v5-again method) ──────────────────────────────────────
+// ── Hard paint (layout-safe fill rewrite) ────────────────────────────────────
 
 const NONE = new Set(['none', 'transparent'])
 
@@ -477,14 +473,12 @@ export function renderMermaidSvg(
 
     mermaid.initialize(mermaidInitOptions(req.theme, { studioDark }))
 
-    // verify-app-stack path: frontmatter + classDef before render
     const source = studioDark
       ? prepareStudioDarkSource(req.source)
       : req.source
 
     const { svg: raw } = await mermaid.render(req.id, source)
 
-    // verify-v5 path: hard paint after render
     const svg = studioDark ? applyStudioPaintToSvgString(raw) : raw
 
     let mainBkg: string | undefined

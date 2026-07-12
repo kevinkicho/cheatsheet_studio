@@ -1,5 +1,6 @@
 import { useShallow } from 'zustand/react/shallow'
 import { useFlowStore, type EdgeStyle, type ArrowType, type FlowEdgeData } from '../../lib/store'
+import { ColorPicker } from '@/components/ui/ColorPicker'
 
 const NEU_BG = 'var(--neu-bg)'
 
@@ -40,7 +41,7 @@ function NeuBtn({
   )
 }
 
-function ColorSwatch({
+function LabeledColor({
   value,
   defaultVal,
   onChange,
@@ -52,50 +53,26 @@ function ColorSwatch({
   label: string
 }) {
   return (
-    <label
-      title={label}
-      aria-label={label}
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: 4,
-        cursor: 'pointer',
-      }}
-    >
+    <div style={{ flex: 1, minWidth: 0 }}>
       <div
         style={{
-          width: 28,
-          height: 28,
-          borderRadius: '50%',
-          background: value ?? defaultVal,
-          boxShadow: 'var(--neu-shadow-raised)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          overflow: 'hidden',
-          position: 'relative',
+          fontSize: 9,
+          color: 'var(--neu-text-muted, #a1a1aa)',
+          letterSpacing: '0.04em',
+          marginBottom: 4,
+          textTransform: 'uppercase',
         }}
       >
-        <input
-          type="color"
-          defaultValue={value ?? defaultVal}
-          onChange={(e) => onChange(e.target.value)}
-          style={{
-            position: 'absolute',
-            inset: 0,
-            opacity: 0,
-            width: '100%',
-            height: '100%',
-            cursor: 'pointer',
-            border: 'none',
-            padding: 0,
-          }}
-          aria-label={label}
-        />
+        {label}
       </div>
-      <span style={{ fontSize: 9, color: '#9ca3af', letterSpacing: '0.04em' }}>{label}</span>
-    </label>
+      <ColorPicker
+        value={value}
+        defaultValue={defaultVal}
+        onChange={onChange}
+        aria-label={label}
+        compact
+      />
+    </div>
   )
 }
 
@@ -170,28 +147,47 @@ export function ObjectSettingsSection() {
             {selectedNodes.length === 1 ? '1 node selected' : `${selectedNodes.length} nodes selected`}
           </div>
 
-          {/* Color swatches */}
-          <div style={{ display: 'flex', gap: 14, marginBottom: 12 }}>
-            <ColorSwatch
-              key={selectedNodes.map(n => n.id).join('-') + '-fill'}
+          {/* Color pickers: defaults + recent */}
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 10,
+              marginBottom: 12,
+            }}
+          >
+            <LabeledColor
+              key={selectedNodes.map((n) => n.id).join('-') + '-fill'}
               value={selectedNodes[0].data.fillColor}
-              defaultVal="#ffffff"
+              defaultVal="#27272a"
               label="Fill"
-              onChange={(color) => selectedNodes.forEach((n) => updateNodeStyle(n.id, { fillColor: color }))}
+              onChange={(color) =>
+                selectedNodes.forEach((n) =>
+                  updateNodeStyle(n.id, { fillColor: color }),
+                )
+              }
             />
-            <ColorSwatch
-              key={selectedNodes.map(n => n.id).join('-') + '-stroke'}
+            <LabeledColor
+              key={selectedNodes.map((n) => n.id).join('-') + '-stroke'}
               value={selectedNodes[0].data.strokeColor}
-              defaultVal="#9ca3af"
+              defaultVal="#71717a"
               label="Border"
-              onChange={(color) => selectedNodes.forEach((n) => updateNodeStyle(n.id, { strokeColor: color }))}
+              onChange={(color) =>
+                selectedNodes.forEach((n) =>
+                  updateNodeStyle(n.id, { strokeColor: color }),
+                )
+              }
             />
-            <ColorSwatch
-              key={selectedNodes.map(n => n.id).join('-') + '-text'}
+            <LabeledColor
+              key={selectedNodes.map((n) => n.id).join('-') + '-text'}
               value={selectedNodes[0].data.textColor}
-              defaultVal="#1f2937"
+              defaultVal="#f4f4f5"
               label="Text"
-              onChange={(color) => selectedNodes.forEach((n) => updateNodeStyle(n.id, { textColor: color }))}
+              onChange={(color) =>
+                selectedNodes.forEach((n) =>
+                  updateNodeStyle(n.id, { textColor: color }),
+                )
+              }
             />
           </div>
 
@@ -258,13 +254,18 @@ export function ObjectSettingsSection() {
           </div>
 
           {/* Edge color */}
-          <div style={{ fontSize: 10, color: '#9ca3af', marginBottom: 8 }}>Color</div>
-          <ColorSwatch
-            key={selectedEdges.map(e => e.id).join('-')}
-            value={(selectedEdges[0].data as FlowEdgeData | undefined)?.strokeColor}
-            defaultVal="#9ca3af"
+          <LabeledColor
+            key={selectedEdges.map((e) => e.id).join('-')}
+            value={
+              (selectedEdges[0].data as FlowEdgeData | undefined)?.strokeColor
+            }
+            defaultVal="#a1a1aa"
             label="Edge color"
-            onChange={(color) => selectedEdges.forEach((e) => updateEdgeType(e.id, { strokeColor: color }))}
+            onChange={(color) =>
+              selectedEdges.forEach((e) =>
+                updateEdgeType(e.id, { strokeColor: color }),
+              )
+            }
           />
         </div>
       )}

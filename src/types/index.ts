@@ -318,10 +318,13 @@ const defaultPage = resolvePagePixels(
   DEFAULT_ORIENTATION,
 )
 
+/** Default: print frame on → scroll area ≈ one page + pad (not full freeform). */
+const DEFAULT_PRINT_SCROLL_PAD = 96
+
 export const DEFAULT_CANVAS: SheetCanvas = {
-  // Workspace is always at least freeform; print frame sits at top-left
-  width: Math.max(FREEFORM_WORKSPACE.width, defaultPage.width),
-  height: Math.max(FREEFORM_WORKSPACE.height, defaultPage.height),
+  // Print frame on by default — tight board around the page
+  width: defaultPage.width + DEFAULT_PRINT_SCROLL_PAD,
+  height: defaultPage.height + DEFAULT_PRINT_SCROLL_PAD,
   background: '#0f1115',
   showGrid: true,
   snapToGrid: false,

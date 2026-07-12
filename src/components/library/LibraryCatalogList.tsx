@@ -5,18 +5,18 @@ import {
   PanelGroup,
   PanelResizeHandle,
 } from 'react-resizable-panels'
-import {
-  ArrowDownAZ,
-  ArrowDownWideNarrow,
-  Check,
-  Copy,
-  Plus,
-} from 'lucide-react'
+import { ArrowDownAZ, Check, Copy, Plus } from 'lucide-react'
 import { SUBJECTS, type LibraryItem } from '@/types'
 import { useCanvasStore } from '@/stores/canvasStore'
 import { FigureView } from '@/components/math/FigureView'
 import { LatexView } from '@/components/math/LatexView'
 import { MarkdownTable } from '@/components/math/MarkdownTable'
+import {
+  cycleSortLevel,
+  multiSortStable,
+  sortLevelIndex,
+  type SortLevel,
+} from '@/lib/multiSort'
 
 type SortKey = 'title' | 'topic' | 'type'
 
@@ -41,6 +41,14 @@ function subjectLabel(id: string | undefined): string {
   return SUBJECTS.find((s) => s.id === id)?.label ?? id
 }
 
+function compareLib(a: LibraryItem, b: LibraryItem, key: string): number {
+  if (key === 'topic') return cmpStr(a.topic ?? '', b.topic ?? '')
+  if (key === 'type') {
+    return cmpStr(TYPE_LABEL[a.type] ?? a.type, TYPE_LABEL[b.type] ?? b.type)
+  }
+  return cmpStr(a.title ?? '', b.title ?? '')
+}
+
 /**
  * Catalog-style detailed list for the bottom library:
  * left = sortable Name / Topic / Type rows (scrollable),
@@ -49,39 +57,16 @@ function subjectLabel(id: string | undefined): string {
  */
 export function LibraryCatalogList({ items }: { items: LibraryItem[] }) {
   const addFromLibrary = useCanvasStore((s) => s.addFromLibrary)
-  const [sortKey, setSortKey] = useState<SortKey>('title')
-  const [sortAsc, setSortAsc] = useState(true)
+  /** Empty = keep parent order (search relevance). */
+  const [sortLevels, setSortLevels] = useState<SortLevel<SortKey>[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [addFlash, setAddFlash] = useState(false)
   const [copied, setCopied] = useState(false)
 
   const sorted = useMemo(() => {
-    // When parent already ranked by search relevance, preserve that order
-    // unless the user picked an explicit column sort other than title.
-    const list = [...items]
-    const dir = sortAsc ? 1 : -1
-    list.sort((a, b) => {
-      let cmp = 0
-      if (sortKey === 'title') {
-        // Keep incoming order as primary (relevance); title only as fallback
-        // when items were not search-ranked (equal identity order).
-        cmp = cmpStr(a.title ?? '', b.title ?? '')
-      } else if (sortKey === 'topic') {
-        cmp = cmpStr(a.topic ?? '', b.topic ?? '')
-        if (cmp === 0) cmp = cmpStr(a.title ?? '', b.title ?? '')
-      } else {
-        cmp = cmpStr(TYPE_LABEL[a.type] ?? a.type, TYPE_LABEL[b.type] ?? b.type)
-        if (cmp === 0) cmp = cmpStr(a.title ?? '', b.title ?? '')
-      }
-      return cmp * dir
-    })
-    // If sort is title ascending, prefer original items order (already
-    // relevance-sorted from filterLibraryItems when a query is active).
-    if (sortKey === 'title' && sortAsc) {
-      return items
-    }
-    return list
-  }, [items, sortKey, sortAsc])
+    if (sortLevels.length === 0) return items
+    return multiSortStable(items, sortLevels, compareLib)
+  }, [items, sortLevels])
 
   // Always select the top result when the list identity changes so search
   // jumps to the best match (e.g. Gauss for "g"), not a stale selection.
@@ -96,12 +81,10 @@ export function LibraryCatalogList({ items }: { items: LibraryItem[] }) {
   const selected = sorted.find((i) => i.id === selectedId) ?? null
 
   const setSort = (key: SortKey) => {
-    if (sortKey === key) setSortAsc((a) => !a)
-    else {
-      setSortKey(key)
-      setSortAsc(true)
-    }
+    setSortLevels((prev) => cycleSortLevel(prev, key))
   }
+
+  const clearSort = () => setSortLevels([])
 
   const addSelected = () => {
     if (!selected) return
@@ -136,12 +119,21 @@ export function LibraryCatalogList({ items }: { items: LibraryItem[] }) {
               <ArrowDownAZ className="h-3 w-3 text-zinc-600" />
               <span className="text-[9px] uppercase text-zinc-600">Sort</span>
               {(['title', 'topic', 'type'] as SortKey[]).map((key) => {
-                const active = sortKey === key
+                const idx = sortLevelIndex(sortLevels, key)
+                const active = idx >= 0
+                const dir = active ? sortLevels[idx]!.dir : 'asc'
                 return (
                   <button
                     key={key}
                     type="button"
                     onClick={() => setSort(key)}
+                    title={
+                      active
+                        ? dir === 'asc'
+                          ? 'Ascending — click for descending'
+                          : 'Descending — click to clear this sort'
+                        : 'Add multi-column sort'
+                    }
                     className={`rounded px-2 py-0.5 text-[10px] font-medium transition ${
                       active
                         ? 'bg-indigo-500/30 text-indigo-100 ring-1 ring-indigo-400/40'
@@ -149,21 +141,25 @@ export function LibraryCatalogList({ items }: { items: LibraryItem[] }) {
                     }`}
                   >
                     {SORT_LABELS[key]}
-                    {active ? (sortAsc ? ' ↑' : ' ↓') : ''}
+                    {active
+                      ? `${dir === 'asc' ? ' ↑' : ' ↓'}${
+                          sortLevels.length > 1 ? ` ${idx + 1}` : ''
+                        }`
+                      : ''}
                   </button>
                 )
               })}
-              <button
-                type="button"
-                title="Toggle sort direction"
-                onClick={() => setSortAsc((a) => !a)}
-                className="ml-auto rounded border border-zinc-700 p-1 text-zinc-500 hover:text-zinc-300"
-              >
-                <ArrowDownWideNarrow
-                  className={`h-3 w-3 transition ${sortAsc ? '' : 'rotate-180'}`}
-                />
-              </button>
-              <span className="tabular-nums text-[10px] text-zinc-600">
+              {sortLevels.length > 0 && (
+                <button
+                  type="button"
+                  onClick={clearSort}
+                  className="rounded border border-zinc-700 px-1.5 py-0.5 text-[9px] text-zinc-400 hover:border-zinc-600 hover:text-zinc-200"
+                  title="Clear all sorts (original order)"
+                >
+                  Clear sort
+                </button>
+              )}
+              <span className="ml-auto tabular-nums text-[10px] text-zinc-600">
                 {sorted.length}
               </span>
             </div>
@@ -176,19 +172,28 @@ export function LibraryCatalogList({ items }: { items: LibraryItem[] }) {
                   ['topic', 'Topic', 'w-[28%] shrink-0'],
                   ['type', 'Type', 'w-[18%] shrink-0'],
                 ] as const
-              ).map(([key, label, cls]) => (
-                <button
-                  key={key}
-                  type="button"
-                  className={`${cls} text-left transition hover:text-zinc-300 ${
-                    sortKey === key ? 'text-indigo-300' : ''
-                  }`}
-                  onClick={() => setSort(key)}
-                >
-                  {label}
-                  {sortKey === key ? (sortAsc ? ' ↑' : ' ↓') : ''}
-                </button>
-              ))}
+              ).map(([key, label, cls]) => {
+                const idx = sortLevelIndex(sortLevels, key)
+                const active = idx >= 0
+                const dir = active ? sortLevels[idx]!.dir : 'asc'
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    className={`${cls} text-left transition hover:text-zinc-300 ${
+                      active ? 'text-indigo-300' : ''
+                    }`}
+                    onClick={() => setSort(key)}
+                  >
+                    {label}
+                    {active
+                      ? `${dir === 'asc' ? ' ↑' : ' ↓'}${
+                          sortLevels.length > 1 ? ` ${idx + 1}` : ''
+                        }`
+                      : ''}
+                  </button>
+                )
+              })}
             </div>
 
             {/* Scrollable rows */}

@@ -100,6 +100,17 @@ export function FitContent({
       const cw = Math.max(b.clientWidth, 1)
       const ch = Math.max(b.clientHeight, 1)
 
+      // Async content (e.g. Mermaid) may still be empty — wait for a real size
+      // instead of treating a 1×1 placeholder as fill-scale.
+      if (nw < 8 && nh < 8) {
+        el.style.transform = 'none'
+        el.style.fontSize = `${base}px`
+        el.style.marginLeft = '0'
+        el.style.marginTop = '0'
+        setScale(1)
+        return
+      }
+
       // 2) Uniform fit; only limited by min/maxScale
       const fit = Math.min(cw / nw, ch / nh)
       let clamped = Math.min(maxScale, Math.max(minScale, fit))
@@ -147,11 +158,27 @@ export function FitContent({
 
     apply()
 
+    // Observe the box (card resize) and the inner (async content such as
+    // Mermaid SVG). Without the inner observer, first measure often runs on
+    // empty markup and never re-fits when the diagram appears.
     const ro = new ResizeObserver(schedule)
     ro.observe(box)
+    ro.observe(inner)
 
+    // Mermaid / remote assets often finish after the first paint
     const t1 = window.setTimeout(schedule, 40)
     const t2 = window.setTimeout(schedule, 160)
+    const t3 = window.setTimeout(schedule, 400)
+    const t4 = window.setTimeout(schedule, 900)
+
+    // childList only — do not watch attributes; apply() writes styles on
+    // `inner` and would schedule itself in a loop.
+    const mo =
+      typeof MutationObserver !== 'undefined'
+        ? new MutationObserver(schedule)
+        : null
+    mo?.observe(inner, { childList: true, subtree: true })
+
     const imgs = inner.querySelectorAll('img')
     imgs.forEach((img) => {
       if (!img.complete) img.addEventListener('load', schedule, { once: true })
@@ -165,9 +192,12 @@ export function FitContent({
     return () => {
       cancelled = true
       ro.disconnect()
+      mo?.disconnect()
       if (raf) cancelAnimationFrame(raf)
       window.clearTimeout(t1)
       window.clearTimeout(t2)
+      window.clearTimeout(t3)
+      window.clearTimeout(t4)
     }
   }, [mode, minScale, maxScale, fitMethod, baseFontSize, contentKey])
 

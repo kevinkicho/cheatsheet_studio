@@ -1,45 +1,41 @@
-import { useEffect, useRef } from 'react'
+import type { RefObject } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useFlowStore, type NodeShape } from '../lib/store'
 import { ShapeIcon, ALL_SHAPES } from './ShapeIcons'
+import { PopoverPortal } from './PopoverPortal'
 
 interface ShapePickerPopoverProps {
   onClose: () => void
+  /** Trigger button (position anchor). */
+  anchorRef: RefObject<HTMLElement | null>
+  /** Wrapper that includes trigger + keeps outside-click from fighting toggle. */
+  rootRef: RefObject<HTMLElement | null>
 }
 
 const NEU_BG = 'var(--neu-bg)'
 
-export function ShapePickerPopover({ onClose }: ShapePickerPopoverProps) {
-  const ref = useRef<HTMLDivElement>(null)
-
+export function ShapePickerPopover({
+  onClose,
+  anchorRef,
+  rootRef,
+}: ShapePickerPopoverProps) {
   const { drawingShape, setDrawingShape, updateNodeShape } = useFlowStore(
     useShallow((s) => ({
       drawingShape: s.drawingShape,
       setDrawingShape: s.setDrawingShape,
       updateNodeShape: s.updateNodeShape,
-    }))
+    })),
   )
 
-  const selectedNodes = useFlowStore(useShallow((s) => s.nodes.filter((n) => n.selected)))
+  const selectedNodes = useFlowStore(
+    useShallow((s) => s.nodes.filter((n) => n.selected)),
+  )
   const hasNodeSelection = selectedNodes.length > 0
 
   const displayShape: NodeShape =
-    selectedNodes.length === 1 ? selectedNodes[0].data.shape : (drawingShape ?? 'rectangle')
-
-  useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    const handleClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
-    }
-    window.addEventListener('keydown', handleKey)
-    document.addEventListener('mousedown', handleClick)
-    return () => {
-      window.removeEventListener('keydown', handleKey)
-      document.removeEventListener('mousedown', handleClick)
-    }
-  }, [onClose])
+    selectedNodes.length === 1
+      ? selectedNodes[0].data.shape
+      : (drawingShape ?? 'rectangle')
 
   const handleShapeClick = (shape: NodeShape) => {
     if (hasNodeSelection) {
@@ -53,33 +49,51 @@ export function ShapePickerPopover({ onClose }: ShapePickerPopoverProps) {
   const rows = [ALL_SHAPES.slice(0, 7), ALL_SHAPES.slice(7)]
 
   return (
-    <div
-      ref={ref}
+    <PopoverPortal
+      anchorRef={anchorRef}
+      rootRef={rootRef}
+      onClose={onClose}
+      align="center"
+      maxHeight={280}
       style={{
-        position: 'absolute',
-        top: 'calc(100% + 8px)',
-        left: '50%',
-        transform: 'translateX(-50%)',
         background: NEU_BG,
-        borderRadius: 20,
+        borderRadius: 16,
         boxShadow: 'var(--neu-shadow-raised)',
-        padding: '16px',
-        zIndex: 50,
-        minWidth: 320,
+        padding: 14,
+        minWidth: 300,
+        border: '1px solid var(--neu-border, #3f3f46)',
       }}
     >
-      <div style={{ fontSize: 11, fontWeight: 600, color: '#9ca3af', letterSpacing: '0.08em', marginBottom: 10, textTransform: 'uppercase' }}>
+      <div
+        style={{
+          fontSize: 11,
+          fontWeight: 600,
+          color: 'var(--neu-text-muted, #a1a1aa)',
+          letterSpacing: '0.08em',
+          marginBottom: 10,
+          textTransform: 'uppercase',
+        }}
+      >
         {hasNodeSelection ? 'Change Shape' : 'Draw Shape'}
       </div>
       {rows.map((row, ri) => (
-        <div key={ri} style={{ display: 'flex', gap: 6, marginBottom: ri === 0 ? 6 : 0 }}>
+        <div
+          key={ri}
+          style={{
+            display: 'flex',
+            gap: 6,
+            marginBottom: ri === 0 ? 6 : 0,
+          }}
+        >
           {row.map(({ shape, label }) => {
             const isActive = hasNodeSelection
               ? selectedNodes.every((n) => n.data.shape === shape)
-              : drawingShape === shape || (!drawingShape && displayShape === shape)
+              : drawingShape === shape ||
+                (!drawingShape && displayShape === shape)
             return (
               <button
                 key={shape}
+                type="button"
                 title={label}
                 aria-label={label}
                 onClick={() => handleShapeClick(shape)}
@@ -89,26 +103,44 @@ export function ShapePickerPopover({ onClose }: ShapePickerPopoverProps) {
                   borderRadius: 10,
                   border: 'none',
                   background: NEU_BG,
-                  boxShadow: isActive ? 'var(--neu-shadow-inset)' : 'var(--neu-shadow-raised)',
+                  boxShadow: isActive
+                    ? 'var(--neu-shadow-inset)'
+                    : 'var(--neu-shadow-raised)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   cursor: 'pointer',
                   transition: 'box-shadow 0.15s',
-                  color: isActive ? '#4F46E5' : '#6b7280',
+                  color: isActive
+                    ? 'var(--neu-icon-active, #818cf8)'
+                    : 'var(--neu-icon, #a1a1aa)',
                 }}
               >
-                <ShapeIcon shape={shape} stroke={isActive ? '#4F46E5' : '#6b7280'} />
+                <ShapeIcon
+                  shape={shape}
+                  stroke={
+                    isActive
+                      ? 'var(--neu-icon-active, #818cf8)'
+                      : 'var(--neu-icon, #a1a1aa)'
+                  }
+                />
               </button>
             )
           })}
         </div>
       ))}
       {!hasNodeSelection && drawingShape && (
-        <div style={{ marginTop: 10, fontSize: 11, color: '#4F46E5', textAlign: 'center' }}>
+        <div
+          style={{
+            marginTop: 10,
+            fontSize: 11,
+            color: 'var(--neu-icon-active, #818cf8)',
+            textAlign: 'center',
+          }}
+        >
           Click &amp; drag on canvas to draw — Esc to cancel
         </div>
       )}
-    </div>
+    </PopoverPortal>
   )
 }

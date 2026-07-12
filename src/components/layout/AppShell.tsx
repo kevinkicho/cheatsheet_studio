@@ -13,7 +13,7 @@ import {
   PanelGroup,
   PanelResizeHandle,
 } from 'react-resizable-panels'
-import { ChevronUp } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronUp } from 'lucide-react'
 import type { LibraryItem } from '@/types'
 import { useCanvasStore } from '@/stores/canvasStore'
 import { useUiStore } from '@/stores/uiStore'
@@ -33,6 +33,8 @@ export function AppShell() {
   const leftOpen = useUiStore((s) => s.leftOpen)
   const rightOpen = useUiStore((s) => s.rightOpen)
   const bottomOpen = useUiStore((s) => s.bottomOpen)
+  const setLeftOpen = useUiStore((s) => s.setLeftOpen)
+  const setRightOpen = useUiStore((s) => s.setRightOpen)
   const setBottomOpen = useUiStore((s) => s.setBottomOpen)
   const addFromLibrary = useCanvasStore((s) => s.addFromLibrary)
 
@@ -87,24 +89,80 @@ export function AppShell() {
       <PanelGroup direction="vertical" autoSaveId="cheatsheet-v">
         <Panel defaultSize={bottomOpen ? 68 : 96} minSize={30}>
           <PanelGroup direction="horizontal" autoSaveId="cheatsheet-h">
-            {leftOpen && (
+            {/* Left (Properties) — thin strip when minimized */}
+            {leftOpen ? (
               <>
                 <Panel defaultSize={18} minSize={12} maxSize={32} order={1}>
                   <LeftSidebar />
                 </Panel>
-                <PanelResizeHandle className="w-1 bg-zinc-900 transition hover:bg-indigo-500/50" />
+                <PanelResizeHandle className="group relative w-1.5 bg-zinc-900 transition hover:bg-indigo-500/50">
+                  <button
+                    type="button"
+                    title="Minimize properties"
+                    onClick={() => setLeftOpen(false)}
+                    className="absolute left-1/2 top-1/2 z-10 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-zinc-700 bg-zinc-900 p-0.5 text-zinc-400 opacity-0 transition group-hover:opacity-100 hover:text-zinc-200"
+                  >
+                    <ChevronLeft className="h-3 w-3" />
+                  </button>
+                </PanelResizeHandle>
               </>
+            ) : (
+              <Panel defaultSize={3} minSize={3} maxSize={4} order={1}>
+                <button
+                  type="button"
+                  onClick={() => setLeftOpen(true)}
+                  title="Expand properties"
+                  className="flex h-full w-full flex-col items-center justify-center gap-1 bg-zinc-950 text-[10px] text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300"
+                >
+                  <ChevronRight className="h-3.5 w-3.5" />
+                  <span
+                    className="origin-center rotate-180 text-[9px] uppercase tracking-wide"
+                    style={{ writingMode: 'vertical-rl' }}
+                  >
+                    Properties
+                  </span>
+                </button>
+              </Panel>
             )}
+
             <Panel minSize={30} order={2}>
               <MainCanvas />
             </Panel>
-            {rightOpen && (
+
+            {/* Right (Tools) — thin strip when minimized */}
+            {rightOpen ? (
               <>
-                <PanelResizeHandle className="w-1 bg-zinc-900 transition hover:bg-indigo-500/50" />
+                <PanelResizeHandle className="group relative w-1.5 bg-zinc-900 transition hover:bg-indigo-500/50">
+                  <button
+                    type="button"
+                    title="Minimize tools"
+                    onClick={() => setRightOpen(false)}
+                    className="absolute left-1/2 top-1/2 z-10 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-zinc-700 bg-zinc-900 p-0.5 text-zinc-400 opacity-0 transition group-hover:opacity-100 hover:text-zinc-200"
+                  >
+                    <ChevronRight className="h-3 w-3" />
+                  </button>
+                </PanelResizeHandle>
                 <Panel defaultSize={20} minSize={14} maxSize={36} order={3}>
                   <RightSidebar />
                 </Panel>
               </>
+            ) : (
+              <Panel defaultSize={3} minSize={3} maxSize={4} order={3}>
+                <button
+                  type="button"
+                  onClick={() => setRightOpen(true)}
+                  title="Expand tools"
+                  className="flex h-full w-full flex-col items-center justify-center gap-1 bg-zinc-950 text-[10px] text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                  <span
+                    className="text-[9px] uppercase tracking-wide"
+                    style={{ writingMode: 'vertical-rl' }}
+                  >
+                    Tools
+                  </span>
+                </button>
+              </Panel>
             )}
           </PanelGroup>
         </Panel>
@@ -146,7 +204,14 @@ export function AppShell() {
         </Panel>
       </PanelGroup>
     ),
-    [leftOpen, rightOpen, bottomOpen, setBottomOpen],
+    [
+      leftOpen,
+      rightOpen,
+      bottomOpen,
+      setLeftOpen,
+      setRightOpen,
+      setBottomOpen,
+    ],
   )
 
   return (

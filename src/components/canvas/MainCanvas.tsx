@@ -15,6 +15,7 @@ import {
   Hand,
   LayoutGrid,
   Magnet,
+  Map as MapIcon,
   Maximize2,
   Minus,
   MousePointer2,
@@ -45,6 +46,7 @@ import { useCanvasStore } from '@/stores/canvasStore'
 import { useUiStore, ZOOM_MAX, ZOOM_MIN, ZOOM_STEP } from '@/stores/uiStore'
 import { CanvasGridLayer } from './CanvasGridLayer'
 import { CanvasItemView } from './CanvasItemView'
+import { CanvasMinimap } from './CanvasMinimap'
 import { MultiSelectFrame } from './MultiSelectFrame'
 
 const GRID_EXTENT_OPTIONS: {
@@ -127,6 +129,8 @@ export function MainCanvas() {
   const setCanvasZoom = useUiStore((s) => s.setCanvasZoom)
   const canvasTool = useUiStore((s) => s.canvasTool)
   const setCanvasTool = useUiStore((s) => s.setCanvasTool)
+  const minimapOpen = useUiStore((s) => s.minimapOpen)
+  const toggleMinimap = useUiStore((s) => s.toggleMinimap)
   const margins = { ...DEFAULT_MARGINS, ...canvas.margins }
   const printPage = getPrintPageSize(
     canvas.printSizeId ?? 'letter',
@@ -151,6 +155,12 @@ export function MainCanvas() {
   const surfaceRef = useRef<HTMLDivElement | null>(null)
   const zoomRef = useRef(zoom)
   zoomRef.current = zoom
+  /** State mirror of viewportRef so minimap re-binds after mount */
+  const [viewportNode, setViewportNode] = useState<HTMLDivElement | null>(null)
+  const setViewportRef = useCallback((el: HTMLDivElement | null) => {
+    viewportRef.current = el
+    setViewportNode(el)
+  }, [])
   const [isPanning, setIsPanning] = useState(false)
   const panRef = useRef<{
     pointerId: number
@@ -637,7 +647,7 @@ export function MainCanvas() {
   return (
     <div className="relative h-full w-full">
       <div
-        ref={viewportRef}
+        ref={setViewportRef}
         className={`relative h-full w-full overflow-auto ${cursorClass} ${
           isOver ? 'ring-2 ring-inset ring-indigo-500/40' : ''
         }`}
@@ -864,10 +874,22 @@ export function MainCanvas() {
         </div>
       </div>
 
-      {/* Tools + zoom / grid toolbar */}
+      {/* Tools + zoom / grid + minimap (bottom-right stack) */}
       <div
-        className="absolute bottom-3 right-3 z-20 flex items-center gap-0.5 rounded-lg border border-zinc-700/80 bg-zinc-950/90 p-1 shadow-lg backdrop-blur"
+        className="absolute bottom-3 right-3 z-20 flex flex-col items-end gap-2"
         onClick={(e) => e.stopPropagation()}
+      >
+        {minimapOpen && (
+          <CanvasMinimap
+            canvas={canvas}
+            items={items}
+            selectedIds={selectedIds}
+            zoom={zoom}
+            viewportEl={viewportNode}
+          />
+        )}
+      <div
+        className="flex items-center gap-0.5 rounded-lg border border-zinc-700/80 bg-zinc-950/90 p-1 shadow-lg backdrop-blur"
       >
         <ToolBtn
           title="Select (V) — click cards, drag on empty canvas to marquee-select"
@@ -963,6 +985,14 @@ export function MainCanvas() {
         >
           <Focus className="h-3.5 w-3.5" />
         </ZoomBtn>
+        <div className="mx-0.5 h-4 w-px bg-zinc-700" />
+        <ToolBtn
+          title={minimapOpen ? 'Hide minimap' : 'Show minimap'}
+          active={minimapOpen}
+          onClick={() => toggleMinimap()}
+        >
+          <MapIcon className="h-3.5 w-3.5" />
+        </ToolBtn>
         <div className="mx-0.5 h-4 w-px bg-zinc-700" />
         <div className="relative flex items-center" ref={gridMenuRef}>
           <ZoomBtn
@@ -1129,6 +1159,7 @@ export function MainCanvas() {
         >
           <LayoutGrid className="h-3.5 w-3.5" />
         </ZoomBtn>
+      </div>
       </div>
     </div>
   )

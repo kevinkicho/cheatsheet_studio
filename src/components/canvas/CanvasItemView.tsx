@@ -105,6 +105,8 @@ export function CanvasItemView({
   } | null>(null)
   const lastFitRef = useRef({ w: 0, h: 0 })
   const [dragging, setDragging] = useState(false)
+  /** Bumps FitContent contentKey when Mermaid finishes async render. */
+  const [mermaidReadyKey, setMermaidReadyKey] = useState(0)
 
   const autoFit = item.autoFit === true
   const showTitle = item.showTitle !== false && Boolean(item.title)
@@ -544,12 +546,27 @@ export function CanvasItemView({
               alt={item.title ?? 'figure'}
             />
           ) : item.type === 'process-chart' || item.mermaidSource ? (
-            <MermaidView
-              source={item.mermaidSource ?? ''}
-              theme={item.mermaidTheme ?? 'dark'}
-              forceDark={(item.mermaidTheme ?? 'dark') !== 'forest'}
+            // Mermaid SVG: use transform fit (not fontSize). Honors contentFill.
+            // contentKey includes mermaidReadyKey so we re-fit after async render.
+            <FitContent
+              mode="scale"
+              minScale={CARD_DEFAULTS.minFitScale}
+              maxScale={
+                contentFill ? CARD_DEFAULTS.maxFillScale : 1
+              }
+              fitMethod="transform"
+              showBadge={selected}
+              contentKey={`${item.id}-mmd-${item.mermaidSource ?? ''}-${item.mermaidTheme ?? ''}-fit${item.contentFitKey ?? 0}-fill${contentFill ? 1 : 0}-t${showTitle ? 1 : 0}-r${mermaidReadyKey}`}
               className="h-full w-full"
-            />
+            >
+              <MermaidView
+                source={item.mermaidSource ?? ''}
+                theme={item.mermaidTheme ?? 'dark'}
+                forceDark={(item.mermaidTheme ?? 'dark') !== 'forest'}
+                scale={1}
+                onRendered={() => setMermaidReadyKey((k) => k + 1)}
+              />
+            </FitContent>
           ) : (
             <FitContent
               mode="scale"

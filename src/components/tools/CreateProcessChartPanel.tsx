@@ -1,49 +1,74 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  Panel,
-  PanelGroup,
-  PanelResizeHandle,
-} from 'react-resizable-panels'
-import {
-  ArrowLeftRight,
-  ArrowUpDown,
+  Cloud,
+  CloudUpload,
+  FolderOpen,
   GitBranch,
-  Hand,
-  Maximize2,
   Plus,
-  RectangleHorizontal,
-  RectangleVertical,
   RefreshCw,
-  Sparkles,
-  ZoomIn,
-  ZoomOut,
+  Trash2,
 } from 'lucide-react'
-import type {
-  MermaidDiagramKind,
-  MermaidFlowDirection,
-  MermaidThemeId,
-} from '@/types'
 import { useCanvasStore } from '@/stores/canvasStore'
-import { MermaidView } from '@/components/math/MermaidView'
-import { MermaidVisualEditor } from '@/components/tools/MermaidVisualEditor'
+import { useAuthStore } from '@/stores/authStore'
+import { useFlowchartLibraryStore } from '@/stores/flowchartLibraryStore'
 import {
+  MermaidVisualEditor,
+  getVisualEditorMermaidSource,
+} from '@/components/tools/MermaidVisualEditor'
+import { MermaidView } from '@/components/math/MermaidView'
+import type { MermaidDiagramKind, MermaidFlowDirection } from '@/types'
+import {
+  MERMAID_DIRECTIONS,
   MERMAID_KINDS,
-  MERMAID_THEMES,
   applyFlowDirection,
   detectFlowDirection,
   detectMermaidKind,
   mermaidTemplate,
 } from '@/lib/mermaidTemplates'
+import type { StoredFlowchart } from '@/lib/flowchartLibrary'
+
+const REPLACE_WARNING =
+  'Replace the flowchart editor with this content?\n\n' +
+  'Everything currently in the editor viewport will be discarded. ' +
+  'This does not delete canvas cards or cloud library entries unless you already saved there.'
+
+/** True when the editor has real diagram content that would be lost on replace. */
+function hasEditorContent(source: string, isFlowchart: boolean): boolean {
+  if (isFlowchart) {
+    const fromCanvas = getVisualEditorMermaidSource().trim()
+    if (fromCanvas) return true
+  }
+  const s = source.trim()
+  if (!s) return false
+  if (/^flowchart\s+\w+\s*\n\s*%%\s*Add nodes/i.test(s)) return false
+  // Any non-trivial diagram body (more than header alone)
+  const lines = s.split(/\r?\n/).filter((l) => l.trim() && !l.trim().startsWith('%%'))
+  return lines.length > 1
+}
 
 /**
- * Right-sidebar tool: author Mermaid process charts with templates,
- * interactive options, live preview, and insert onto the canvas.
+ * Process sidebar: templates + visual flowchart editor (or dark preview for
+ * non-flowchart Mermaid kinds). Source is written to process-chart cards.
+ * Named diagrams can be saved/loaded from Firestore when signed in.
  */
 export function CreateProcessChartPanel() {
   const addProcessChart = useCanvasStore((s) => s.addProcessChart)
   const updateItem = useCanvasStore((s) => s.updateItem)
   const selectedIds = useCanvasStore((s) => s.selectedIds)
   const items = useCanvasStore((s) => s.items)
+  const user = useAuthStore((s) => s.user)
+
+  const libItems = useFlowchartLibraryStore((s) => s.items)
+  const libLoading = useFlowchartLibraryStore((s) => s.loading)
+  const libSaving = useFlowchartLibraryStore((s) => s.saving)
+  const libError = useFlowchartLibraryStore((s) => s.error)
+  const activeLibId = useFlowchartLibraryStore((s) => s.activeId)
+  const loadLibrary = useFlowchartLibraryStore((s) => s.load)
+  const saveNew = useFlowchartLibraryStore((s) => s.saveNew)
+  const saveOverwrite = useFlowchartLibraryStore((s) => s.saveOverwrite)
+  const removeLib = useFlowchartLibraryStore((s) => s.remove)
+  const setActiveLibId = useFlowchartLibraryStore((s) => s.setActiveId)
+  const clearLibError = useFlowchartLibraryStore((s) => s.clearError)
 
   const selectedChart = useMemo(() => {
     if (selectedIds.length !== 1) return null
@@ -54,725 +79,486 @@ export function CreateProcessChartPanel() {
   const [title, setTitle] = useState('Process chart')
   const [kind, setKind] = useState<MermaidDiagramKind>('flowchart')
   const [direction, setDirection] = useState<MermaidFlowDirection>('TD')
-  // Default dark chrome — high contrast on zinc UI (not Mermaid “default” light)
-  const [theme, setTheme] = useState<MermaidThemeId>('dark')
   const [source, setSource] = useState(() => mermaidTemplate('flowchart', 'TD'))
+  const [reloadToken, setReloadToken] = useState(0)
   const [status, setStatus] = useState<string | null>(null)
-  const [quickNodes, setQuickNodes] = useState('Start, Step A, Decision, Done')
-  /**
-   * Flowchart: visual drag-drop (vendored mermaid-visual-editor) vs source text.
-   * Other diagram kinds stay code-only (visual editor is flowchart-only).
-   */
-  const [editorMode, setEditorMode] = useState<'visual' | 'code'>('visual')
-  /** Preview zoom (1 = natural SVG size). */
-  const [previewZoom, setPreviewZoom] = useState(1)
-  const [naturalSize, setNaturalSize] = useState({ width: 0, height: 0 })
-  /** Drag-to-pan the preview viewport. */
-  const [panMode, setPanMode] = useState(false)
-  const previewViewportRef = useRef<HTMLDivElement>(null)
-  /** When true, re-fit after the next successful Mermaid render. */
-  const fitAfterRenderRef = useRef(false)
-  const panDragRef = useRef<{
-    pointerId: number
-    startX: number
-    startY: number
-    scrollLeft: number
-    scrollTop: number
-  } | null>(null)
+  const [libraryOpen, setLibraryOpen] = useState(false)
 
-  const PREVIEW_ZOOM_MIN = 0.15
-  const PREVIEW_ZOOM_MAX = 4
-  const PREVIEW_ZOOM_STEP = 0.15
-  const PREVIEW_PAD = 20
+  const isFlowchart = kind === 'flowchart'
 
-  const clampPreviewZoom = (z: number) =>
-    Math.min(
-      PREVIEW_ZOOM_MAX,
-      Math.max(PREVIEW_ZOOM_MIN, Math.round(z * 100) / 100),
-    )
-
-  /** Center scroll so the scaled diagram sits in the middle of the viewport. */
-  const centerPreviewScroll = useCallback(() => {
-    const vp = previewViewportRef.current
-    if (!vp) return
-    requestAnimationFrame(() => {
-      const el = previewViewportRef.current
-      if (!el) return
-      const maxL = Math.max(0, el.scrollWidth - el.clientWidth)
-      const maxT = Math.max(0, el.scrollHeight - el.clientHeight)
-      el.scrollLeft = maxL / 2
-      el.scrollTop = maxT / 2
-    })
+  const flash = useCallback((msg: string, ms = 1800) => {
+    setStatus(msg)
+    window.setTimeout(() => setStatus(null), ms)
   }, [])
 
-  /**
-   * Zoom while keeping a focal content point under the same viewport pixel.
-   * Default focus = viewport center (not diagram center).
-   * `origin` is in scroll/content coordinates (scrollLeft + client offset).
-   */
-  const zoomPreview = useCallback(
-    (nextZoom: number, origin?: { x: number; y: number }) => {
-      const vp = previewViewportRef.current
-      const z0 = previewZoom
-      const z1 = clampPreviewZoom(nextZoom)
-      if (z1 === z0) return
+  useEffect(() => {
+    if (!user?.uid) return
+    void loadLibrary(user.uid)
+  }, [user?.uid, loadLibrary])
 
-      const viewX = vp ? (origin ? origin.x - vp.scrollLeft : vp.clientWidth / 2) : 0
-      const viewY = vp ? (origin ? origin.y - vp.scrollTop : vp.clientHeight / 2) : 0
-      const focusX = origin?.x ?? (vp ? vp.scrollLeft + vp.clientWidth / 2 : 0)
-      const focusY = origin?.y ?? (vp ? vp.scrollTop + vp.clientHeight / 2 : 0)
-      const ratio = z1 / z0
-
-      setPreviewZoom(z1)
-      requestAnimationFrame(() => {
-        const el = previewViewportRef.current
-        if (!el) return
-        el.scrollLeft = focusX * ratio - viewX
-        el.scrollTop = focusY * ratio - viewY
-        const maxL = Math.max(0, el.scrollWidth - el.clientWidth)
-        const maxT = Math.max(0, el.scrollHeight - el.clientHeight)
-        el.scrollLeft = Math.min(maxL, Math.max(0, el.scrollLeft))
-        el.scrollTop = Math.min(maxT, Math.max(0, el.scrollTop))
-      })
-    },
-    [previewZoom],
-  )
-
-  const fitPreviewContain = useCallback(
-    (size?: { width: number; height: number }) => {
-      const vp = previewViewportRef.current
-      const w = size?.width ?? naturalSize.width
-      const h = size?.height ?? naturalSize.height
-      if (!vp || w < 2 || h < 2) return
-      const sx = (Math.max(vp.clientWidth, 40) - PREVIEW_PAD) / w
-      const sy = (Math.max(vp.clientHeight, 40) - PREVIEW_PAD) / h
-      setPreviewZoom(clampPreviewZoom(Math.min(sx, sy)))
-      centerPreviewScroll()
-    },
-    [naturalSize.height, naturalSize.width, centerPreviewScroll],
-  )
-
-  const fitPreviewWidth = useCallback(
-    (size?: { width: number; height: number }) => {
-      const vp = previewViewportRef.current
-      const w = size?.width ?? naturalSize.width
-      if (!vp || w < 2) return
-      const sx = (Math.max(vp.clientWidth, 40) - PREVIEW_PAD) / w
-      setPreviewZoom(clampPreviewZoom(sx))
-      centerPreviewScroll()
-    },
-    [naturalSize.width, centerPreviewScroll],
-  )
-
-  const fitPreviewHeight = useCallback(
-    (size?: { width: number; height: number }) => {
-      const vp = previewViewportRef.current
-      const h = size?.height ?? naturalSize.height
-      if (!vp || h < 2) return
-      const sy = (Math.max(vp.clientHeight, 40) - PREVIEW_PAD) / h
-      setPreviewZoom(clampPreviewZoom(sy))
-      centerPreviewScroll()
-    },
-    [naturalSize.height, centerPreviewScroll],
-  )
-
-  // Load editor from selected process-chart card
   useEffect(() => {
     if (!selectedChart) return
     setTitle(selectedChart.title || 'Process chart')
-    setSource(selectedChart.mermaidSource || mermaidTemplate('flowchart', 'TD'))
-    setTheme(selectedChart.mermaidTheme ?? 'dark')
-    setKind(selectedChart.mermaidKind ?? detectMermaidKind(selectedChart.mermaidSource ?? ''))
+    const src =
+      selectedChart.mermaidSource || mermaidTemplate('flowchart', 'TD')
+    setSource(src)
+    setKind(selectedChart.mermaidKind ?? detectMermaidKind(src))
     setDirection(
-      selectedChart.mermaidDirection ??
-        detectFlowDirection(selectedChart.mermaidSource ?? '') ??
-        'TD',
+      selectedChart.mermaidDirection ?? detectFlowDirection(src) ?? 'TD',
     )
+    setReloadToken((t) => t + 1)
+    setActiveLibId(null)
   }, [selectedChart?.id]) // eslint-disable-line react-hooks/exhaustive-deps -- load on select change
 
-  const applyTemplate = (k: MermaidDiagramKind) => {
-    setKind(k)
-    const dir = k === 'flowchart' ? direction : 'TD'
-    setSource(mermaidTemplate(k, dir))
-    // Visual canvas is flowchart-only (vendored mermaid-visual-editor)
-    setEditorMode(k === 'flowchart' ? 'visual' : 'code')
-    fitAfterRenderRef.current = true
-    setStatus(`Loaded ${k} template`)
-    window.setTimeout(() => setStatus(null), 1500)
+  /** Prefer live visual canvas snapshot so Add never uses a stale/empty React state. */
+  const resolveSource = useCallback(() => {
+    if (isFlowchart) {
+      const fromCanvas = getVisualEditorMermaidSource().trim()
+      if (fromCanvas) return fromCanvas
+    }
+    const fromState = source.trim()
+    if (
+      fromState &&
+      !/^flowchart\s+\w+\s*\n\s*%%\s*Add nodes/i.test(fromState)
+    ) {
+      return fromState
+    }
+    return ''
+  }, [isFlowchart, source])
+
+  const confirmReplaceEditor = useCallback((): boolean => {
+    if (!hasEditorContent(source, isFlowchart)) return true
+    return window.confirm(REPLACE_WARNING)
+  }, [source, isFlowchart])
+
+  const loadIntoEditor = useCallback(
+    (
+      next: {
+        title?: string
+        source: string
+        kind?: MermaidDiagramKind
+        direction?: MermaidFlowDirection
+        libId?: string | null
+      },
+      opts?: { skipConfirm?: boolean },
+    ) => {
+      if (!opts?.skipConfirm && !confirmReplaceEditor()) return false
+      const k = next.kind ?? detectMermaidKind(next.source)
+      const d =
+        next.direction ??
+        detectFlowDirection(next.source) ??
+        direction
+      if (next.title !== undefined) setTitle(next.title)
+      setKind(k)
+      setDirection(d)
+      setSource(next.source)
+      setReloadToken((t) => t + 1)
+      setActiveLibId(next.libId ?? null)
+      return true
+    },
+    [confirmReplaceEditor, direction, setActiveLibId],
+  )
+
+  const applyTemplate = (nextKind: MermaidDiagramKind, nextDir = direction) => {
+    const tpl = mermaidTemplate(nextKind, nextDir)
+    const ok = loadIntoEditor(
+      {
+        source: tpl,
+        kind: nextKind,
+        direction: nextDir,
+        libId: null,
+      },
+    )
+    if (!ok) return
+    flash(
+      nextKind === 'flowchart'
+        ? 'Loaded flowchart template into editor'
+        : `Loaded ${nextKind} template (preview · Add to place on canvas)`,
+    )
   }
 
-  const isFlowchartKind =
-    kind === 'flowchart' || /^(flowchart|graph)\b/im.test(source.trim())
-
-  const onDirectionChange = (d: MermaidFlowDirection) => {
-    setDirection(d)
-    if (kind === 'flowchart' || /^(flowchart|graph)\b/i.test(source.trim())) {
-      setSource((prev) => applyFlowDirection(prev, d))
-      fitAfterRenderRef.current = true
-    }
-  }
-
-  const isPortrait = direction === 'TD' || direction === 'BT'
-  const isLandscape = direction === 'LR' || direction === 'RL'
-
-  /** Portrait (vertical flow) ↔ landscape (horizontal flow). */
-  const setLayoutOrientation = (orient: 'portrait' | 'landscape') => {
-    let next: MermaidFlowDirection
-    if (orient === 'portrait') {
-      // Keep reverse sense when possible: RL → BT, LR → TD
-      next = direction === 'RL' || direction === 'BT' ? 'BT' : 'TD'
-    } else {
-      next = direction === 'BT' || direction === 'RL' ? 'RL' : 'LR'
-    }
-    onDirectionChange(next)
-  }
-
-  /**
-   * Reverse flow on the current axis:
-   * TD ↔ BT (vertical), LR ↔ RL (horizontal).
-   */
-  const reverseDirection = () => {
-    const next: MermaidFlowDirection =
-      direction === 'TD'
-        ? 'BT'
-        : direction === 'BT'
-          ? 'TD'
-          : direction === 'LR'
-            ? 'RL'
-            : 'LR'
-    onDirectionChange(next)
-  }
-
-  const directionHint =
-    direction === 'TD'
-      ? 'Top → bottom'
-      : direction === 'BT'
-        ? 'Bottom → top'
-        : direction === 'LR'
-          ? 'Left → right'
-          : 'Right → left'
-
-  const buildFromNodeList = () => {
-    const parts = quickNodes
-      .split(/[,;\n]+/)
-      .map((s) => s.trim())
-      .filter(Boolean)
-    if (parts.length < 2) {
-      setStatus('Enter at least two node labels (comma-separated)')
-      return
-    }
-    const ids = parts.map((_, i) => `N${i + 1}`)
-    const lines = [`flowchart ${direction}`]
-    parts.forEach((label, i) => {
-      const safe = label.replace(/[[\]()]/g, '')
-      const shape =
-        i === 0 || i === parts.length - 1
-          ? `${ids[i]}([${safe}])`
-          : `${ids[i]}[${safe}]`
-      lines.push(`    ${shape}`)
-    })
-    for (let i = 0; i < ids.length - 1; i++) {
-      lines.push(`    ${ids[i]} --> ${ids[i + 1]}`)
-    }
-    setKind('flowchart')
-    setSource(lines.join('\n'))
-    fitAfterRenderRef.current = true
-    setStatus('Built flowchart from node list')
-    window.setTimeout(() => setStatus(null), 1500)
+  const applyDirection = (nextDir: MermaidFlowDirection) => {
+    setDirection(nextDir)
+    if (kind !== 'flowchart') return
+    // Direction rewrite keeps the same graph — no full replace warning
+    const base = resolveSource() || source
+    const next = applyFlowDirection(
+      base || mermaidTemplate('flowchart', nextDir),
+      nextDir,
+    )
+    setSource(next)
+    setReloadToken((t) => t + 1)
   }
 
   const insert = () => {
-    const src = source.trim()
+    const src = resolveSource()
     if (!src) {
-      setStatus('Diagram source is empty')
+      flash(
+        isFlowchart
+          ? 'Add at least one node on the canvas first'
+          : 'Load a template first',
+      )
       return
     }
+    setSource(src)
+    const dir = detectFlowDirection(src) ?? direction
+    const k = detectMermaidKind(src)
     addProcessChart(src, {
       title: title.trim() || 'Process chart',
-      mermaidTheme: theme,
-      mermaidKind: kind,
-      mermaidDirection: direction,
+      mermaidTheme: 'dark',
+      mermaidKind: k,
+      mermaidDirection: dir,
     })
-    setStatus('Added to canvas')
-    window.setTimeout(() => setStatus(null), 1600)
+    flash('Added to canvas')
   }
 
   const updateSelected = () => {
     if (!selectedChart) return
-    const src = source.trim()
+    const src = resolveSource()
     if (!src) {
-      setStatus('Diagram source is empty')
+      flash(
+        isFlowchart
+          ? 'Add at least one node on the canvas first'
+          : 'Load a template first',
+      )
       return
     }
+    setSource(src)
+    const dir = detectFlowDirection(src) ?? direction
+    const k = detectMermaidKind(src)
     updateItem(selectedChart.id, {
       title: title.trim() || 'Process chart',
       mermaidSource: src,
-      mermaidTheme: theme,
-      mermaidKind: kind,
-      mermaidDirection: direction,
+      mermaidTheme: 'dark',
+      mermaidKind: k,
+      mermaidDirection: dir,
     })
-    setStatus('Updated selected chart')
-    window.setTimeout(() => setStatus(null), 1600)
+    flash('Updated selected chart')
   }
 
-  const onRendered = useCallback(
-    (size: { width: number; height: number }) => {
-      setNaturalSize(size)
-      if (fitAfterRenderRef.current) {
-        fitAfterRenderRef.current = false
-        requestAnimationFrame(() => fitPreviewContain(size))
-      }
-      // Do not re-center on ordinary re-renders — preserves pan/zoom focus
-    },
-    [fitPreviewContain],
-  )
+  const handleSaveLibrary = async (mode: 'new' | 'overwrite') => {
+    if (!user?.uid) {
+      flash('Sign in to save flowcharts to the cloud')
+      return
+    }
+    const src = resolveSource()
+    if (!src) {
+      flash('Nothing to save — add nodes or load a template first')
+      return
+    }
+    clearLibError()
+    const payload = {
+      title: title.trim() || 'Untitled flowchart',
+      mermaidSource: src,
+      mermaidKind: detectMermaidKind(src),
+      mermaidDirection: detectFlowDirection(src) ?? direction,
+    }
+    if (mode === 'overwrite' && activeLibId) {
+      const ok = await saveOverwrite(user.uid, activeLibId, payload)
+      if (ok) flash('Saved to cloud library')
+      return
+    }
+    const created = await saveNew(user.uid, payload)
+    if (created) flash('Saved new flowchart to cloud library')
+  }
 
-  // Fit once on first successful render; templates re-enable via fitAfterRenderRef
-  useEffect(() => {
-    fitAfterRenderRef.current = true
-  }, [])
+  const handleLoadLibraryItem = (item: StoredFlowchart) => {
+    const ok = loadIntoEditor({
+      title: item.title,
+      source: item.mermaidSource,
+      kind: item.mermaidKind,
+      direction: item.mermaidDirection,
+      libId: item.id,
+    })
+    if (ok) {
+      setLibraryOpen(false)
+      flash(`Loaded “${item.title}” into editor`)
+    }
+  }
+
+  const handleDeleteLibraryItem = async (item: StoredFlowchart) => {
+    if (!user?.uid) return
+    if (
+      !window.confirm(
+        `Delete “${item.title}” from your cloud library?\n\nThis cannot be undone.`,
+      )
+    ) {
+      return
+    }
+    const ok = await removeLib(user.uid, item.id)
+    if (ok) flash('Deleted from cloud library')
+  }
+
+  const activeLibTitle = libItems.find((i) => i.id === activeLibId)?.title
 
   return (
-    <div className="flex h-full min-h-0 flex-col" data-testid="process-chart-panel">
+    <div
+      className="flex h-full min-h-0 flex-col"
+      data-testid="process-chart-panel"
+    >
       <div className="flex shrink-0 items-center gap-1.5 border-b border-zinc-800 px-2.5 py-1.5">
         <GitBranch className="h-3.5 w-3.5 text-indigo-400" />
         <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-300">
           Process chart
         </span>
-        <span className="ml-auto text-[9px] text-zinc-600">Mermaid</span>
+        <span className="ml-auto text-[9px] text-zinc-600">
+          {isFlowchart ? 'Visual' : 'Template'}
+        </span>
       </div>
 
-      <PanelGroup direction="vertical" autoSaveId="process-chart-panel-v" className="min-h-0 flex-1">
-        {/* Config + editor */}
-        <Panel defaultSize={58} minSize={30}>
-          <div className="flex h-full min-h-0 flex-col overflow-y-auto overscroll-contain">
-            <div className="space-y-2 border-b border-zinc-800 px-2.5 py-2">
-              <label className="flex flex-col gap-0.5">
-                <span className="text-[9px] font-medium uppercase text-zinc-500">
-                  Title
-                </span>
-                <input
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  className="field-input py-1 text-[11px]"
-                />
-              </label>
+      <div className="shrink-0 space-y-2 border-b border-zinc-800 px-2.5 py-2">
+        <label className="flex flex-col gap-0.5">
+          <span className="text-[9px] font-medium uppercase text-zinc-500">
+            Title
+          </span>
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className="field-input py-1 text-[11px]"
+            data-testid="mermaid-title"
+          />
+        </label>
 
-              <div className="grid grid-cols-2 gap-1.5">
-                <label className="flex flex-col gap-0.5">
-                  <span className="text-[9px] font-medium uppercase text-zinc-500">
-                    Diagram type
-                  </span>
-                  <select
-                    value={kind}
-                    onChange={(e) => {
-                      const k = e.target.value as MermaidDiagramKind
-                      applyTemplate(k)
-                    }}
-                    className="cursor-pointer rounded border border-zinc-700 bg-zinc-900 px-1.5 py-1 text-[10px] text-zinc-200 outline-none focus:border-indigo-500/50"
-                    data-testid="mermaid-kind"
-                  >
-                    {MERMAID_KINDS.map((k) => (
-                      <option key={k.id} value={k.id} title={k.description}>
-                        {k.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="flex flex-col gap-0.5">
-                  <span className="text-[9px] font-medium uppercase text-zinc-500">
-                    Theme
-                  </span>
-                  <select
-                    value={theme}
-                    onChange={(e) => setTheme(e.target.value as MermaidThemeId)}
-                    className="cursor-pointer rounded border border-zinc-700 bg-zinc-900 px-1.5 py-1 text-[10px] text-zinc-200 outline-none focus:border-indigo-500/50"
-                    data-testid="mermaid-theme"
-                  >
-                    {MERMAID_THEMES.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-
-              {(kind === 'flowchart' ||
-                /^(flowchart|graph)\b/i.test(source.trim())) && (
-                <div
-                  className="flex items-center gap-1.5"
-                  data-testid="mermaid-orientation"
+        <div>
+          <span className="mb-1 block text-[9px] font-medium uppercase text-zinc-500">
+            Diagram type
+          </span>
+          <div
+            className="flex flex-wrap gap-1"
+            data-testid="mermaid-kind-templates"
+          >
+            {MERMAID_KINDS.map((k) => {
+              const active = kind === k.id
+              return (
+                <button
+                  key={k.id}
+                  type="button"
+                  title={`${k.description} — replaces editor content`}
+                  onClick={() => applyTemplate(k.id)}
+                  className={`rounded-md border px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
+                    active
+                      ? 'border-indigo-500/70 bg-indigo-500/15 text-indigo-200'
+                      : 'border-zinc-800 bg-zinc-900/60 text-zinc-400 hover:border-zinc-700 hover:text-zinc-300'
+                  }`}
+                  data-testid={`mermaid-kind-${k.id}`}
                 >
-                  <div
-                    className="inline-flex flex-1 rounded-md border border-zinc-800/80 bg-zinc-950/50 p-0.5"
-                    role="group"
-                    aria-label="Portrait or landscape"
-                  >
-                    <button
-                      type="button"
-                      title="Portrait — vertical flow"
-                      onClick={() => setLayoutOrientation('portrait')}
-                      className={`inline-flex flex-1 items-center justify-center gap-1 rounded px-1.5 py-1 text-[10px] transition ${
-                        isPortrait
-                          ? 'bg-zinc-800 text-zinc-100'
-                          : 'text-zinc-500 hover:text-zinc-300'
-                      }`}
-                    >
-                      <RectangleVertical className="h-3 w-3 opacity-80" />
-                      <span className="hidden sm:inline">Portrait</span>
-                    </button>
-                    <button
-                      type="button"
-                      title="Landscape — horizontal flow"
-                      onClick={() => setLayoutOrientation('landscape')}
-                      className={`inline-flex flex-1 items-center justify-center gap-1 rounded px-1.5 py-1 text-[10px] transition ${
-                        isLandscape
-                          ? 'bg-zinc-800 text-zinc-100'
-                          : 'text-zinc-500 hover:text-zinc-300'
-                      }`}
-                    >
-                      <RectangleHorizontal className="h-3 w-3 opacity-80" />
-                      <span className="hidden sm:inline">Landscape</span>
-                    </button>
-                  </div>
+                  {k.label}
+                </button>
+              )
+            })}
+          </div>
+          <p className="mt-1 text-[9px] leading-snug text-zinc-600">
+            Choosing a type loads that starter into the editor
+            {isFlowchart ? ' (interactive flowchart)' : ' (preview only)'}. You
+            will be warned if the editor already has content.
+          </p>
+        </div>
+
+        {isFlowchart && (
+          <div>
+            <span className="mb-1 block text-[9px] font-medium uppercase text-zinc-500">
+              Direction
+            </span>
+            <div
+              className="flex flex-wrap gap-1"
+              data-testid="mermaid-directions"
+            >
+              {MERMAID_DIRECTIONS.map((d) => {
+                const active = direction === d.id
+                return (
                   <button
+                    key={d.id}
                     type="button"
-                    title={`Reverse direction (${directionHint})`}
-                    onClick={reverseDirection}
-                    data-testid="mermaid-reverse-direction"
-                    className="inline-flex shrink-0 items-center gap-1 rounded-md border border-zinc-800/80 px-2 py-1 text-[10px] text-zinc-500 transition hover:border-zinc-700 hover:bg-zinc-900/80 hover:text-zinc-200"
+                    onClick={() => applyDirection(d.id)}
+                    className={`rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${
+                      active
+                        ? 'border-zinc-600 bg-zinc-800 text-zinc-200'
+                        : 'border-zinc-800 bg-zinc-900/40 text-zinc-500 hover:border-zinc-700'
+                    }`}
+                    data-testid={`mermaid-dir-${d.id}`}
                   >
-                    {isPortrait ? (
-                      <ArrowUpDown className="h-3 w-3" />
-                    ) : (
-                      <ArrowLeftRight className="h-3 w-3" />
-                    )}
-                    <span>Reverse</span>
+                    {d.label}
                   </button>
-                </div>
-              )}
+                )
+              })}
+            </div>
+          </div>
+        )}
 
-              <div>
-                <p className="mb-1 text-[9px] font-medium uppercase text-zinc-500">
-                  Templates
-                </p>
-                <div className="flex flex-wrap gap-1">
-                  {MERMAID_KINDS.map((k) => (
-                    <button
-                      key={k.id}
-                      type="button"
-                      title={k.description}
-                      onClick={() => applyTemplate(k.id)}
-                      className={`rounded border px-1.5 py-0.5 text-[9px] font-medium transition ${
-                        kind === k.id
-                          ? 'border-indigo-500/50 bg-indigo-500/15 text-indigo-100'
-                          : 'border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200'
-                      }`}
-                    >
-                      {k.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="rounded-md border border-zinc-800 bg-zinc-900/40 p-1.5">
-                <p className="mb-1 flex items-center gap-1 text-[9px] font-medium uppercase text-zinc-500">
-                  <Sparkles className="h-3 w-3" />
-                  Quick flowchart from list
-                </p>
-                <input
-                  value={quickNodes}
-                  onChange={(e) => setQuickNodes(e.target.value)}
-                  placeholder="Start, Step A, Decision, Done"
-                  className="field-input mb-1 py-1 text-[10px]"
-                />
+        {/* Cloud library */}
+        <div className="rounded-md border border-zinc-800 bg-zinc-950/40 p-2">
+          <div className="mb-1.5 flex items-center gap-1.5">
+            <Cloud className="h-3 w-3 text-indigo-400/90" />
+            <span className="text-[9px] font-medium uppercase text-zinc-500">
+              Cloud library
+            </span>
+            {activeLibId && (
+              <span
+                className="ml-auto max-w-[8rem] truncate text-[9px] text-indigo-300/80"
+                title={activeLibTitle}
+              >
+                Linked
+              </span>
+            )}
+          </div>
+          {!user ? (
+            <p className="text-[9px] leading-snug text-zinc-600">
+              Sign in to save and load flowcharts in Firestore.
+            </p>
+          ) : (
+            <>
+              <div className="flex flex-wrap gap-1">
                 <button
                   type="button"
-                  onClick={buildFromNodeList}
-                  className="inline-flex w-full items-center justify-center gap-1 rounded-md border border-zinc-700 px-2 py-1 text-[10px] text-zinc-300 hover:bg-zinc-900"
+                  disabled={libSaving}
+                  onClick={() => void handleSaveLibrary('new')}
+                  className="inline-flex items-center gap-1 rounded-md border border-zinc-700 px-1.5 py-1 text-[10px] text-zinc-200 hover:bg-zinc-900 disabled:opacity-50"
+                  data-testid="flowchart-save-new"
+                  title="Save current editor as a new cloud flowchart"
+                >
+                  <CloudUpload className="h-3 w-3" />
+                  Save new
+                </button>
+                <button
+                  type="button"
+                  disabled={libSaving || !activeLibId}
+                  onClick={() => void handleSaveLibrary('overwrite')}
+                  className="inline-flex items-center gap-1 rounded-md border border-zinc-700 px-1.5 py-1 text-[10px] text-zinc-200 hover:bg-zinc-900 disabled:opacity-50"
+                  data-testid="flowchart-save-overwrite"
+                  title={
+                    activeLibId
+                      ? 'Overwrite the linked cloud flowchart'
+                      : 'Load a library item first to enable overwrite'
+                  }
                 >
                   <RefreshCw className="h-3 w-3" />
-                  Build linear flowchart
+                  Update saved
                 </button>
-              </div>
-            </div>
-
-            <div className="flex min-h-0 flex-1 flex-col gap-0.5 p-2.5 pt-2">
-              <div className="flex items-center gap-1">
-                <span className="text-[9px] font-medium uppercase text-zinc-500">
-                  {isFlowchartKind && editorMode === 'visual'
-                    ? 'Visual editor'
-                    : 'Mermaid source'}
-                </span>
-                {isFlowchartKind && (
-                  <div
-                    className="ml-auto inline-flex rounded border border-zinc-800 p-0.5"
-                    role="group"
-                    aria-label="Editor mode"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => setEditorMode('visual')}
-                      className={`rounded px-1.5 py-0.5 text-[9px] font-medium ${
-                        editorMode === 'visual'
-                          ? 'bg-indigo-500/20 text-indigo-100'
-                          : 'text-zinc-500 hover:text-zinc-300'
-                      }`}
-                      data-testid="mermaid-mode-visual"
-                    >
-                      Visual
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setEditorMode('code')}
-                      className={`rounded px-1.5 py-0.5 text-[9px] font-medium ${
-                        editorMode === 'code'
-                          ? 'bg-indigo-500/20 text-indigo-100'
-                          : 'text-zinc-500 hover:text-zinc-300'
-                      }`}
-                      data-testid="mermaid-mode-code"
-                    >
-                      Code
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {isFlowchartKind && editorMode === 'visual' ? (
-                <div className="min-h-[12rem] flex-1">
-                  <MermaidVisualEditor
-                    source={source}
-                    onSourceChange={(mmd) => {
-                      setSource(mmd)
-                      setKind('flowchart')
-                      const d = detectFlowDirection(mmd)
-                      if (d) setDirection(d)
-                    }}
-                  />
-                </div>
-              ) : (
-                <textarea
-                  value={source}
-                  onChange={(e) => {
-                    setSource(e.target.value)
-                    const d = detectFlowDirection(e.target.value)
-                    if (d) setDirection(d)
-                    setKind(detectMermaidKind(e.target.value))
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLibraryOpen((o) => !o)
+                    if (user?.uid) void loadLibrary(user.uid)
                   }}
-                  spellCheck={false}
-                  className="field-input min-h-[8rem] flex-1 resize-y font-mono text-[10px] leading-relaxed"
-                  data-testid="mermaid-source"
-                />
-              )}
-            </div>
-          </div>
-        </Panel>
-
-        <PanelResizeHandle
-          className="group relative h-1.5 shrink-0 bg-zinc-900 transition hover:bg-indigo-500/50 data-[resize-handle-active]:bg-indigo-500/60"
-          title="Drag to resize preview"
-        />
-
-        {/* Preview */}
-        <Panel defaultSize={42} minSize={18} maxSize={70}>
-          <div
-            className="flex h-full min-h-0 flex-col border-t border-zinc-800 bg-[#12141a]"
-            data-testid="mermaid-preview-chrome"
-            data-studio-theme="dark"
-          >
-            <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-zinc-800 px-2 py-1">
-              <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
-                Preview
-              </span>
-              <div
-                className="ml-auto flex flex-wrap items-center gap-0.5"
-                role="group"
-                aria-label="Preview zoom and pan"
-              >
-                <button
-                  type="button"
-                  title="Pan — drag to move the diagram"
-                  data-testid="mermaid-preview-pan"
-                  onClick={() => setPanMode((p) => !p)}
-                  className={`rounded border p-1 transition ${
-                    panMode
-                      ? 'border-indigo-500/50 bg-indigo-500/15 text-indigo-100'
-                      : 'border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:bg-zinc-900 hover:text-zinc-200'
-                  }`}
+                  className="inline-flex items-center gap-1 rounded-md border border-indigo-500/40 bg-indigo-500/10 px-1.5 py-1 text-[10px] text-indigo-200 hover:bg-indigo-500/20"
+                  data-testid="flowchart-library-toggle"
                 >
-                  <Hand className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  type="button"
-                  title="Zoom out (viewport center)"
-                  data-testid="mermaid-preview-zoom-out"
-                  onClick={() =>
-                    zoomPreview(previewZoom - PREVIEW_ZOOM_STEP)
-                  }
-                  className="rounded border border-zinc-800 p-1 text-zinc-400 hover:border-zinc-700 hover:bg-zinc-900 hover:text-zinc-200"
-                >
-                  <ZoomOut className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  type="button"
-                  title="Reset to 100% (keeps view focus)"
-                  onClick={() => zoomPreview(1)}
-                  className="min-w-[2.75rem] rounded border border-zinc-800 px-1 py-0.5 text-[10px] tabular-nums text-zinc-400 hover:border-zinc-700 hover:bg-zinc-900 hover:text-zinc-200"
-                >
-                  {Math.round(previewZoom * 100)}%
-                </button>
-                <button
-                  type="button"
-                  title="Zoom in (viewport center)"
-                  data-testid="mermaid-preview-zoom-in"
-                  onClick={() =>
-                    zoomPreview(previewZoom + PREVIEW_ZOOM_STEP)
-                  }
-                  className="rounded border border-zinc-800 p-1 text-zinc-400 hover:border-zinc-700 hover:bg-zinc-900 hover:text-zinc-200"
-                >
-                  <ZoomIn className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  type="button"
-                  title="Fit entire diagram (contain, centered)"
-                  data-testid="mermaid-preview-fit"
-                  onClick={() => fitPreviewContain()}
-                  className="inline-flex items-center gap-0.5 rounded border border-zinc-800 px-1.5 py-1 text-[10px] font-medium text-zinc-400 hover:border-indigo-500/40 hover:bg-indigo-500/10 hover:text-indigo-100"
-                >
-                  <Maximize2 className="h-3 w-3" />
-                  Fit
-                </button>
-                <button
-                  type="button"
-                  title="Zoom to fit width (centered)"
-                  data-testid="mermaid-preview-fit-width"
-                  onClick={() => fitPreviewWidth()}
-                  className="inline-flex items-center gap-0.5 rounded border border-zinc-800 px-1.5 py-1 text-[10px] font-medium text-zinc-400 hover:border-indigo-500/40 hover:bg-indigo-500/10 hover:text-indigo-100"
-                >
-                  <ArrowLeftRight className="h-3 w-3" />
-                  W
-                </button>
-                <button
-                  type="button"
-                  title="Zoom to fit height (centered)"
-                  data-testid="mermaid-preview-fit-height"
-                  onClick={() => fitPreviewHeight()}
-                  className="inline-flex items-center gap-0.5 rounded border border-zinc-800 px-1.5 py-1 text-[10px] font-medium text-zinc-400 hover:border-indigo-500/40 hover:bg-indigo-500/10 hover:text-indigo-100"
-                >
-                  <ArrowUpDown className="h-3 w-3" />
-                  H
+                  <FolderOpen className="h-3 w-3" />
+                  {libraryOpen ? 'Hide list' : 'Load…'}
                 </button>
               </div>
-            </div>
-            <div
-              ref={previewViewportRef}
-              className={`min-h-0 flex-1 overflow-auto p-2 ${
-                panMode ? 'cursor-grab active:cursor-grabbing select-none' : ''
-              }`}
-              data-testid="mermaid-preview-viewport"
-              onWheel={(e) => {
-                if (!(e.ctrlKey || e.metaKey)) return
-                e.preventDefault()
-                const vp = previewViewportRef.current
-                if (!vp) return
-                const rect = vp.getBoundingClientRect()
-                // Focal point in content (scroll) coordinates
-                const contentX = vp.scrollLeft + (e.clientX - rect.left)
-                const contentY = vp.scrollTop + (e.clientY - rect.top)
-                const delta =
-                  e.deltaY > 0 ? -PREVIEW_ZOOM_STEP : PREVIEW_ZOOM_STEP
-                zoomPreview(previewZoom + delta, {
-                  x: contentX,
-                  y: contentY,
-                })
-              }}
-              onPointerDown={(e) => {
-                if (!panMode || e.button !== 0) return
-                const vp = previewViewportRef.current
-                if (!vp) return
-                e.preventDefault()
-                try {
-                  vp.setPointerCapture(e.pointerId)
-                } catch {
-                  /* ignore */
-                }
-                panDragRef.current = {
-                  pointerId: e.pointerId,
-                  startX: e.clientX,
-                  startY: e.clientY,
-                  scrollLeft: vp.scrollLeft,
-                  scrollTop: vp.scrollTop,
-                }
-              }}
-              onPointerMove={(e) => {
-                const d = panDragRef.current
-                const vp = previewViewportRef.current
-                if (!d || !vp || d.pointerId !== e.pointerId) return
-                vp.scrollLeft = d.scrollLeft - (e.clientX - d.startX)
-                vp.scrollTop = d.scrollTop - (e.clientY - d.startY)
-              }}
-              onPointerUp={(e) => {
-                const d = panDragRef.current
-                if (!d || d.pointerId !== e.pointerId) return
-                panDragRef.current = null
-                const vp = previewViewportRef.current
-                if (vp) {
-                  try {
-                    vp.releasePointerCapture(e.pointerId)
-                  } catch {
-                    /* ignore */
-                  }
-                }
-              }}
-              onPointerCancel={() => {
-                panDragRef.current = null
-              }}
-            >
-              {/* min-full flex center: diagram stays centered when smaller than the pane */}
-              <div className="flex min-h-full min-w-full items-center justify-center">
-                <MermaidView
-                  source={source}
-                  theme={theme}
-                  forceDark={theme !== 'forest'}
-                  scale={previewZoom}
-                  onRendered={onRendered}
-                  className="min-h-[4rem]"
-                />
-              </div>
-            </div>
-            <div className="flex shrink-0 flex-col gap-1.5 border-t border-zinc-800 px-2.5 py-2">
-              {status && (
-                <p className="text-center text-[10px] text-emerald-300/90">
-                  {status}
+              {libError && (
+                <p className="mt-1 text-[9px] leading-snug text-rose-400/90">
+                  {libError}
                 </p>
               )}
-              <div className="flex gap-1.5">
-                {selectedChart && (
-                  <button
-                    type="button"
-                    onClick={updateSelected}
-                    className="inline-flex flex-1 items-center justify-center gap-1 rounded-md border border-zinc-700 px-2 py-2 text-xs font-medium text-zinc-200 hover:bg-zinc-900"
-                    data-testid="mermaid-update-selected"
-                  >
-                    <RefreshCw className="h-3.5 w-3.5" />
-                    Update card
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={insert}
-                  className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-md bg-indigo-500 px-2 py-2 text-xs font-medium text-white hover:bg-indigo-400"
-                  data-testid="mermaid-add-to-canvas"
+              {libraryOpen && (
+                <div
+                  className="mt-2 max-h-36 overflow-y-auto rounded border border-zinc-800"
+                  data-testid="flowchart-library-list"
                 >
-                  <Plus className="h-3.5 w-3.5" />
-                  Add to canvas
-                </button>
-              </div>
+                  {libLoading && (
+                    <p className="px-2 py-2 text-[10px] text-zinc-500">
+                      Loading…
+                    </p>
+                  )}
+                  {!libLoading && libItems.length === 0 && (
+                    <p className="px-2 py-2 text-[10px] text-zinc-500">
+                      No saved flowcharts yet. Use “Save new”.
+                    </p>
+                  )}
+                  {!libLoading &&
+                    libItems.map((item) => (
+                      <div
+                        key={item.id}
+                        className={`flex items-center gap-1 border-b border-zinc-800/80 px-1.5 py-1 last:border-0 ${
+                          item.id === activeLibId ? 'bg-indigo-500/10' : ''
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => handleLoadLibraryItem(item)}
+                          className="min-w-0 flex-1 truncate text-left text-[10px] text-zinc-200 hover:text-white"
+                          title={`Load “${item.title}” into editor`}
+                        >
+                          {item.title}
+                          <span className="ml-1 text-[9px] text-zinc-600">
+                            {item.mermaidKind}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleDeleteLibraryItem(item)}
+                          className="shrink-0 rounded p-0.5 text-zinc-600 hover:bg-zinc-800 hover:text-rose-400"
+                          title="Delete from library"
+                          aria-label={`Delete ${item.title}`}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      <div className="min-h-0 flex-1 p-2">
+        {isFlowchart ? (
+          <MermaidVisualEditor
+            source={source}
+            onSourceChange={setSource}
+            reloadToken={reloadToken}
+            className="h-full min-h-[16rem]"
+          />
+        ) : (
+          <div
+            className="flex h-full min-h-[16rem] flex-col overflow-hidden rounded-md border border-zinc-700/80 bg-[#12141a]"
+            data-testid="mermaid-template-preview"
+          >
+            <div className="min-h-0 flex-1 overflow-auto p-2">
+              <MermaidView
+                source={source}
+                theme="dark"
+                forceDark
+                className="h-full w-full"
+              />
             </div>
+            <p className="shrink-0 border-t border-zinc-800 px-2 py-1 text-[9px] text-zinc-500">
+              Preview only · switch to Flowchart for interactive editing
+            </p>
           </div>
-        </Panel>
-      </PanelGroup>
+        )}
+      </div>
+
+      <div className="flex shrink-0 flex-col gap-1.5 border-t border-zinc-800 px-2.5 py-2">
+        {status && (
+          <p className="text-center text-[10px] text-emerald-300/90">{status}</p>
+        )}
+        <div className="flex gap-1.5">
+          {selectedChart && (
+            <button
+              type="button"
+              onClick={updateSelected}
+              className="inline-flex flex-1 items-center justify-center gap-1 rounded-md border border-zinc-700 px-2 py-2 text-xs font-medium text-zinc-200 hover:bg-zinc-900"
+              data-testid="mermaid-update-selected"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              Update card
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={insert}
+            className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-md bg-indigo-500 px-2 py-2 text-xs font-medium text-white hover:bg-indigo-400"
+            data-testid="mermaid-add-to-canvas"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add to canvas
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

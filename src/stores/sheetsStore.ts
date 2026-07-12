@@ -25,11 +25,24 @@ import {
 import { useCanvasStore } from './canvasStore'
 import { createId } from '@/lib/ids'
 
-interface SheetMeta {
+export interface SheetMeta {
   id: string
   title: string
   updatedAt: number
   localOnly?: boolean
+}
+
+/** Full sheet payload for My Sheets preview (does not load into the workspace). */
+export interface SheetPreview {
+  id: string
+  title: string
+  updatedAt: number
+  createdAt: number | null
+  localOnly?: boolean
+  canvas: SheetCanvas
+  items: CanvasItem[]
+  folders: OutlinerFolder[]
+  ownerId?: string
 }
 
 export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error' | 'local'
@@ -46,6 +59,8 @@ interface SheetsState {
   loadSheets: (uid: string) => Promise<void>
   createSheet: (uid: string, title?: string) => Promise<string>
   openSheet: (sheetId: string) => Promise<void>
+  /** Fetch sheet for detail preview without switching the active workspace sheet. */
+  fetchSheetPreview: (sheetId: string) => Promise<SheetPreview | null>
   saveActiveSheet: (uid: string) => Promise<void>
   renameSheet: (sheetId: string, title: string) => Promise<void>
   deleteSheet: (sheetId: string) => Promise<void>
@@ -228,6 +243,72 @@ export const useSheetsStore = create<SheetsState>((set, get) => ({
     } catch (e) {
       console.warn('[sheets] open failed:', e)
       set({ lastCloudError: formatFirestoreError(e) })
+    }
+  },
+
+  fetchSheetPreview: async (sheetId) => {
+    const meta = get().sheets.find((s) => s.id === sheetId)
+
+    if (sheetId.startsWith('local_')) {
+      // Local sheets only exist in the workspace when currently open
+      const canvasState = useCanvasStore.getState()
+      if (canvasState.sheetId === sheetId) {
+        return {
+          id: sheetId,
+          title: canvasState.title || meta?.title || 'Local sheet',
+          updatedAt: meta?.updatedAt ?? Date.now(),
+          createdAt: null,
+          localOnly: true,
+          canvas: canvasState.canvas,
+          items: canvasState.items,
+          folders: canvasState.folders,
+        }
+      }
+      return {
+        id: sheetId,
+        title: meta?.title || 'Local sheet (offline)',
+        updatedAt: meta?.updatedAt ?? Date.now(),
+        createdAt: null,
+        localOnly: true,
+        canvas: { ...DEFAULT_CANVAS },
+        items: [],
+        folders: [],
+      }
+    }
+
+    try {
+      const snap = await getDoc(doc(db, 'sheets', sheetId))
+      if (!snap.exists()) {
+        set({ lastCloudError: `Sheet ${sheetId} not found` })
+        return null
+      }
+      const data = snap.data()
+      const updatedAt =
+        data.updatedAt instanceof Timestamp
+          ? data.updatedAt.toMillis()
+          : (data.updatedAt as number) ?? meta?.updatedAt ?? Date.now()
+      const createdAt =
+        data.createdAt instanceof Timestamp
+          ? data.createdAt.toMillis()
+          : typeof data.createdAt === 'number'
+            ? data.createdAt
+            : null
+      return {
+        id: sheetId,
+        title: (data.title as string) ?? meta?.title ?? 'Untitled sheet',
+        updatedAt,
+        createdAt,
+        canvas: (data.canvas as SheetCanvas) ?? { ...DEFAULT_CANVAS },
+        items: Array.isArray(data.items) ? (data.items as CanvasItem[]) : [],
+        folders: Array.isArray(data.folders)
+          ? (data.folders as OutlinerFolder[])
+          : [],
+        ownerId: data.ownerId as string | undefined,
+      }
+    } catch (e) {
+      console.warn('[sheets] preview fetch failed:', e)
+      set({ lastCloudError: formatFirestoreError(e) })
+      return null
     }
   },
 

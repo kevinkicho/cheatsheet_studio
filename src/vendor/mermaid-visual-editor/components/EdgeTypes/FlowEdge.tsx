@@ -44,7 +44,7 @@ export function FlowEdge({
 
   const edgeData = data as FlowEdgeData | undefined
   const edgeStyle = edgeData?.edgeStyle ?? 'solid'
-  const strokeColor = edgeData?.strokeColor ?? '#9ca3af'
+  const strokeColor = edgeData?.strokeColor ?? 'var(--edge-stroke, #a1a1aa)'
   const displayLabel = label as string | undefined
 
   // Edge visual style
@@ -89,14 +89,28 @@ export function FlowEdge({
               onBlur={commitLabel}
               onKeyDown={handleKeyDown}
               placeholder="label…"
-              className="text-xs px-2 py-0.5 rounded border border-blue-400 bg-white shadow-sm outline-none w-28 text-center"
+              className="w-28 rounded border border-indigo-400/70 px-2 py-0.5 text-center text-xs shadow-sm outline-none"
+              style={{
+                background: 'var(--neu-surface, #1e2028)',
+                color: 'var(--neu-text, #e4e4e7)',
+              }}
             />
           ) : displayLabel ? (
-            <span className="text-xs px-2 py-0.5 rounded bg-white border border-gray-200 shadow-sm text-gray-700 cursor-pointer hover:border-blue-300">
+            <span
+              className="cursor-pointer rounded border px-2 py-0.5 text-xs shadow-sm"
+              style={{
+                background: 'var(--neu-surface, #1e2028)',
+                borderColor: 'var(--neu-border, #3f3f46)',
+                color: 'var(--neu-text, #e4e4e7)',
+              }}
+            >
               {displayLabel}
             </span>
           ) : (
-            <span className="text-xs px-1 py-0.5 rounded text-gray-300 cursor-pointer hover:text-gray-400 hover:bg-white/80 select-none">
+            <span
+              className="cursor-pointer select-none rounded px-1 py-0.5 text-xs"
+              style={{ color: 'var(--neu-text-muted, #a1a1aa)' }}
+            >
               ✎
             </span>
           )}

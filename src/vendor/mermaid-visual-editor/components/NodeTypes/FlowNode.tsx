@@ -303,9 +303,12 @@ export function FlowNode({ id, data, selected }: NodeProps) {
   )
 
   const shape = (nodeData.shape ?? 'rectangle') as NodeShape
-  const fillColor = nodeData.fillColor || '#ffffff'
-  const strokeColor = nodeData.strokeColor || (selected ? '#3b82f6' : '#9ca3af')
-  const textColor = nodeData.textColor || '#1f2937'
+  // Studio dark defaults (CSS vars from .mermaid-visual-editor)
+  const fillColor = nodeData.fillColor || 'var(--node-fill, #27272a)'
+  const strokeColor =
+    nodeData.strokeColor ||
+    (selected ? 'var(--neu-icon-active, #818cf8)' : 'var(--node-stroke, #71717a)')
+  const textColor = nodeData.textColor || 'var(--node-text, #f4f4f5)'
   const strokeWidth = selected ? 3 : 2
 
   const labelProps: LabelProps = {
@@ -326,12 +329,17 @@ export function FlowNode({ id, data, selected }: NodeProps) {
         className="relative w-full h-full rounded-xl cursor-pointer"
         style={{
           border: `2px dashed ${strokeColor}`,
-          backgroundColor: nodeData.fillColor ? nodeData.fillColor : 'rgba(59,130,246,0.04)',
+          backgroundColor: nodeData.fillColor
+            ? nodeData.fillColor
+            : 'rgba(39, 39, 42, 0.45)',
         }}
         onDoubleClick={handleDoubleClick}
       >
         <NodeResizer minWidth={200} minHeight={120} isVisible={!!selected} />
-        <div className={`absolute top-2 left-3 text-xs font-semibold text-gray-500 ${editing ? '' : 'select-none pointer-events-none'}`}>
+        <div
+          className={`absolute top-2 left-3 text-xs font-semibold ${editing ? '' : 'select-none pointer-events-none'}`}
+          style={{ color: 'var(--neu-text-muted, #a1a1aa)' }}
+        >
           <NodeLabel {...labelProps} color={textColor} />
         </div>
         <NodeHandles />

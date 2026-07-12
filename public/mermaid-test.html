@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="color-scheme" content="dark" />
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
-    <title>Mermaid paint — app stack + v5</title>
+    <title>Mermaid studio dark — isolation harness</title>
     <style>
       html,
       body,
@@ -83,12 +83,12 @@
     </style>
   </head>
   <body>
-    <h1>Mermaid: app stack + v5 hard paint — Ctrl+Shift+R</h1>
+    <h1>Mermaid studio dark — isolation harness</h1>
     <p class="note">
-      Card 1 = raw default (pale, no paint). Card 2–3 = dark paint that
-      <strong>rewrites fills only</strong> — keeps Mermaid font metrics so labels
-      stay inside node boxes (184747 overflow was from deleting Mermaid
-      <code>&lt;style&gt;</code>).
+      Optional paint check outside the React app (hard-refresh if cached).
+      Card 1 = raw Mermaid default. Cards 2–3 = studio dark stack (base +
+      themeVariables + frontmatter + classDef + layout-safe fill rewrite).
+      Product docs: <code>docs/process-charts.md</code>.
     </p>
     <div class="row">
       <div class="card">

@@ -11,7 +11,7 @@ describe('canvasStore — print pages, layout, grid', () => {
     useCanvasStore.getState().reset()
   })
 
-  it('setPrintPageCount grows workspace for multi-page stack', () => {
+  it('setPrintPageCount grows workspace for multi-page stack (print-limited)', () => {
     useCanvasStore.getState().setPrintPageCount(4)
     const { canvas } = useCanvasStore.getState()
     expect(canvas.printPageCount).toBe(4)
@@ -21,21 +21,32 @@ describe('canvasStore — print pages, layout, grid', () => {
       canvas.orientation ?? 'portrait',
     )
     const bounds = multiPageLayoutBounds(page, 4, 'vertical')
-    expect(canvas.height).toBeGreaterThanOrEqual(
-      Math.max(FREEFORM_WORKSPACE.height, bounds.maxY + 200),
-    )
+    // Scroll area tracks print layout + pad (not freeform min 3200×2400 floor)
+    expect(canvas.height).toBeGreaterThanOrEqual(bounds.maxY)
+    expect(canvas.height).toBeLessThanOrEqual(bounds.maxY + 120)
+    // Single-column stack stays near page width
+    expect(canvas.width).toBeLessThanOrEqual(page.width + 120)
   })
 
-  it('setPrintPageLayout horizontal widens workspace needs', () => {
+  it('setPrintPageLayout horizontal widens workspace to page stack (print-limited)', () => {
     useCanvasStore.getState().setPrintPageCount(3)
     useCanvasStore.getState().setPrintPageLayout('horizontal')
     const { canvas } = useCanvasStore.getState()
     expect(canvas.printPageLayout).toBe('horizontal')
     const page = resolvePagePixels('letter', 'portrait')
     const bounds = multiPageLayoutBounds(page, 3, 'horizontal')
-    expect(canvas.width).toBeGreaterThanOrEqual(
-      Math.max(FREEFORM_WORKSPACE.width, bounds.maxX + 200),
-    )
+    expect(canvas.width).toBeGreaterThanOrEqual(bounds.maxX)
+    expect(canvas.width).toBeLessThanOrEqual(bounds.maxX + 120)
+    expect(canvas.height).toBeLessThanOrEqual(page.height + 120)
+  })
+
+  it('turning print frame off restores freeform scroll size', () => {
+    useCanvasStore.getState().setPrintPageCount(1)
+    useCanvasStore.getState().setShowPrintArea(false)
+    const { canvas } = useCanvasStore.getState()
+    expect(canvas.showPrintArea).toBe(false)
+    expect(canvas.width).toBeGreaterThanOrEqual(FREEFORM_WORKSPACE.width)
+    expect(canvas.height).toBeGreaterThanOrEqual(FREEFORM_WORKSPACE.height)
   })
 
   it('setPrintPageLayout free seeds positions from previous auto layout', () => {

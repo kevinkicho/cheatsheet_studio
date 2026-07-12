@@ -180,7 +180,11 @@ export function newCardBase(
 
   return normalizeCanvasItem({
     type,
-    contentFill: processChart ? false : CARD_DEFAULTS.contentFill,
+    // Process charts use FitContent transform scale (same “scale to card” as equations)
+    contentFill:
+      partial.contentFill !== undefined
+        ? partial.contentFill
+        : CARD_DEFAULTS.contentFill,
     showTitle: CARD_DEFAULTS.showTitle,
     titleAlign: CARD_DEFAULTS.titleAlign,
     autoFit: !figure && !processChart,

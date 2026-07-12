@@ -23,7 +23,7 @@ License: [MIT](./LICENSE) · Status: **active development** (v0.1.0)
 
 A Firebase-backed app for building multi-page, print-aware cheat sheets from equations, tables, figures, and **Mermaid process charts**. Drag items from a curated library onto a freeform board, create custom KaTeX, import images (including seamless GIF loops), author dark-themed flowcharts for the zinc UI, export print pages to PDF/PNG/JPEG, organize layers in nested folders, and sync sheets per Google account.
 
-> **Firebase is required for production use.** Auth, Firestore, Storage, and Hosting are part of the product. A built-in seed library loads offline; sign-in, cloud sheets, and durable image upload need a configured Firebase project. Local **Auth emulators** support automated E2E without a real Google login.
+> **Firebase is required for production use.** Auth, Firestore, Storage, and Hosting are part of the product. A built-in seed library loads offline; sign-in, cloud sheets, flowchart library, and durable image upload need a configured Firebase project. Local **Auth emulators** support automated E2E without a real Google login.
 
 ---
 
@@ -32,22 +32,26 @@ A Firebase-backed app for building multi-page, print-aware cheat sheets from equ
 | Area | Status |
 |------|--------|
 | Core workspace (canvas, library, properties) | **Stable / usable** |
-| Multi-page print frames + layout modes | **Implemented** |
+| Multi-page print frames (scroll limited when frame on) | **Implemented** |
+| Canvas minimap + tool toggles | **Implemented** |
 | Per-page / printable / whole-board grids | **Implemented** |
 | PDF / PNG / JPEG export (print pages) | **Implemented** |
-| Library cards + catalog list views | **Implemented** |
+| Library cards + catalog list (multi-sort) | **Implemented** |
 | Nested outliner folders + multi-select | **Implemented** |
 | Local image persistence (IndexedDB) + Storage promote | **Implemented** |
 | GIF ping-pong bake at import | **Implemented** |
 | Undo / redo (document history) | **Implemented** |
-| Process charts (Mermaid) + studio dark theme | **Implemented** (user-confirmed 2026-07-11) |
+| Process charts (visual editor, dark theme, cloud library) | **Implemented** |
+| My Sheets preview + card detail | **Implemented** |
+| Color pickers (defaults + recent) | **Implemented** |
+| Collapsible left / right / bottom chrome | **Implemented** |
 | Unit + component tests (Vitest) | **Vitest** |
 | E2E smoke + Auth-emulator workspace E2E | **Playwright** |
 | Firebase Hosting deploy path | **Supported** (`dist/`) |
 
 **Dev vs Hosting:** `npm run dev` → [http://localhost:5173](http://localhost:5173) serves **live source**. `firebase serve` → [http://localhost:5000](http://localhost:5000) serves **last `npm run build`** only. Rebuild before testing Hosting-style ports.
 
-**Process chart dark theme:** Theme Dark uses zinc node fills (`#27272a`), light labels, and `forced-color-adjust: none` so Chrome Auto Dark does not invert SVG. Full write-up: [docs/MERMAID_DARK_THEME_WORKING_RECORD.md](./docs/MERMAID_DARK_THEME_WORKING_RECORD.md). Isolation harness: `public/mermaid-test.html` (serve `dist/` after build).
+**Docs:** [docs/README.md](./docs/README.md) · Process charts: [docs/process-charts.md](./docs/process-charts.md)
 
 ---
 
@@ -57,10 +61,12 @@ A Firebase-backed app for building multi-page, print-aware cheat sheets from equ
 - Freeform board with **select (V)** and **pan (H)** tools  
 - Drag from library, marquee multi-select, multi-move / multi-resize  
 - Zoom (in/out/reset), **fit print layout**, **fit content**, focus selection  
-- Grid on/off, snap-to-grid, tunable spacing  
+- **Minimap** (bottom-right overview; map icon toggles; drag to pan)  
+- Grid on/off, snap-to-grid, tunable spacing (left **Grid settings**)  
 - **Grid covers:** Full page · Printable area (margins) · Whole board  
-- Soft opacity scale: slider **0–100% → CSS α 0–0.3** (same path for all extents)  
+- Soft opacity scale: slider **0–100% → CSS α 0–0.3**  
 - Auto-organize packs cards into the printable content box  
+- When **print frame is on**, board scroll size is limited to the print layout (+ pad); freeform size returns when the frame is off  
 
 ### Multi-page print frames
 - Presets: Letter, Legal, Tabloid, A3/A4/A5 + orientation  
@@ -81,43 +87,47 @@ A Firebase-backed app for building multi-page, print-aware cheat sheets from equ
 - Subjects: Mathematics, Physics, Chemistry, Biology, Economics, Finance  
 - Built-in **seed catalog** (deduped IDs) + optional Firestore seed  
 - Bottom library: **Cards** or **List** (catalog-style split: list + resizable preview)  
-- Catalog filters: search, subject, topic, type (equation / table / figure), clear  
-- Search ranking: title prefixes first; short queries ignore raw LaTeX (`\frac` no longer matches `g`)  
-- Library card previews **zoom-to-fill** the thumbnail (not shrink-only)  
-- Resizable list/preview divider (horizontal) in list mode  
+- Catalog filters: search, subject, topic, type; **Clear** filters  
+- **Multi-column sort** (list / Insert from catalog): click headers to stack sorts (asc → desc → clear); **Clear sort / Clear all**  
+- Search ranking: title prefixes first; short queries ignore raw LaTeX  
+- Library card previews **zoom-to-fill** the thumbnail  
 - Custom equations (KaTeX), markdown tables, figure / image cards  
-- Create Equation panel — **Insert from catalog** (equations only; same search rules)  
-  - Filters + sort; resizable vertical divider for preview height  
+- Create Equation panel — **Insert from catalog** (equations only)  
 - Import Image panel (preview, local persist, Storage upload when signed in)  
-- GIF seamless loop via bake-at-import (avoids Storage CORS reverse-play issues)  
+- GIF seamless loop via bake-at-import  
 
 ### Process charts (Mermaid)
-- Right sidebar **Process** tool: flowchart / sequence / etc. templates, live preview  
-- **Visual editor (flowcharts):** drag-and-drop canvas vendored from [saketkattu/mermaid-visual-editor](https://github.com/saketkattu/mermaid-visual-editor) (MIT) — React Flow + Dagre; Mermaid source is generated automatically. Toggle **Visual / Code**. Other kinds (sequence, state, class, ER, pie, mindmap) stay code + templates for now.  
-- **Theme Dark** (default) paints studio zinc nodes for the dark app chrome  
-- Stack: themeVariables + frontmatter + flowchart-only `classDef`, layout-safe paint, `forced-color-adjust: none`  
-- Isolation page: `public/mermaid-test.html`  
-- Record: [docs/MERMAID_DARK_THEME_WORKING_RECORD.md](./docs/MERMAID_DARK_THEME_WORKING_RECORD.md)  
+- Right sidebar **Process** tool: **dark** visual flowchart canvas (vendored [saketkattu/mermaid-visual-editor](https://github.com/saketkattu/mermaid-visual-editor), MIT)  
+- **Templates** replace editor content (confirm if the viewport already has work)  
+- **Cloud library** (signed in): save / load / delete named flowcharts in Firestore (`flowcharts`)  
+- Flowchart → interactive editor (select / pan / shapes / inspector / zoom fit)  
+- Other kinds → studio-dark preview then **Add to canvas**  
+- Canvas cards: zinc studio dark + **Scale content to fill card** (`FitContent`)  
+- See [docs/process-charts.md](./docs/process-charts.md)  
 
 ### Layers & organization
 - Outliner with **nested folders**, reparent, hide/lock per item or folder  
 - Multi-select style/property edits  
+- Color pickers: **default** swatch + **palette** + **recent** colors (localStorage)  
 - Undo / redo with history batches for continuous drag  
 
 ### Account & sheets
 - Google sign-in (popup + redirect)  
 - Per-user cloud sheets (create, rename, switch, save, delete)  
+- **My Sheets** tab: list + detail — print-area zoom-fit preview, multi-unit sizes, sortable/filterable cards table, content-chip highlights, keyboard ↑↓, delete confirm  
 - Offline fallback: `local_*` sheets when Firestore is unavailable  
 - Emulator mode: **Emulator sign-in** (email/password) for local E2E  
 
 ### App chrome
 | Region | Role |
 |--------|------|
-| Top bar | Workspace / Library / Sheets, sheet switcher, print menu, **Export**, undo/redo, save, account |
-| Left | Properties — sheet (grid covers, background) or selected card(s) |
-| Center | Freeform canvas + print frames |
+| Top bar | Workspace / Library / Sheets, sheet switcher, print menu, **Export**, undo/redo, save, panel toggles, account |
+| Left | Properties — collapsible **Sheet properties** + **Grid settings**, or selected card(s) |
+| Center | Freeform canvas + print frames + minimap / tool strip |
 | Right | Layers · Equation · **Process** · Image |
-| Bottom | Collapsible library (cards/list, filters, resizable catalog preview) |
+| Bottom | Collapsible library (cards/list, filters, multi-sort catalog) |
+
+**Minimize panels:** left / right show a thin strip when collapsed (like the bottom library); hover resize handles for chevrons, or use top-bar panel icons.
 
 ---
 
@@ -128,8 +138,8 @@ A Firebase-backed app for building multi-page, print-aware cheat sheets from equ
 | UI | React 19, Vite 8, TypeScript, Tailwind CSS v4 |
 | State | Zustand (+ persist for UI prefs) |
 | Math | KaTeX |
-| Diagrams | Mermaid 11 (process charts / flowcharts) |
-| DnD / layout | @dnd-kit, react-resizable-panels |
+| Diagrams | Mermaid 11 + vendored mermaid-visual-editor (Process tool) |
+| DnD / layout | @dnd-kit, react-resizable-panels, @xyflow/react |
 | Export | jspdf, html2canvas-pro |
 | Backend | Firebase Auth, Firestore, Storage, Hosting |
 | Tests | Vitest, Testing Library, Playwright |
@@ -182,7 +192,7 @@ Fill from **Firebase Console → Project settings → Your apps → Web app**:
 ### 3. Console checklist & rules
 
 1. Auth → Google on; authorized domains include `localhost` and Hosting domain  
-2. Deploy rules:
+2. Deploy rules (includes private `sheets` and `flowcharts`):
 
 ```bash
 firebase login
@@ -230,7 +240,7 @@ Hosting serves **`dist/`** only.
 
 ```bash
 npm run build
-firebase deploy --only hosting
+firebase deploy --only hosting,firestore:rules
 ```
 
 Or preview Hosting locally after a build:
@@ -266,7 +276,7 @@ firebase serve    # http://localhost:5000 — must rebuild to see latest code
 
 ### Unit & component (Vitest + Testing Library)
 
-Covers grid opacity mapping, page layouts, grid coverage, print helpers, export helpers (filenames, page rects, color modes, library search ranking), canvas store, sheets/auth (mocked Firebase), keyboard shortcuts, Properties / Print menu / sidebars, and more.
+Covers grid opacity mapping, page layouts, grid coverage, print helpers, export helpers, canvas store (including print-limited workspace), sheets/auth (mocked Firebase), keyboard shortcuts, Properties / Print menu / sidebars, mermaid theme, and more.
 
 App TypeScript build (`tsc -b`) **excludes** `*.test.*` and `src/test/**`; Vitest uses a separate `vitest.config.ts`.
 
@@ -290,12 +300,15 @@ CI (`.github/workflows/ci.yml`) runs unit tests, smoke E2E, Auth-emulator worksp
 
 ## Architecture notes
 
-- **State:** Zustand stores (`canvasStore`, `sheetsStore`, `authStore`, `libraryStore`, `uiStore`)  
+- **State:** Zustand stores (`canvasStore`, `sheetsStore`, `authStore`, `libraryStore`, `uiStore`, `flowchartLibraryStore`)  
 - **Print / grid pure logic:** `src/lib/printSizes.ts`, `src/lib/gridCoverage.ts`  
 - **Export:** `src/lib/exportPdf.ts`, `exportCapture.ts`, `runSheetExport.ts`, `components/export/`  
-- **Library search:** `src/lib/libraryFilter.ts` (shared by bottom library + Insert from catalog)  
+- **Library search / multi-sort:** `src/lib/libraryFilter.ts`, `src/lib/multiSort.ts`  
+- **Process charts:** [docs/process-charts.md](./docs/process-charts.md)  
+- **Colors:** `src/components/ui/ColorPicker.tsx`, `src/lib/recentColors.ts`  
+- **Minimap:** `src/components/canvas/CanvasMinimap.tsx`  
 - **Images:** `local-asset:` refs in IndexedDB; promote to Storage on cloud save  
-- **Rules:** Sheets private to `ownerId == auth.uid`; system library read-only from client  
+- **Rules:** Sheets + flowcharts private to `ownerId == auth.uid`; system library read-only from client  
 
 ---
 
@@ -323,7 +336,7 @@ CI (`.github/workflows/ci.yml`) runs unit tests, smoke E2E, Auth-emulator worksp
 
 - Never import Admin credentials into `src/`.  
 - Web API keys are public in the browser; **Firestore / Storage rules** protect data.  
-- Sheets are private to `ownerId == auth.uid`.  
+- Sheets and flowchart library entries are private to `ownerId == auth.uid`.  
 - Emulator email sign-in is disabled unless `VITE_USE_FIREBASE_EMULATORS` is set.  
 
 ---

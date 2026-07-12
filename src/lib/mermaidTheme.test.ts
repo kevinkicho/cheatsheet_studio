@@ -15,7 +15,7 @@ describe('mermaidTheme', () => {
     expect(usesStudioDarkVariables('forest')).toBe(false)
   })
 
-  it('initialize uses base + themeVariables (verify-app-stack)', () => {
+  it('initialize uses base + themeVariables for studio dark', () => {
     const opts = mermaidInitOptions('dark', { studioDark: true })
     expect(opts.theme).toBe('base')
     expect(opts.themeVariables?.primaryColor).toBe(STUDIO_DARK.nodeFill)
@@ -82,7 +82,7 @@ flowchart TD
     expect(flow).toMatch(/classDef default/)
   })
 
-  it('hard paint rewrites pale fills like verify-v5', () => {
+  it('hard paint rewrites pale default fills', () => {
     const raw = `<?xml version="1.0"?>
 <svg xmlns="http://www.w3.org/2000/svg">
   <g class="node default" id="n-flowchart-A-0">
@@ -104,7 +104,7 @@ flowchart TD
     expect(opts.themeVariables).toBeUndefined()
   })
 
-  it('primaryColor matches STUDIO_DARK (verify-app-stack #27272a)', () => {
+  it('primaryColor matches STUDIO_DARK zinc fill', () => {
     expect(MERMAID_DARK_THEME_VARIABLES.primaryColor).toBe('#27272a')
     expect(STUDIO_DARK.nodeFill).toBe('#27272a')
   })

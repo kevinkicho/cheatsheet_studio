@@ -16,10 +16,8 @@ type Props = {
 }
 
 /**
- * Process chart preview.
- * Same stack as verify-app-stack-studio-host.png + verify-v5-again:
- *   prepareStudioDarkSource (frontmatter + classDef) inside renderMermaidSvg
- *   + hard paint after render, again after React commit.
+ * Renders Mermaid SVG for process-chart cards (and export).
+ * Studio dark: prepareStudioDarkSource + paintStudioSvg (see docs/process-charts.md).
  */
 export function MermaidView({
   source,

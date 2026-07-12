@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react'
-import { Scan, Trash2 } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
+import { ChevronDown, ChevronRight, Scan, Trash2 } from 'lucide-react'
 import type {
   BorderStroke,
   CanvasItem,
@@ -15,6 +15,7 @@ import {
 } from '@/types'
 import { useCanvasStore } from '@/stores/canvasStore'
 import { LatexView } from '@/components/math/LatexView'
+import { ColorPicker } from '@/components/ui/ColorPicker'
 
 const GRID_EXTENT_OPTIONS: {
   id: GridExtent
@@ -66,149 +67,192 @@ export function PropertiesPanel() {
   const multi = selected.length > 1
   const single = selected.length === 1 ? selected[0] : null
 
+  const [sheetPropsOpen, setSheetPropsOpen] = useState(true)
+  const [gridSettingsOpen, setGridSettingsOpen] = useState(true)
+
   if (selected.length === 0) {
     return (
-      <div className="flex h-full flex-col gap-4 overflow-y-auto p-3">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+      <div className="flex h-full flex-col overflow-hidden">
+        {/* Sheet properties (collapsible) */}
+        <button
+          type="button"
+          onClick={() => setSheetPropsOpen((o) => !o)}
+          className="flex shrink-0 items-center gap-1.5 border-b border-zinc-800 bg-zinc-900/80 px-3 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-zinc-300 hover:bg-zinc-900"
+        >
+          {sheetPropsOpen ? (
+            <ChevronDown className="h-3.5 w-3.5 text-zinc-500" />
+          ) : (
+            <ChevronRight className="h-3.5 w-3.5 text-zinc-500" />
+          )}
           Sheet properties
-        </h2>
-        <Field label="Title">
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            className="field-input"
-          />
-        </Field>
-        <Field label="Background">
-          <input
-            type="color"
-            value={
-              canvas.background.startsWith('#')
-                ? canvas.background
-                : '#0f1115'
-            }
-            onChange={(e) => setCanvas({ background: e.target.value })}
-            className="h-8 w-full cursor-pointer rounded border border-zinc-700 bg-transparent"
-          />
-        </Field>
-        <label className="flex items-center gap-2 text-xs text-zinc-300">
-          <input
-            type="checkbox"
-            checked={canvas.showGrid}
-            onChange={(e) => setCanvas({ showGrid: e.target.checked })}
-            className="rounded border-zinc-600"
-          />
-          Show grid
-        </label>
-        <label className="flex items-center gap-2 text-xs text-zinc-300">
-          <input
-            type="checkbox"
-            checked={canvas.snapToGrid === true}
-            onChange={(e) => setCanvas({ snapToGrid: e.target.checked })}
-            className="rounded border-zinc-600"
-          />
-          Snap to grid
-        </label>
-
-        <div className="rounded-md border border-zinc-800 bg-zinc-900/50 px-2 py-2">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
-            Grid settings
-          </p>
-          <p className="mt-1 text-[10px] leading-snug text-zinc-600">
-            With the print frame on, Full page / Printable area draw a{' '}
-            <span className="text-zinc-400">separate grid on every page</span>{' '}
-            (not one grid continuing across the board).
-          </p>
-
-          <p className="mt-2.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
-            Grid covers
-          </p>
-          <div className="mt-1.5 flex flex-col gap-1">
-            {GRID_EXTENT_OPTIONS.map((opt) => {
-              const active =
-                normalizeGridExtent(canvas.gridExtent) === opt.id
-              return (
-                <button
-                  key={opt.id}
-                  type="button"
-                  onClick={() => {
-                    setCanvas({ gridExtent: opt.id, showGrid: true })
-                  }}
-                  className={`rounded-md border px-2 py-1.5 text-left transition ${
-                    active
-                      ? 'border-indigo-500/50 bg-indigo-500/15 text-indigo-100'
-                      : 'border-zinc-800 bg-zinc-950/40 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200'
-                  }`}
-                >
-                  <span className="block text-[11px] font-medium leading-tight">
-                    {opt.label}
-                  </span>
-                  <span className="mt-0.5 block text-[9px] leading-snug text-zinc-500">
-                    {opt.hint}
-                  </span>
-                </button>
-              )
-            })}
+        </button>
+        {sheetPropsOpen && (
+          <div className="shrink-0 space-y-3 border-b border-zinc-800 p-3">
+            <Field label="Title">
+              <input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className="field-input"
+              />
+            </Field>
+            <Field label="Background">
+              <ColorPicker
+                value={canvas.background}
+                defaultValue="#0f1115"
+                onChange={(hex) => setCanvas({ background: hex })}
+                aria-label="Sheet background"
+              />
+            </Field>
           </div>
+        )}
 
-          <label className="mt-2.5 flex flex-col gap-1">
-            <span className="text-[10px] text-zinc-500">
-              Spacing · {canvas.gridSpacing ?? 24}px
-            </span>
-            <input
-              type="range"
-              min={8}
-              max={64}
-              step={4}
-              value={canvas.gridSpacing ?? 24}
-              onChange={(e) =>
-                setCanvas({ gridSpacing: Number(e.target.value) })
-              }
-              className="w-full"
-            />
-          </label>
-          <label className="mt-2 flex flex-col gap-1">
-            <span className="text-[10px] text-zinc-500">
-              Opacity · {gridOpacityToPercent(canvas.gridOpacity ?? 0.09)}% of
-              soft range → α{' '}
-              {Math.min(
-                GRID_OPACITY_CSS_MAX,
-                Math.max(0, canvas.gridOpacity ?? 0.09),
-              ).toFixed(2)}{' '}
-              (0–100% bar = α 0–{GRID_OPACITY_CSS_MAX})
-            </span>
-            <input
-              type="range"
-              min={0}
-              max={100}
-              step={1}
-              value={gridOpacityToPercent(canvas.gridOpacity ?? 0.09)}
-              onInput={(e) =>
-                setCanvas({
-                  gridOpacity: percentToGridOpacity(
-                    Number((e.target as HTMLInputElement).value),
-                  ),
-                  showGrid: true,
-                })
-              }
-              onChange={(e) =>
-                setCanvas({
-                  gridOpacity: percentToGridOpacity(Number(e.target.value)),
-                  showGrid: true,
-                })
-              }
-              className="w-full"
-            />
-          </label>
-        </div>
+        {/* Grid settings (collapsible) */}
+        <button
+          type="button"
+          onClick={() => setGridSettingsOpen((o) => !o)}
+          className="flex shrink-0 items-center gap-1.5 border-b border-zinc-800 bg-zinc-900/80 px-3 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-zinc-300 hover:bg-zinc-900"
+        >
+          {gridSettingsOpen ? (
+            <ChevronDown className="h-3.5 w-3.5 text-zinc-500" />
+          ) : (
+            <ChevronRight className="h-3.5 w-3.5 text-zinc-500" />
+          )}
+          Grid settings
+          <span className="ml-auto font-normal normal-case tracking-normal text-zinc-600">
+            {canvas.showGrid ? 'On' : 'Off'}
+            {canvas.snapToGrid ? ' · snap' : ''}
+          </span>
+        </button>
+        {gridSettingsOpen && (
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+            <label className="flex items-center gap-2 text-xs text-zinc-300">
+              <input
+                type="checkbox"
+                checked={canvas.showGrid}
+                onChange={(e) => setCanvas({ showGrid: e.target.checked })}
+                className="rounded border-zinc-600"
+              />
+              Show grid
+            </label>
+            <label className="flex items-center gap-2 text-xs text-zinc-300">
+              <input
+                type="checkbox"
+                checked={canvas.snapToGrid === true}
+                onChange={(e) => setCanvas({ snapToGrid: e.target.checked })}
+                className="rounded border-zinc-600"
+              />
+              Snap to grid
+            </label>
 
-        <p className="mt-2 text-xs leading-relaxed text-zinc-500">
-          Select a card to edit it. Hold{' '}
-          <kbd className="rounded bg-zinc-800 px-1 text-[10px] text-zinc-300">
-            Shift
-          </kbd>{' '}
-          and click to select multiple cards, then edit them together here.
-        </p>
+            <div className="rounded-md border border-zinc-800 bg-zinc-900/50 px-2 py-2">
+              <p className="text-[10px] leading-snug text-zinc-600">
+                With the print frame on, Full page / Printable area draw a{' '}
+                <span className="text-zinc-400">
+                  separate grid on every page
+                </span>{' '}
+                (not one grid continuing across the board).
+              </p>
+
+              <p className="mt-2.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                Grid covers
+              </p>
+              <div className="mt-1.5 flex flex-col gap-1">
+                {GRID_EXTENT_OPTIONS.map((opt) => {
+                  const active =
+                    normalizeGridExtent(canvas.gridExtent) === opt.id
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => {
+                        setCanvas({ gridExtent: opt.id, showGrid: true })
+                      }}
+                      className={`rounded-md border px-2 py-1.5 text-left transition ${
+                        active
+                          ? 'border-indigo-500/50 bg-indigo-500/15 text-indigo-100'
+                          : 'border-zinc-800 bg-zinc-950/40 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200'
+                      }`}
+                    >
+                      <span className="block text-[11px] font-medium leading-tight">
+                        {opt.label}
+                      </span>
+                      <span className="mt-0.5 block text-[9px] leading-snug text-zinc-500">
+                        {opt.hint}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+
+              <label className="mt-2.5 flex flex-col gap-1">
+                <span className="text-[10px] text-zinc-500">
+                  Spacing · {canvas.gridSpacing ?? 24}px
+                </span>
+                <input
+                  type="range"
+                  min={8}
+                  max={64}
+                  step={4}
+                  value={canvas.gridSpacing ?? 24}
+                  onChange={(e) =>
+                    setCanvas({ gridSpacing: Number(e.target.value) })
+                  }
+                  className="w-full"
+                />
+              </label>
+              <label className="mt-2 flex flex-col gap-1">
+                <span className="text-[10px] text-zinc-500">
+                  Opacity ·{' '}
+                  {gridOpacityToPercent(canvas.gridOpacity ?? 0.09)}% of soft
+                  range → α{' '}
+                  {Math.min(
+                    GRID_OPACITY_CSS_MAX,
+                    Math.max(0, canvas.gridOpacity ?? 0.09),
+                  ).toFixed(2)}{' '}
+                  (0–100% bar = α 0–{GRID_OPACITY_CSS_MAX})
+                </span>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={gridOpacityToPercent(canvas.gridOpacity ?? 0.09)}
+                  onInput={(e) =>
+                    setCanvas({
+                      gridOpacity: percentToGridOpacity(
+                        Number((e.target as HTMLInputElement).value),
+                      ),
+                      showGrid: true,
+                    })
+                  }
+                  onChange={(e) =>
+                    setCanvas({
+                      gridOpacity: percentToGridOpacity(
+                        Number(e.target.value),
+                      ),
+                      showGrid: true,
+                    })
+                  }
+                  className="w-full"
+                />
+              </label>
+            </div>
+
+            <p className="text-xs leading-relaxed text-zinc-500">
+              Select a card to edit it. Hold{' '}
+              <kbd className="rounded bg-zinc-800 px-1 text-[10px] text-zinc-300">
+                Shift
+              </kbd>{' '}
+              and click to select multiple cards, then edit them together here.
+            </p>
+          </div>
+        )}
+
+        {!sheetPropsOpen && !gridSettingsOpen && (
+          <p className="p-3 text-xs text-zinc-600">
+            Expand a section above, or select a card on the canvas.
+          </p>
+        )}
       </div>
     )
   }
@@ -474,37 +518,31 @@ export function PropertiesPanel() {
         }}
       />
 
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field label="Text color">
-          <input
-            type="color"
-            value={
-              textColorVal === 'mixed'
-                ? '#e8eaed'
-                : textColorVal.startsWith('#')
-                  ? textColorVal
-                  : '#e8eaed'
-            }
-            onChange={(e) => patchStyle({ color: e.target.value })}
-            className="h-8 w-full cursor-pointer rounded border border-zinc-700"
+          <ColorPicker
+            value={textColorVal === 'mixed' ? undefined : textColorVal}
+            defaultValue="#e8eaed"
+            onChange={(hex) => patchStyle({ color: hex })}
+            aria-label="Text color"
+            compact
           />
         </Field>
         <Field label="Fill color">
-          <input
-            type="color"
-            disabled={bgFillVal === false}
+          <ColorPicker
             value={
-              fillColorVal === 'mixed'
-                ? '#1e2028'
-                : fillColorVal.startsWith('#')
-                  ? fillColorVal
-                  : '#1e2028'
+              bgFillVal === false || fillColorVal === 'mixed'
+                ? undefined
+                : fillColorVal
             }
-            onChange={(e) => {
+            defaultValue="#1e2028"
+            disabled={bgFillVal === false}
+            onChange={(hex) => {
               patch({ transparentBackground: false })
-              patchStyle({ background: e.target.value })
+              patchStyle({ background: hex })
             }}
-            className="h-8 w-full cursor-pointer rounded border border-zinc-700 disabled:cursor-not-allowed disabled:opacity-40"
+            aria-label="Fill color"
+            compact
           />
         </Field>
       </div>
@@ -594,22 +632,19 @@ export function PropertiesPanel() {
             </Field>
 
             <Field label="Stroke color">
-              <input
-                type="color"
+              <ColorPicker
                 value={
-                  borderColorVal === 'mixed'
-                    ? '#6366f1'
-                    : borderColorVal.startsWith('#')
-                      ? borderColorVal
-                      : '#6366f1'
+                  borderColorVal === 'mixed' ? undefined : borderColorVal
                 }
-                onChange={(e) =>
+                defaultValue="#6366f1"
+                onChange={(hex) =>
                   patchStyle({
                     borderEnabled: true,
-                    borderColor: e.target.value,
+                    borderColor: hex,
                   })
                 }
-                className="h-8 w-full cursor-pointer rounded border border-zinc-700"
+                aria-label="Stroke color"
+                compact
               />
             </Field>
           </div>

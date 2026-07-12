@@ -147,6 +147,14 @@ interface FlowState {
   // Draw mode
   drawingShape: NodeShape | null;
   setDrawingShape: (shape: NodeShape | null) => void;
+
+  /**
+   * Canvas interaction when not drawing:
+   * - select: left-drag marquee / move nodes; middle+right pan
+   * - pan: left-drag pans the viewport (hand tool)
+   */
+  interactionMode: "select" | "pan";
+  setInteractionMode: (mode: "select" | "pan") => void;
 }
 
 // ─── Helper: compute edge markers based on arrowType ─────────────────────────
@@ -195,14 +203,22 @@ export const useFlowStore = create<FlowState>((set, get) => {
     nodes: [],
     edges: [],
     direction: "TD",
-    theme: "default",
+    theme: "dark",
     look: "classic",
     curveStyle: "basis",
     past: [],
     future: [],
     clipboard: null,
     drawingShape: null,
-    setDrawingShape: (shape) => set({ drawingShape: shape }),
+    setDrawingShape: (shape) =>
+      set(
+        shape
+          ? { drawingShape: shape, interactionMode: "select" }
+          : { drawingShape: null },
+      ),
+    interactionMode: "select",
+    setInteractionMode: (mode) =>
+      set({ interactionMode: mode, drawingShape: null }),
 
     pushHistory: () => {
       const { nodes, edges, past } = get();

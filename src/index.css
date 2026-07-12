@@ -59,19 +59,34 @@ body {
   margin: 0;
 }
 
-/* Vendored mermaid-visual-editor (MIT) — neumorphic tokens for canvas chrome */
+/*
+ * Vendored mermaid-visual-editor — studio dark tokens (match zinc app chrome).
+ * Used by Process panel interactive canvas (not print export).
+ */
 .mermaid-visual-editor {
-  --neu-bg: #e0e5ec;
+  --neu-bg: #12141a;
+  --neu-surface: #1e2028;
+  --neu-text: #e4e4e7;
+  --neu-text-muted: #a1a1aa;
+  --neu-icon: #a1a1aa;
+  --neu-icon-active: #818cf8;
+  --neu-border: #3f3f46;
+  --neu-dot: #3f3f46;
+  --neu-kbd-bg: #27272a;
+  --node-fill: #27272a;
+  --node-stroke: #71717a;
+  --node-text: #f4f4f5;
+  --edge-stroke: #a1a1aa;
   --neu-shadow-raised:
-    6px 6px 14px rgba(163, 177, 198, 0.6), -6px -6px 14px rgba(255, 255, 255, 0.8);
+    0 1px 2px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(63, 63, 70, 0.6);
   --neu-shadow-inset:
-    inset 4px 4px 10px rgba(163, 177, 198, 0.6),
-    inset -4px -4px 10px rgba(255, 255, 255, 0.8);
+    inset 0 1px 3px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(63, 63, 70, 0.5);
   --neu-shadow-soft:
-    4px 4px 10px rgba(163, 177, 198, 0.5), -4px -4px 10px rgba(255, 255, 255, 0.7);
+    0 1px 2px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(63, 63, 70, 0.4);
   --neu-shadow-concave:
-    inset 6px 6px 12px rgba(163, 177, 198, 0.5),
-    inset -6px -6px 12px rgba(255, 255, 255, 0.9);
+    inset 0 2px 4px rgba(0, 0, 0, 0.5);
+  color: var(--neu-text);
+  background: var(--neu-bg);
 }
 .mermaid-visual-editor .neu-raised {
   box-shadow: var(--neu-shadow-raised);
@@ -85,9 +100,21 @@ body {
 .mermaid-visual-editor .react-flow {
   width: 100%;
   height: 100%;
+  background: var(--neu-bg) !important;
+}
+.mermaid-visual-editor .react-flow__background {
+  background: var(--neu-bg) !important;
 }
 .mermaid-visual-editor .react-flow__attribution {
   display: none;
+}
+.mermaid-visual-editor .react-flow__minimap {
+  background: var(--neu-surface) !important;
+}
+.mermaid-visual-editor .react-flow__controls-button {
+  background: var(--neu-surface) !important;
+  border-bottom-color: var(--neu-border) !important;
+  fill: var(--neu-icon) !important;
 }
 
 /*
@@ -123,9 +150,8 @@ body {
 }
 
 /*
- * Studio dark Process charts (verify-app-stack palette #27272a).
- * data-mermaid-dark is set by MermaidView when studioDark/forceDark.
- * Use #id-level strength via .mermaid-host + attribute + g.node.
+ * Studio dark process charts (zinc #27272a). data-mermaid-dark is set by
+ * MermaidView when studioDark/forceDark. See docs/process-charts.md.
  */
 .mermaid-host[data-mermaid-dark='true'] g.node path,
 .mermaid-host[data-mermaid-dark='true'] g.node rect,
