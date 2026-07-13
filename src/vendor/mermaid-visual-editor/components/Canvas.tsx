@@ -61,14 +61,38 @@ function CanvasInner({ onOpenPalette }: CanvasInnerProps) {
 
   // Track failed edge re-plug so we can delete the connection
   const edgeReconnectOk = useRef(true)
+  const wrapperRef = useRef<HTMLDivElement>(null)
 
   // After Auto Layout / Layout tree / mindmap import / add shape — fit whole diagram
   const lastLayoutEpoch = useRef(-1)
   const lastFocusToken = useRef(0)
   const chromeLayout = useFlowStore((s) => s.chromeLayout)
   const focusNodeRequest = useFlowStore((s) => s.focusNodeRequest)
+
+  /**
+   * Framing: keep the RF surface hidden (solid panel bg) until zoom-fit has
+   * settled. No opacity fade / no animated camera — reveal only the final view.
+   */
+  const [surfaceReady, setSurfaceReady] = useState(nodes.length === 0)
+  const surfaceReadyRef = useRef(nodes.length === 0)
+  /** Ignore panel-resize viewport shifts until framing is done + size stable. */
+  const allowResizeCorrectRef = useRef(false)
+  const frameGenRef = useRef(0)
+  const diagramKindRef = useRef(diagramKind)
+
+  const fitOpts = useCallback(
+    () => ({
+      padding: fitViewPaddingForChrome(chromeLayout),
+      duration: 0 as const,
+      minZoom: 0.05,
+      maxZoom: 2.5,
+    }),
+    [chromeLayout],
+  )
+
+  /** Instant fit (no animation). User Fit button in ZoomControls still animates. */
   const runFitView = useCallback(
-    (duration = 280) => {
+    (duration = 0) => {
       void fitView({
         padding: fitViewPaddingForChrome(chromeLayout),
         duration,
@@ -78,69 +102,172 @@ function CanvasInner({ onOpenPalette }: CanvasInnerProps) {
     },
     [fitView, chromeLayout],
   )
+
+  const revealSurface = useCallback((gen: number) => {
+    if (gen !== frameGenRef.current) return
+    surfaceReadyRef.current = true
+    setSurfaceReady(true)
+    // Enable resize correction only after a short stable window (panel open animation)
+    window.setTimeout(() => {
+      if (gen === frameGenRef.current) {
+        allowResizeCorrectRef.current = true
+      }
+    }, 200)
+  }, [])
+
+  /**
+   * Multi-pass instant fit while hidden, then reveal once.
+   * Pass 1: after RF measures; pass 2: after another frame (label/size settle).
+   */
+  const frameContent = useCallback(
+    (opts?: { hide?: boolean }) => {
+      const hide = opts?.hide !== false
+      if (hide) {
+        frameGenRef.current += 1
+        surfaceReadyRef.current = false
+        setSurfaceReady(false)
+        allowResizeCorrectRef.current = false
+      }
+      const gen = frameGenRef.current
+      let cancelled = false
+      let attempts = 0
+
+      const wrapperSized = () => {
+        const el = wrapperRef.current
+        return Boolean(el && el.clientWidth > 16 && el.clientHeight > 16)
+      }
+
+      const nodesSized = () => {
+        // Prefer live RF store nodes (include measured dims after layout)
+        const list = useFlowStore.getState().nodes
+        if (list.length === 0) return true
+        let withSize = 0
+        for (const n of list) {
+          const mw = n.measured?.width
+          const mh = n.measured?.height
+          const sw =
+            typeof n.width === 'number'
+              ? n.width
+              : typeof n.style?.width === 'number'
+                ? n.style.width
+                : 0
+          const sh =
+            typeof n.height === 'number'
+              ? n.height
+              : typeof n.style?.height === 'number'
+                ? n.style.height
+                : 0
+          const w = mw && mw > 1 ? mw : sw
+          const h = mh && mh > 1 ? mh : sh
+          if (w > 1 && h > 1) withSize += 1
+        }
+        // Most nodes have dims (subgraphs may lag)
+        return withSize >= Math.min(list.length, Math.max(1, list.length - 1))
+      }
+
+      const tick = () => {
+        if (cancelled || gen !== frameGenRef.current) return
+        attempts += 1
+        const readyEnv = wrapperSized() && nodesSized()
+        if (!readyEnv && attempts < 40) {
+          // ~16ms * 40 ≈ 640ms max wait for measure
+          window.requestAnimationFrame(tick)
+          return
+        }
+        // Pass 1
+        void Promise.resolve(fitView(fitOpts())).finally(() => {
+          if (cancelled || gen !== frameGenRef.current) return
+          // Pass 2 after layout paint
+          window.requestAnimationFrame(() => {
+            window.requestAnimationFrame(() => {
+              if (cancelled || gen !== frameGenRef.current) return
+              void Promise.resolve(fitView(fitOpts())).finally(() => {
+                if (cancelled || gen !== frameGenRef.current) return
+                // One more micro-settle for edge labels / fonts
+                window.setTimeout(() => {
+                  if (cancelled || gen !== frameGenRef.current) return
+                  void Promise.resolve(fitView(fitOpts())).finally(() => {
+                    if (cancelled || gen !== frameGenRef.current) return
+                    revealSurface(gen)
+                  })
+                }, 32)
+              })
+            })
+          })
+        })
+      }
+
+      // Start after current commit so RF has mounted nodes
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(tick)
+      })
+
+      return () => {
+        cancelled = true
+      }
+    },
+    [fitView, fitOpts, revealSurface],
+  )
+
+  // Auto layout / import epoch — reframe; hide only if surface not yet shown
   useEffect(() => {
     if (layoutEpoch === lastLayoutEpoch.current) return
     lastLayoutEpoch.current = layoutEpoch
-    // Double rAF: wait until RF has measured node dimensions after import
-    let raf2 = 0
-    const raf1 = window.requestAnimationFrame(() => {
-      raf2 = window.requestAnimationFrame(() => runFitView(280))
-    })
-    return () => {
-      window.cancelAnimationFrame(raf1)
-      if (raf2) window.cancelAnimationFrame(raf2)
+    if (nodes.length === 0) {
+      revealSurface(frameGenRef.current)
+      return
     }
-  }, [layoutEpoch, runFitView])
+    return frameContent({ hide: !surfaceReadyRef.current })
+  }, [layoutEpoch, frameContent, nodes.length, revealSurface])
 
-  // Entering the editor (or switching flowchart/mindmap): fit all content centered
+  // Diagram kind change (flowchart ↔ mindmap) or first mount with content
   useEffect(() => {
-    if (nodes.length === 0) return
-    lastLayoutEpoch.current = layoutEpoch
-    let cancelled = false
-    // Delay so RF has measured node sizes after import
-    const t = window.setTimeout(() => {
-      if (!cancelled) runFitView(280)
-    }, 60)
-    return () => {
-      cancelled = true
-      window.clearTimeout(t)
+    const kindChanged = diagramKindRef.current !== diagramKind
+    diagramKindRef.current = diagramKind
+    if (nodes.length === 0) {
+      revealSurface(frameGenRef.current)
+      return
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount / kind change only
-  }, [isMindmap, diagramKind])
+    lastLayoutEpoch.current = layoutEpoch
+    // Always hide+frame on kind switch; on first mount hide if not ready
+    return frameContent({ hide: kindChanged || !surfaceReadyRef.current })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- kind / mount only
+  }, [diagramKind, isMindmap])
 
-  // First time nodes appear after empty (e.g. late import) — one fit
-  const hadNodes = useRef(false)
+  // Empty → first nodes (late import) while editor already open
+  const hadNodes = useRef(nodes.length > 0)
   useEffect(() => {
     if (nodes.length === 0) {
       hadNodes.current = false
+      revealSurface(frameGenRef.current)
       return
     }
     if (hadNodes.current) return
     hadNodes.current = true
-    let raf2 = 0
-    const raf1 = window.requestAnimationFrame(() => {
-      raf2 = window.requestAnimationFrame(() => runFitView(260))
-    })
-    return () => {
-      window.cancelAnimationFrame(raf1)
-      if (raf2) window.cancelAnimationFrame(raf2)
+    if (surfaceReadyRef.current) {
+      // Content appeared after empty — reframe without flash if already visible
+      return frameContent({ hide: true })
     }
-  }, [nodes.length, runFitView])
+    return frameContent({ hide: true })
+  }, [nodes.length, frameContent, revealSurface])
 
-  // Newly added shape / group — zoom-fit entire diagram (not only the new object)
+  // Newly added shape / group — silent reframe (surface already visible)
   useEffect(() => {
     if (!focusNodeRequest) return
     if (focusNodeRequest.token === lastFocusToken.current) return
     lastFocusToken.current = focusNodeRequest.token
-    let raf2 = 0
-    const raf1 = window.requestAnimationFrame(() => {
-      raf2 = window.requestAnimationFrame(() => runFitView(260))
-    })
-    return () => {
-      window.cancelAnimationFrame(raf1)
-      if (raf2) window.cancelAnimationFrame(raf2)
-    }
-  }, [focusNodeRequest, runFitView])
+    return frameContent({ hide: false })
+  }, [focusNodeRequest, frameContent])
+
+  // Safety: never leave surface hidden forever
+  useEffect(() => {
+    if (surfaceReady) return
+    const t = window.setTimeout(() => {
+      runFitView(0)
+      revealSurface(frameGenRef.current)
+    }, 700)
+    return () => window.clearTimeout(t)
+  }, [surfaceReady, runFitView, revealSurface, nodes.length, diagramKind])
 
   const handleReconnectStart = useCallback(() => {
     edgeReconnectOk.current = false
@@ -253,11 +380,10 @@ function CanvasInner({ onOpenPalette }: CanvasInnerProps) {
   // ── Draw-mode state ─────────────────────────────────────────────────────────
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null)
   const [dragCurrent, setDragCurrent] = useState<{ x: number; y: number } | null>(null)
-  const wrapperRef = useRef<HTMLDivElement>(null)
 
   /**
    * Keep diagram center fixed when the Process panel (right rail) resizes.
-   * Extra width/height is split left+right / top+bottom.
+   * Disabled during initial framing so open-animation resizes don’t drift the camera.
    */
   useEffect(() => {
     const el = wrapperRef.current
@@ -277,6 +403,8 @@ function CanvasInner({ onOpenPalette }: CanvasInnerProps) {
       prevW = w
       prevH = h
       if (Math.abs(dw) < 0.5 && Math.abs(dh) < 0.5) return
+      // Skip while hidden or before size stabilizes after open
+      if (!surfaceReadyRef.current || !allowResizeCorrectRef.current) return
       // Shift viewport so the world point under the previous center stays centered
       const vp = getViewport()
       setViewport(
@@ -577,11 +705,24 @@ function CanvasInner({ onOpenPalette }: CanvasInnerProps) {
       className={`w-full h-full relative ${
         drawingShape ? 'cursor-crosshair' : panMode ? 'cursor-grab' : ''
       }`}
+      style={{
+        // Solid hold color while RF frames off-screen (no wrong-geometry flash)
+        background: 'var(--neu-bg, #12141a)',
+      }}
       onDoubleClick={handleDoubleClick}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
     >
+      <div
+        className="absolute inset-0"
+        style={{
+          // Hard hide until multi-pass fit settles — no opacity fade artifact
+          visibility: surfaceReady ? 'visible' : 'hidden',
+          pointerEvents: surfaceReady ? 'auto' : 'none',
+        }}
+        aria-hidden={!surfaceReady}
+      >
       <ReactFlow
         nodes={nodes}
         edges={wiredEdges}
@@ -609,7 +750,7 @@ function CanvasInner({ onOpenPalette }: CanvasInnerProps) {
         connectionLineComponent={isMindmap ? undefined : MermaidConnectionLine}
         elevateEdgesOnSelect
         onNodeDragStop={handleNodeDragStop}
-        // Controlled fit via runFitView — avoid always-on fitView (causes jump/twitch)
+        // Controlled fit via frameContent — avoid always-on fitView (jump/twitch)
         minZoom={0.05}
         maxZoom={2.5}
         deleteKeyCode={['Backspace', 'Delete']}
@@ -669,6 +810,7 @@ function CanvasInner({ onOpenPalette }: CanvasInnerProps) {
           </defs>
         </svg>
       </ReactFlow>
+      </div>
 
       {relativePreview && relativePreview.width > 4 && relativePreview.height > 4 && (
         <div

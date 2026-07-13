@@ -25,6 +25,11 @@ interface UiState {
   bottomOpen: boolean
   /** Main canvas minimap (bottom-right overview). */
   minimapOpen: boolean
+  /**
+   * Main canvas bottom tool strip (select/pan/zoom/grid).
+   * When false, only a compact expand control is shown.
+   */
+  canvasToolbarOpen: boolean
   rightTool: RightTool
   /** Subject id or `'all'`. */
   librarySubject: string
@@ -78,10 +83,12 @@ interface UiState {
   setRightOpen: (open: boolean) => void
   setBottomOpen: (open: boolean) => void
   setMinimapOpen: (open: boolean) => void
+  setCanvasToolbarOpen: (open: boolean) => void
   toggleLeft: () => void
   toggleRight: () => void
   toggleBottom: () => void
   toggleMinimap: () => void
+  toggleCanvasToolbar: () => void
   setRightTool: (tool: RightTool) => void
   setEditingProcessChartId: (id: string | null) => void
   /** Open Process panel and bind the interactive editor to this canvas card. */
@@ -123,6 +130,7 @@ export const useUiStore = create<UiState>()(
       rightOpen: true,
       bottomOpen: true,
       minimapOpen: true,
+      canvasToolbarOpen: true,
       rightTool: 'layers',
       librarySubject: 'all',
       librarySearch: '',
@@ -145,10 +153,13 @@ export const useUiStore = create<UiState>()(
       setRightOpen: (rightOpen) => set({ rightOpen }),
       setBottomOpen: (bottomOpen) => set({ bottomOpen }),
       setMinimapOpen: (minimapOpen) => set({ minimapOpen }),
+      setCanvasToolbarOpen: (canvasToolbarOpen) => set({ canvasToolbarOpen }),
       toggleLeft: () => set({ leftOpen: !get().leftOpen }),
       toggleRight: () => set({ rightOpen: !get().rightOpen }),
       toggleBottom: () => set({ bottomOpen: !get().bottomOpen }),
       toggleMinimap: () => set({ minimapOpen: !get().minimapOpen }),
+      toggleCanvasToolbar: () =>
+        set({ canvasToolbarOpen: !get().canvasToolbarOpen }),
       setRightTool: (rightTool) =>
         set({
           rightTool,
@@ -280,6 +291,7 @@ export const useUiStore = create<UiState>()(
           libraryFavoriteIds: favs,
           libraryFavoritesOnly: Boolean(p.libraryFavoritesOnly),
           canvasShowHiddenItems: Boolean(p.canvasShowHiddenItems),
+          canvasToolbarOpen: p.canvasToolbarOpen !== false,
         }
       },
       partialize: (s) => ({
@@ -287,6 +299,7 @@ export const useUiStore = create<UiState>()(
         rightOpen: s.rightOpen,
         bottomOpen: s.bottomOpen,
         minimapOpen: s.minimapOpen,
+        canvasToolbarOpen: s.canvasToolbarOpen,
         librarySubject: s.librarySubject,
         librarySearch: s.librarySearch,
         libraryTopic: s.libraryTopic,

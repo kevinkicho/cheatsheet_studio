@@ -40,6 +40,7 @@ import {
 import {
   estimateLibraryCardSize,
   placeCardInVisibleViewport,
+  type AddFromLibraryOptions,
 } from '@/lib/canvasDrop'
 
 /** Padding around the free board (print frame off). */
@@ -201,6 +202,7 @@ interface CanvasState {
     lib: LibraryItem,
     x: number,
     y: number,
+    opts?: AddFromLibraryOptions,
   ) => string
   addCustomEquation: (latex: string, title?: string) => string
   addCustomImage: (
@@ -854,29 +856,41 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   setSelectedIds: (ids) =>
     set({ selectedIds: [...new Set(ids)] }),
 
-  addFromLibrary: (lib, x, y) => {
+  addFromLibrary: (lib, x, y, opts) => {
     const id = createId('item')
     const z = get().maxZ + 1
-    const size = estimateLibraryCardSize(lib)
+    const estimate = estimateLibraryCardSize(lib)
     const isFigure = lib.type === 'figure'
+    // Prefer live drag-preview size when provided (WYSIWYG with ghost).
+    const width =
+      opts?.width != null && opts.width > 4
+        ? Math.round(opts.width)
+        : estimate.width
+    const height =
+      opts?.height != null && opts.height > 4
+        ? Math.round(opts.height)
+        : estimate.height
+    // When size came from the measured ghost, freeze autoFit so a second
+    // measure pass does not jump the card after drop.
+    const matchPreview = opts?.matchPreview === true
     const base = newCardBase(lib.type, {
       id,
       libraryItemId: lib.id,
       title: lib.title,
       x,
       y,
-      width: size.width,
-      height: size.height,
+      width,
+      height,
       zIndex: z,
       latex: lib.latex,
       tableMarkdown: lib.tableMarkdown,
       imageUrl: lib.imageUrl,
       imagePath: lib.imagePath,
-      // Equations/tables: snug to natural content at 100% (drag preview matches drop).
-      // User free-transform later enables content growth via contentFill.
-      autoFit: !isFigure,
-      // Start with fill on so resize after freeze scales content; during autoFit
-      // CanvasCardBody caps scale at 1 so badge stays ~100%.
+      // Equations/tables without a measured preview: snug via autoFit.
+      // Drag-drop with matchPreview: keep the ghost box as-is.
+      autoFit: matchPreview ? false : !isFigure,
+      // Fill on so free-transform later can grow content; at exact preview
+      // size FitContent scale ≈ 1 so paste matches the ghost.
       contentFill: true,
     })
     set((s) => ({

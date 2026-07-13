@@ -44,7 +44,7 @@ organize layers in nested folders, and sync sheets per Google account.
 | Free-transform cards (8 handles, keep aspect default ON) | **Implemented** |
 | Vector equations / figures / process SVG | **Implemented** — [docs/vector-graphics.md](docs/vector-graphics.md) |
 | Multi-page print frames (scroll limited when frame on) | **Implemented** |
-| Canvas minimap + tool toggles | **Implemented** |
+| Canvas minimap + collapsible tool strip | **Implemented** |
 | Per-page / printable / whole-board grids | **Implemented** |
 | PDF / PNG / JPEG export (print pages, WYSIWYG capture) | **Implemented** |
 | Library cards + catalog list (multi-sort) | **Implemented** |
@@ -77,12 +77,14 @@ Vector: [docs/vector-graphics.md](./docs/vector-graphics.md)
 - **Ctrl/Cmd+A** selects all visible cards; marquee multi-select, multi-move / multi-resize  
 - **Free-transform** on selected cards: 8 handles (corners + edges); **Keep aspect ratio** default ON (Properties)  
 - Zoom (in/out/reset), **fit print layout**, **fit content**, focus selection; Layers click **zoom-fits** a card without flicker  
-- **Minimap** (bottom-right overview; map icon toggles; drag to pan)  
+- **Bottom tool strip** (select / pan / zoom / fit / minimap / grid / snap / auto-organize): **collapse / expand** (persisted); collapsed pill shows tool + zoom %  
+- **Minimap** (above the tool strip when open; map icon toggles; drag to pan)  
 - Grid on/off, snap-to-grid, tunable spacing (left **Grid settings**)  
 - **Grid covers:** Full page · Printable area (margins) · Whole board  
 - Soft opacity scale: slider **0–100% → CSS α 0–0.3**  
 - Auto-organize packs cards into the printable content box  
 - When **print frame is on**, board scroll size is limited to the print layout (+ pad); freeform size returns when the frame is off  
+- **Library drag → canvas:** drop uses the **live drag-preview size and position** (WYSIWYG; no second autoFit jump after paste)  
 
 ### Multi-page print frames
 - Presets: Letter, Legal, Tabloid, A3/A4/A5 + orientation  
@@ -104,8 +106,8 @@ Vector: [docs/vector-graphics.md](./docs/vector-graphics.md)
 - Subjects: Mathematics, Physics, Chemistry, Biology, Economics, Finance  
 - Built-in **seed catalog** (165 vector items: LaTeX equations, markdown tables, SVG figures) + optional Firestore seed (`npm run seed`)  
 - Bottom library: **Cards** or **List** (catalog-style split: list + resizable preview)  
-- Catalog filters: search, subject, topic, type, **★ Favorites**; **Clear** filters  
-- Star catalog items from the card ★ control; favorites persist in UI prefs  
+- Catalog filters: search, subject, topic, type, **♥ Favorites** (toggle again to clear the filter)  
+- **Heart** on each library card (top-left of the header row) favorites / unfavorites; no type icons on tiles; favorites persist in UI prefs  
 - **Multi-column sort** (list / Insert from catalog): click headers to stack sorts (asc → desc → clear); **Clear sort / Clear all**  
 - Search ranking: title prefixes first; short queries ignore raw LaTeX  
 - Library card previews **zoom-to-fill** the thumbnail  
@@ -118,6 +120,8 @@ Vector: [docs/vector-graphics.md](./docs/vector-graphics.md)
 
 ### Process charts (Mermaid + free-form flow)
 - Right sidebar **Process** tool: **dark** interactive canvas (vendored [saketkattu/mermaid-visual-editor](https://github.com/saketkattu/mermaid-visual-editor), MIT)  
+- **Lazy-loaded:** Process panel + React Flow editor load on demand (prefetch on Process tab hover); chrome paints before the RF canvas mounts  
+- **Open framing:** editor multi-pass **instant** zoom-fit while hidden, then reveals already framed (no animated camera fly-in)  
 - **Diagram types:** **Flowchart** and **Mind map** — shared React Flow host (never a static Mermaid preview pane)  
 - **Flowchart pipes:** orthogonal smooth-step connections; port plugs; CAD snap; shaft midpoints; Yes/No labels (longest-shaft mid + drag); reverse multi U-turns; reconnect  
 - **Mind maps:** **straight radial spokes** under topic fills; larger auto-sized topics (text fit); tighter ring spacing; radial **Auto Layout**; Tab/Enter hierarchy; promote/demote; Mermaid icons kept in data (not painted as chips on shapes)  
@@ -131,9 +135,9 @@ Vector: [docs/vector-graphics.md](./docs/vector-graphics.md)
 - See [docs/process-charts.md](./docs/process-charts.md)  
 
 ### Layers & organization
-- Outliner with **nested folders**, reparent, **hide / star / lock** per item or folder  
+- Outliner with **nested folders**, reparent, **hide / lock** per item or folder (eye + lock columns; no star column in Layers)  
 - **Show hidden on canvas** checkbox (dimmed cards when on)  
-- Multi-select style/property edits (Properties: Star, Hide, Fit, Delete)  
+- Multi-select style/property edits (Properties: Hide, Fit, Delete; optional Star if used)  
 - Color pickers: **default** swatch + **palette** + **recent** colors (localStorage)  
 - Undo / redo with history batches for continuous drag  
 
@@ -141,6 +145,7 @@ Vector: [docs/vector-graphics.md](./docs/vector-graphics.md)
 - Google sign-in (popup + redirect)  
 - Per-user cloud sheets (create, rename, switch, save, delete)  
 - **My Sheets** tab: list + detail — print-area zoom-fit preview, multi-unit sizes, sortable/filterable cards table, content-chip highlights, keyboard ↑↓, delete confirm  
+- **Delete active sheet:** workspace switches to another sheet or creates a new Untitled sheet (no ghost / unsavable canvas after delete)  
 - Offline fallback: `local_*` sheets when Firestore is unavailable  
 - Emulator mode: **Emulator sign-in** (email/password) for local E2E  
 
@@ -149,7 +154,7 @@ Vector: [docs/vector-graphics.md](./docs/vector-graphics.md)
 |--------|------|
 | Top bar | Workspace / Library / Sheets, sheet switcher, print menu, **Export**, undo/redo, save, panel toggles, account |
 | Left | Properties — collapsible **Sheet properties** + **Grid settings**, or selected card(s) (keep aspect, fill, style) |
-| Center | Freeform canvas + print frames + minimap / tool strip |
+| Center | Freeform canvas + print frames + collapsible tool strip / minimap |
 | Right | Layers · Equation · **Process** · Image |
 | Bottom | Collapsible library (cards/list, filters, multi-sort catalog) |
 

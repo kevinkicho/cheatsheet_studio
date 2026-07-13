@@ -10,6 +10,7 @@ import {
 import { flushSync } from 'react-dom'
 import { useDroppable } from '@dnd-kit/core'
 import {
+  ChevronDown,
   ChevronUp,
   Focus,
   Grid3x3,
@@ -133,6 +134,8 @@ export function MainCanvas() {
   const setCanvasTool = useUiStore((s) => s.setCanvasTool)
   const minimapOpen = useUiStore((s) => s.minimapOpen)
   const toggleMinimap = useUiStore((s) => s.toggleMinimap)
+  const canvasToolbarOpen = useUiStore((s) => s.canvasToolbarOpen)
+  const toggleCanvasToolbar = useUiStore((s) => s.toggleCanvasToolbar)
   const focusCanvasItemRequest = useUiStore((s) => s.focusCanvasItemRequest)
   const margins = { ...DEFAULT_MARGINS, ...canvas.margins }
   const printPage = getPrintPageSize(
@@ -980,7 +983,7 @@ export function MainCanvas() {
         className="absolute bottom-3 right-3 z-20 flex flex-col items-end gap-2"
         onClick={(e) => e.stopPropagation()}
       >
-        {minimapOpen && (
+        {canvasToolbarOpen && minimapOpen && (
           <CanvasMinimap
             canvas={canvas}
             items={items}
@@ -993,276 +996,322 @@ export function MainCanvas() {
             }}
           />
         )}
-      <div
-        className="flex items-center gap-0.5 rounded-lg border border-zinc-700/80 bg-zinc-950/90 p-1 shadow-lg backdrop-blur"
-      >
-        <ToolBtn
-          title="Select (V) — click cards, drag empty to marquee · Shift+drag empty to pan · Ctrl+drag marquee adds"
-          active={canvasTool === 'select'}
-          onClick={() => setCanvasTool('select')}
-        >
-          <MousePointer2 className="h-3.5 w-3.5" />
-        </ToolBtn>
-        <ToolBtn
-          title="Pan (H) — drag to move the viewport (or hold Shift + left-drag in Select)"
-          active={canvasTool === 'pan'}
-          onClick={() => setCanvasTool('pan')}
-        >
-          <Hand className="h-3.5 w-3.5" />
-        </ToolBtn>
-        <div className="mx-0.5 h-4 w-px bg-zinc-700" />
-        <ZoomBtn title="Zoom out (from viewport center)" onClick={handleZoomOut}>
-          <Minus className="h-3.5 w-3.5" />
-        </ZoomBtn>
-        <button
-          type="button"
-          title="Reset to 100% (from viewport center)"
-          onClick={handleZoomReset}
-          className="min-w-[3.25rem] rounded px-1.5 py-1 text-[11px] font-medium tabular-nums text-zinc-300 hover:bg-zinc-800"
-        >
-          {Math.round(zoom * 100)}%
-        </button>
-        <ZoomBtn title="Zoom in (from viewport center)" onClick={handleZoomIn}>
-          <Plus className="h-3.5 w-3.5" />
-        </ZoomBtn>
-        <div className="mx-0.5 h-4 w-px bg-zinc-700" />
-        <ZoomBtn
-          title={
-            canvas.showPrintArea !== false
-              ? printPageCount > 1
-                ? `Fit all ${printPageCount} print pages (${printPageLayout}) to viewport`
-                : 'Fit print page to viewport'
-              : 'Fit free workspace to viewport'
-          }
-          onClick={zoomFitViewport}
-        >
-          <Maximize2 className="h-3.5 w-3.5" />
-        </ZoomBtn>
-        <ZoomBtn
-          title="Zoom to fit placed cards (bounding box)"
-          onClick={zoomFitContent}
-        >
-          <Scan className="h-3.5 w-3.5" />
-        </ZoomBtn>
-        <ZoomBtn
-          title="Focus selection (or fit content)"
-          onClick={() => {
-            const selected = items.filter((i) => selectedIds.includes(i.id))
-            if (selected.length > 0 && viewportRef.current) {
-              let minX = Infinity
-              let minY = Infinity
-              let maxX = -Infinity
-              let maxY = -Infinity
-              for (const it of selected) {
-                minX = Math.min(minX, it.x)
-                minY = Math.min(minY, it.y)
-                maxX = Math.max(maxX, it.x + it.width)
-                maxY = Math.max(maxY, it.y + it.height)
-              }
-              const w = Math.max(maxX - minX, 40)
-              const h = Math.max(maxY - minY, 40)
-              const pad = 80
-              const scale = Math.min(
-                (viewportRef.current.clientWidth - pad) / w,
-                (viewportRef.current.clientHeight - pad) / h,
-                1.5,
-              )
-              setCanvasZoom(scale)
-              requestAnimationFrame(() => {
-                const el = viewportRef.current
-                if (!el) return
-                el.scrollTo({
-                  left: Math.max(
-                    0,
-                    minX * scale + (w * scale) / 2 - el.clientWidth / 2,
-                  ),
-                  top: Math.max(
-                    0,
-                    minY * scale + (h * scale) / 2 - el.clientHeight / 2,
-                  ),
-                  behavior: 'smooth',
-                })
-              })
-            } else {
-              zoomFitContent()
-            }
-          }}
-        >
-          <Focus className="h-3.5 w-3.5" />
-        </ZoomBtn>
-        <div className="mx-0.5 h-4 w-px bg-zinc-700" />
-        <ToolBtn
-          title={minimapOpen ? 'Hide minimap' : 'Show minimap'}
-          active={minimapOpen}
-          onClick={() => toggleMinimap()}
-        >
-          <MapIcon className="h-3.5 w-3.5" />
-        </ToolBtn>
-        <div className="mx-0.5 h-4 w-px bg-zinc-700" />
-        <div className="relative flex items-center" ref={gridMenuRef}>
-          <ZoomBtn
-            title={
-              showGrid
-                ? `Hide grid (opacity ${gridOpacityPct}% / α ${gridOpacity.toFixed(2)}, max ${GRID_OPACITY_CSS_MAX})`
-                : 'Show grid (per page or whole board — open ▴ for settings)'
-            }
-            active={showGrid}
-            onClick={() => toggleGrid()}
-          >
-            <Grid3x3 className="h-3.5 w-3.5" />
-          </ZoomBtn>
-          {showGrid && (
-            <span
-              className="select-none px-0.5 text-[9px] tabular-nums text-zinc-500"
-              title={`Grid opacity: ${gridOpacityPct}% maps to CSS α ${gridOpacity.toFixed(2)} (max ${GRID_OPACITY_CSS_MAX})`}
-            >
-              {gridOpacityPct}%
-            </span>
-          )}
+
+        {!canvasToolbarOpen ? (
+          /* Collapsed: compact expand control only */
           <button
             type="button"
-            title="Grid settings — where the grid appears"
-            aria-expanded={gridMenuOpen}
-            aria-haspopup="menu"
-            onClick={() => setGridMenuOpen((v) => !v)}
-            className={`rounded p-1 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 ${
-              gridMenuOpen ? 'bg-zinc-800 text-indigo-300' : ''
-            }`}
+            title="Expand canvas tools"
+            aria-label="Expand canvas tools"
+            aria-expanded={false}
+            data-testid="canvas-toolbar-expand"
+            onClick={() => toggleCanvasToolbar()}
+            className="flex items-center gap-1 rounded-lg border border-zinc-700/80 bg-zinc-950/90 px-2 py-1.5 text-zinc-300 shadow-lg backdrop-blur transition hover:border-indigo-500/40 hover:text-indigo-200"
           >
-            <ChevronUp
-              className={`h-3 w-3 transition ${gridMenuOpen ? '' : 'rotate-180'}`}
-            />
+            <MousePointer2 className="h-3.5 w-3.5" />
+            <span className="text-[10px] font-medium tabular-nums text-zinc-400">
+              {Math.round(zoom * 100)}%
+            </span>
+            <ChevronUp className="h-3.5 w-3.5 text-zinc-500" />
           </button>
-          {gridMenuOpen && (
-            <div
-              role="menu"
-              className="absolute bottom-full right-0 z-30 mb-2 w-60 overflow-hidden rounded-lg border border-zinc-700 bg-zinc-950 p-2 shadow-2xl"
+        ) : (
+          <div
+            className="flex items-center gap-0.5 rounded-lg border border-zinc-700/80 bg-zinc-950/90 p-1 shadow-lg backdrop-blur"
+            data-testid="canvas-toolbar"
+          >
+            <ToolBtn
+              title="Select (V) — click cards, drag empty to marquee · Shift+drag empty to pan · Ctrl+drag marquee adds"
+              active={canvasTool === 'select'}
+              onClick={() => setCanvasTool('select')}
             >
-              <p className="px-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
-                Grid covers
-              </p>
-              <p className="mt-0.5 px-1 text-[10px] leading-snug text-zinc-600">
-                Full page / Printable = separate grid on each page. Whole board
-                = one continuous grid.
-              </p>
-              <div className="mt-2 flex flex-col gap-1">
-                {GRID_EXTENT_OPTIONS.map((opt) => {
-                  const active = gridExtent === opt.id
-                  return (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      role="menuitemradio"
-                      aria-checked={active}
-                      onClick={() => {
-                        setCanvas({
-                          gridExtent: opt.id,
-                          showGrid: true,
-                        })
-                      }}
-                      className={`rounded-md border px-2 py-1.5 text-left transition ${
-                        active
-                          ? 'border-indigo-500/50 bg-indigo-500/15 text-indigo-100'
-                          : 'border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200'
-                      }`}
-                    >
-                      <span className="block text-[11px] font-medium">
-                        {opt.label}
-                      </span>
-                      <span className="mt-0.5 block text-[9px] text-zinc-500">
-                        {opt.hint}
-                      </span>
-                    </button>
+              <MousePointer2 className="h-3.5 w-3.5" />
+            </ToolBtn>
+            <ToolBtn
+              title="Pan (H) — drag to move the viewport (or hold Shift + left-drag in Select)"
+              active={canvasTool === 'pan'}
+              onClick={() => setCanvasTool('pan')}
+            >
+              <Hand className="h-3.5 w-3.5" />
+            </ToolBtn>
+            <div className="mx-0.5 h-4 w-px bg-zinc-700" />
+            <ZoomBtn
+              title="Zoom out (from viewport center)"
+              onClick={handleZoomOut}
+            >
+              <Minus className="h-3.5 w-3.5" />
+            </ZoomBtn>
+            <button
+              type="button"
+              title="Reset to 100% (from viewport center)"
+              onClick={handleZoomReset}
+              className="min-w-[3.25rem] rounded px-1.5 py-1 text-[11px] font-medium tabular-nums text-zinc-300 hover:bg-zinc-800"
+            >
+              {Math.round(zoom * 100)}%
+            </button>
+            <ZoomBtn
+              title="Zoom in (from viewport center)"
+              onClick={handleZoomIn}
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </ZoomBtn>
+            <div className="mx-0.5 h-4 w-px bg-zinc-700" />
+            <ZoomBtn
+              title={
+                canvas.showPrintArea !== false
+                  ? printPageCount > 1
+                    ? `Fit all ${printPageCount} print pages (${printPageLayout}) to viewport`
+                    : 'Fit print page to viewport'
+                  : 'Fit free workspace to viewport'
+              }
+              onClick={zoomFitViewport}
+            >
+              <Maximize2 className="h-3.5 w-3.5" />
+            </ZoomBtn>
+            <ZoomBtn
+              title="Zoom to fit placed cards (bounding box)"
+              onClick={zoomFitContent}
+            >
+              <Scan className="h-3.5 w-3.5" />
+            </ZoomBtn>
+            <ZoomBtn
+              title="Focus selection (or fit content)"
+              onClick={() => {
+                const selected = items.filter((i) =>
+                  selectedIds.includes(i.id),
+                )
+                if (selected.length > 0 && viewportRef.current) {
+                  let minX = Infinity
+                  let minY = Infinity
+                  let maxX = -Infinity
+                  let maxY = -Infinity
+                  for (const it of selected) {
+                    minX = Math.min(minX, it.x)
+                    minY = Math.min(minY, it.y)
+                    maxX = Math.max(maxX, it.x + it.width)
+                    maxY = Math.max(maxY, it.y + it.height)
+                  }
+                  const w = Math.max(maxX - minX, 40)
+                  const h = Math.max(maxY - minY, 40)
+                  const pad = 80
+                  const scale = Math.min(
+                    (viewportRef.current.clientWidth - pad) / w,
+                    (viewportRef.current.clientHeight - pad) / h,
+                    1.5,
                   )
-                })}
-              </div>
-              <div className="mt-2 border-t border-zinc-800 pt-2">
-                <label className="flex flex-col gap-1 px-1">
-                  <span className="text-[10px] text-zinc-500">
-                    Spacing · {gridSpacing}px
-                  </span>
-                  <input
-                    type="range"
-                    min={8}
-                    max={64}
-                    step={4}
-                    value={gridSpacing}
-                    onChange={(e) =>
-                      setCanvas({
-                        gridSpacing: Number(e.target.value),
-                        showGrid: true,
-                      })
-                    }
-                    className="w-full"
-                  />
-                </label>
-                <label className="mt-2 flex flex-col gap-1 px-1">
-                  <span className="text-[10px] text-zinc-500">
-                    Opacity · {gridOpacityPct}% of soft range → α{' '}
-                    {gridOpacity.toFixed(2)}
-                    <span className="ml-1 text-zinc-600">
-                      (bar 0–100% = α 0–{GRID_OPACITY_CSS_MAX})
-                    </span>
-                  </span>
-                  <input
-                    type="range"
-                    min={0}
-                    max={100}
-                    step={1}
-                    value={gridOpacityPct}
-                    onInput={(e) => {
-                      const next = percentToGridOpacity(
-                        Number((e.target as HTMLInputElement).value),
+                  setCanvasZoom(scale)
+                  requestAnimationFrame(() => {
+                    const el = viewportRef.current
+                    if (!el) return
+                    el.scrollTo({
+                      left: Math.max(
+                        0,
+                        minX * scale + (w * scale) / 2 - el.clientWidth / 2,
+                      ),
+                      top: Math.max(
+                        0,
+                        minY * scale + (h * scale) / 2 - el.clientHeight / 2,
+                      ),
+                      behavior: 'smooth',
+                    })
+                  })
+                } else {
+                  zoomFitContent()
+                }
+              }}
+            >
+              <Focus className="h-3.5 w-3.5" />
+            </ZoomBtn>
+            <div className="mx-0.5 h-4 w-px bg-zinc-700" />
+            <ToolBtn
+              title={minimapOpen ? 'Hide minimap' : 'Show minimap'}
+              active={minimapOpen}
+              onClick={() => toggleMinimap()}
+            >
+              <MapIcon className="h-3.5 w-3.5" />
+            </ToolBtn>
+            <div className="mx-0.5 h-4 w-px bg-zinc-700" />
+            <div className="relative flex items-center" ref={gridMenuRef}>
+              <ZoomBtn
+                title={
+                  showGrid
+                    ? `Hide grid (opacity ${gridOpacityPct}% / α ${gridOpacity.toFixed(2)}, max ${GRID_OPACITY_CSS_MAX})`
+                    : 'Show grid (per page or whole board — open ▴ for settings)'
+                }
+                active={showGrid}
+                onClick={() => toggleGrid()}
+              >
+                <Grid3x3 className="h-3.5 w-3.5" />
+              </ZoomBtn>
+              {showGrid && (
+                <span
+                  className="select-none px-0.5 text-[9px] tabular-nums text-zinc-500"
+                  title={`Grid opacity: ${gridOpacityPct}% maps to CSS α ${gridOpacity.toFixed(2)} (max ${GRID_OPACITY_CSS_MAX})`}
+                >
+                  {gridOpacityPct}%
+                </span>
+              )}
+              <button
+                type="button"
+                title="Grid settings — where the grid appears"
+                aria-expanded={gridMenuOpen}
+                aria-haspopup="menu"
+                onClick={() => setGridMenuOpen((v) => !v)}
+                className={`rounded p-1 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 ${
+                  gridMenuOpen ? 'bg-zinc-800 text-indigo-300' : ''
+                }`}
+              >
+                <ChevronUp
+                  className={`h-3 w-3 transition ${gridMenuOpen ? '' : 'rotate-180'}`}
+                />
+              </button>
+              {gridMenuOpen && (
+                <div
+                  role="menu"
+                  className="absolute bottom-full right-0 z-30 mb-2 w-60 overflow-hidden rounded-lg border border-zinc-700 bg-zinc-950 p-2 shadow-2xl"
+                >
+                  <p className="px-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
+                    Grid covers
+                  </p>
+                  <p className="mt-0.5 px-1 text-[10px] leading-snug text-zinc-600">
+                    Full page / Printable = separate grid on each page. Whole
+                    board = one continuous grid.
+                  </p>
+                  <div className="mt-2 flex flex-col gap-1">
+                    {GRID_EXTENT_OPTIONS.map((opt) => {
+                      const active = gridExtent === opt.id
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={active}
+                          onClick={() => {
+                            setCanvas({
+                              gridExtent: opt.id,
+                              showGrid: true,
+                            })
+                          }}
+                          className={`rounded-md border px-2 py-1.5 text-left transition ${
+                            active
+                              ? 'border-indigo-500/50 bg-indigo-500/15 text-indigo-100'
+                              : 'border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200'
+                          }`}
+                        >
+                          <span className="block text-[11px] font-medium">
+                            {opt.label}
+                          </span>
+                          <span className="mt-0.5 block text-[9px] text-zinc-500">
+                            {opt.hint}
+                          </span>
+                        </button>
                       )
-                      setCanvas({
-                        gridOpacity: next,
-                        showGrid: true,
-                      })
-                    }}
-                    onChange={(e) => {
-                      const next = percentToGridOpacity(Number(e.target.value))
-                      setCanvas({
-                        gridOpacity: next,
-                        showGrid: true,
-                      })
-                    }}
-                    className="w-full"
-                  />
-                  <span className="text-[9px] leading-snug text-zinc-600">
-                    Full bar travel: 0% = invisible, 50% = α{' '}
-                    {(GRID_OPACITY_CSS_MAX / 2).toFixed(2)}, 100% = α{' '}
-                    {GRID_OPACITY_CSS_MAX} (not CSS 1.0).
-                  </span>
-                </label>
-              </div>
-              <p className="mt-2 px-1 text-[9px] text-zinc-600">
-                Also in left Properties panel when no card is selected.
-              </p>
+                    })}
+                  </div>
+                  <div className="mt-2 border-t border-zinc-800 pt-2">
+                    <label className="flex flex-col gap-1 px-1">
+                      <span className="text-[10px] text-zinc-500">
+                        Spacing · {gridSpacing}px
+                      </span>
+                      <input
+                        type="range"
+                        min={8}
+                        max={64}
+                        step={4}
+                        value={gridSpacing}
+                        onChange={(e) =>
+                          setCanvas({
+                            gridSpacing: Number(e.target.value),
+                            showGrid: true,
+                          })
+                        }
+                        className="w-full"
+                      />
+                    </label>
+                    <label className="mt-2 flex flex-col gap-1 px-1">
+                      <span className="text-[10px] text-zinc-500">
+                        Opacity · {gridOpacityPct}% of soft range → α{' '}
+                        {gridOpacity.toFixed(2)}
+                        <span className="ml-1 text-zinc-600">
+                          (bar 0–100% = α 0–{GRID_OPACITY_CSS_MAX})
+                        </span>
+                      </span>
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        step={1}
+                        value={gridOpacityPct}
+                        onInput={(e) => {
+                          const next = percentToGridOpacity(
+                            Number((e.target as HTMLInputElement).value),
+                          )
+                          setCanvas({
+                            gridOpacity: next,
+                            showGrid: true,
+                          })
+                        }}
+                        onChange={(e) => {
+                          const next = percentToGridOpacity(
+                            Number(e.target.value),
+                          )
+                          setCanvas({
+                            gridOpacity: next,
+                            showGrid: true,
+                          })
+                        }}
+                        className="w-full"
+                      />
+                      <span className="text-[9px] leading-snug text-zinc-600">
+                        Full bar travel: 0% = invisible, 50% = α{' '}
+                        {(GRID_OPACITY_CSS_MAX / 2).toFixed(2)}, 100% = α{' '}
+                        {GRID_OPACITY_CSS_MAX} (not CSS 1.0).
+                      </span>
+                    </label>
+                  </div>
+                  <p className="mt-2 px-1 text-[9px] text-zinc-600">
+                    Also in left Properties panel when no card is selected.
+                  </p>
+                </div>
+              )}
             </div>
-          )}
-        </div>
-        <ZoomBtn
-          title={
-            canvas.snapToGrid
-              ? 'Snap to grid ON — click to disable'
-              : `Snap to grid OFF — snap move/resize to ${gridSpacing}px`
-          }
-          active={canvas.snapToGrid === true}
-          onClick={() => toggleSnapToGrid()}
-        >
-          <Magnet className="h-3.5 w-3.5" />
-        </ZoomBtn>
-        <ZoomBtn
-          title="Auto-organize: pack cards on the print-page grid inside margins"
-          onClick={() => {
-            if (items.length === 0) return
-            if (!showGrid) setCanvas({ showGrid: true })
-            autoOrganize()
-          }}
-        >
-          <LayoutGrid className="h-3.5 w-3.5" />
-        </ZoomBtn>
-      </div>
+            <ZoomBtn
+              title={
+                canvas.snapToGrid
+                  ? 'Snap to grid ON — click to disable'
+                  : `Snap to grid OFF — snap move/resize to ${gridSpacing}px`
+              }
+              active={canvas.snapToGrid === true}
+              onClick={() => toggleSnapToGrid()}
+            >
+              <Magnet className="h-3.5 w-3.5" />
+            </ZoomBtn>
+            <ZoomBtn
+              title="Auto-organize: pack cards on the print-page grid inside margins"
+              onClick={() => {
+                if (items.length === 0) return
+                if (!showGrid) setCanvas({ showGrid: true })
+                autoOrganize()
+              }}
+            >
+              <LayoutGrid className="h-3.5 w-3.5" />
+            </ZoomBtn>
+            <div className="mx-0.5 h-4 w-px bg-zinc-700" />
+            <button
+              type="button"
+              title="Collapse canvas tools"
+              aria-label="Collapse canvas tools"
+              aria-expanded={true}
+              data-testid="canvas-toolbar-collapse"
+              onClick={() => {
+                setGridMenuOpen(false)
+                toggleCanvasToolbar()
+              }}
+              className="rounded p-1.5 text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-100"
+            >
+              <ChevronDown className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

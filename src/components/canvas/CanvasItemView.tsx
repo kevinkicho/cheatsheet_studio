@@ -51,6 +51,7 @@ interface CanvasItemViewProps {
   interactive?: boolean
 }
 
+/** Shared with CanvasDragPreview so library ghost size matches canvas snug. */
 const MAX_AUTO_W = 520
 const MAX_AUTO_H = 420
 const DRAG_THRESHOLD_PX = 3

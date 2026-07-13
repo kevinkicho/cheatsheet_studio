@@ -88,8 +88,19 @@ export function dragPreviewClientRect(event: DragEndLike): {
   const el = fromDom ?? null
   if (el) {
     const r = el.getBoundingClientRect()
-    if (r.width > 4 && r.height > 4) {
-      return { left: r.left, top: r.top, width: r.width, height: r.height }
+    // Prefer explicit measured box from CanvasDragPreview (stable, no ring/subpixel drift)
+    const attrW = Number(el.getAttribute('data-preview-width'))
+    const attrH = Number(el.getAttribute('data-preview-height'))
+    const width =
+      Number.isFinite(attrW) && attrW > 4
+        ? attrW
+        : r.width
+    const height =
+      Number.isFinite(attrH) && attrH > 4
+        ? attrH
+        : r.height
+    if (width > 4 && height > 4) {
+      return { left: r.left, top: r.top, width, height }
     }
   }
 
@@ -137,6 +148,34 @@ export function previewRectToCanvasDrop(
     x: Math.max(0, Math.round((preview.left - surfaceRect.left) / z)),
     y: Math.max(0, Math.round((preview.top - surfaceRect.top) / z)),
   }
+}
+
+/**
+ * Convert drag-preview screen size → canvas card size.
+ * The ghost lives outside the zoomed surface (always 1:1 CSS px), so we
+ * undo board zoom so the dropped card matches the ghost’s on-screen box.
+ */
+export function previewSizeToCanvasSize(
+  preview: { width: number; height: number },
+  zoom: number,
+): { width: number; height: number } {
+  const z = Number.isFinite(zoom) && zoom > 0 ? zoom : 1
+  return {
+    width: Math.max(40, Math.round(preview.width / z)),
+    height: Math.max(30, Math.round(preview.height / z)),
+  }
+}
+
+/** Options when placing a library item (e.g. from drag-preview WYSIWYG drop). */
+export type AddFromLibraryOptions = {
+  /** Explicit card size in canvas units (from live drag preview). */
+  width?: number
+  height?: number
+  /**
+   * When true, size already matches the ghost — freeze autoFit so a second
+   * measure pass does not jump width/height after drop.
+   */
+  matchPreview?: boolean
 }
 
 /** @deprecated Prefer dragPreviewClientRect + previewRectToCanvasDrop */

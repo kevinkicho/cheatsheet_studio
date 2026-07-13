@@ -169,10 +169,72 @@ describe('sheetsStore (Firebase mocked)', () => {
       ],
       activeSheetId: 's1',
     })
+    useCanvasStore.getState().loadSheet({
+      sheetId: 's1',
+      title: 'A',
+      canvas: { ...DEFAULT_CANVAS },
+      items: [],
+    })
     deleteDoc.mockResolvedValueOnce(undefined)
+    // Remaining sheet open after delete
+    getDoc.mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({
+        title: 'B',
+        canvas: { ...DEFAULT_CANVAS },
+        items: [],
+        folders: [],
+      }),
+    })
     await useSheetsStore.getState().deleteSheet('s1')
     expect(deleteDoc).toHaveBeenCalled()
     expect(useSheetsStore.getState().sheets.map((s) => s.id)).toEqual(['s2'])
+    // Workspace must not keep the deleted sheet id (ghost sheet)
+    expect(useSheetsStore.getState().activeSheetId).toBe('s2')
+    expect(useCanvasStore.getState().sheetId).toBe('s2')
+  })
+
+  it('deleteSheet of last sheet creates a fresh untitled sheet', async () => {
+    useSheetsStore.setState({
+      sheets: [{ id: 'only', title: 'Gone', updatedAt: 1 }],
+      activeSheetId: 'only',
+    })
+    useCanvasStore.getState().loadSheet({
+      sheetId: 'only',
+      title: 'Gone',
+      canvas: { ...DEFAULT_CANVAS },
+      items: [],
+    })
+    deleteDoc.mockResolvedValueOnce(undefined)
+    // createSheet path uses addDoc
+    addDoc.mockResolvedValueOnce({ id: 'fresh-new' })
+    await useSheetsStore.getState().deleteSheet('only', { uid: 'uid-test' })
+    expect(useSheetsStore.getState().activeSheetId).toBe('fresh-new')
+    expect(useCanvasStore.getState().sheetId).toBe('fresh-new')
+    expect(useSheetsStore.getState().sheets.some((s) => s.id === 'only')).toBe(
+      false,
+    )
+  })
+
+  it('deleteSheet of non-active sheet does not switch workspace', async () => {
+    useSheetsStore.setState({
+      sheets: [
+        { id: 'open', title: 'Open', updatedAt: 2 },
+        { id: 'other', title: 'Other', updatedAt: 1 },
+      ],
+      activeSheetId: 'open',
+    })
+    useCanvasStore.getState().loadSheet({
+      sheetId: 'open',
+      title: 'Open',
+      canvas: { ...DEFAULT_CANVAS },
+      items: [],
+    })
+    deleteDoc.mockResolvedValueOnce(undefined)
+    await useSheetsStore.getState().deleteSheet('other')
+    expect(useSheetsStore.getState().sheets.map((s) => s.id)).toEqual(['open'])
+    expect(useSheetsStore.getState().activeSheetId).toBe('open')
+    expect(useCanvasStore.getState().sheetId).toBe('open')
   })
 
   it('renameSheet updates local list and cloud', async () => {

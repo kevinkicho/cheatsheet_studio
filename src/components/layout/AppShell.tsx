@@ -20,6 +20,7 @@ import { useUiStore } from '@/stores/uiStore'
 import {
   dragPreviewClientRect,
   previewRectToCanvasDrop,
+  previewSizeToCanvasSize,
 } from '@/lib/canvasDrop'
 import { TopBar } from './TopBar'
 import { LeftSidebar } from './LeftSidebar'
@@ -79,10 +80,15 @@ export function AppShell() {
     const zoom = Number(
       surface.dataset.zoom || useUiStore.getState().canvasZoom || 1,
     )
-    // Place at the same top-left as the drag ghost the user was seeing
+    // Place at the same top-left AND size as the drag ghost (WYSIWYG)
     if (previewRect) {
       const { x, y } = previewRectToCanvasDrop(previewRect, surfaceRect, zoom)
-      addFromLibrary(lib, x, y)
+      const { width, height } = previewSizeToCanvasSize(previewRect, zoom)
+      addFromLibrary(lib, x, y, {
+        width,
+        height,
+        matchPreview: true,
+      })
       return
     }
     addFromLibrary(lib, 120, 120)

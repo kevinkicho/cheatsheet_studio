@@ -1242,7 +1242,7 @@ export function SheetsView() {
 
   const confirmDelete = () => {
     if (!preview) return
-    void deleteSheet(preview.id).then(() => {
+    void deleteSheet(preview.id, { uid: user?.uid }).then(() => {
       setDeleteConfirm(false)
       setSelectedId(null)
       setPreview(null)

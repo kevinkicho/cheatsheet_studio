@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from 'react'
 import {
   FolderTree,
+  Heart,
   LayoutGrid,
   List,
   MessageSquareText,
@@ -368,28 +369,22 @@ export function BottomLibraryPanel() {
             title={
               libraryFavoritesOnly
                 ? 'Show all catalog items'
-                : 'Show only starred favorites'
+                : 'Show only favorited items'
             }
             data-testid="library-filter-favorites"
             className={`inline-flex items-center gap-1 rounded border px-1.5 py-1 text-[10px] font-medium transition ${
               libraryFavoritesOnly
-                ? 'border-amber-500/40 bg-amber-500/15 text-amber-200'
+                ? 'border-rose-500/40 bg-rose-500/15 text-rose-200'
                 : 'border-zinc-700 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200'
             }`}
           >
-            ★ Favorites
+            <Heart
+              className={`h-3 w-3 ${
+                libraryFavoritesOnly ? 'fill-rose-400 text-rose-300' : ''
+              }`}
+            />
+            Favorites
           </button>
-
-          {hasActiveFilters && (
-            <button
-              type="button"
-              onClick={() => clearLibraryFilters()}
-              data-testid="library-filter-clear"
-              className="shrink-0 rounded border border-zinc-700 px-1.5 py-1 text-[9px] text-zinc-400 hover:border-zinc-600 hover:text-zinc-200"
-            >
-              Clear
-            </button>
-          )}
         </div>
       </div>
 

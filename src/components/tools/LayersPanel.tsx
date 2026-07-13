@@ -23,7 +23,6 @@ import {
   Pencil,
   Search,
   Sigma,
-  Star,
   Table2,
   Trash2,
 } from 'lucide-react'
@@ -73,7 +72,6 @@ export function LayersPanel() {
   const sendToBack = useCanvasStore((s) => s.sendToBack)
   const removeItems = useCanvasStore((s) => s.removeItems)
   const toggleItemHidden = useCanvasStore((s) => s.toggleItemHidden)
-  const toggleItemStarred = useCanvasStore((s) => s.toggleItemStarred)
   const toggleItemLocked = useCanvasStore((s) => s.toggleItemLocked)
   const setFolderHidden = useCanvasStore((s) => s.setFolderHidden)
   const setFolderLocked = useCanvasStore((s) => s.setFolderLocked)
@@ -571,7 +569,6 @@ export function LayersPanel() {
                     }
                   }}
                   onToggleHidden={() => toggleHiddenForRow(item.id)}
-                  onToggleStarred={() => toggleItemStarred(item.id)}
                   onToggleLocked={() => toggleLockedForRow(item.id)}
                   onDragStart={(e) => beginDragItems(e, item.id)}
                   onDragOver={(e) => allowDropOn(e, 'item', item.id)}
@@ -756,7 +753,6 @@ export function LayersPanel() {
                     }
                   }}
                   onToggleHidden={() => toggleHiddenForRow(item.id)}
-                  onToggleStarred={() => toggleItemStarred(item.id)}
                   onToggleLocked={() => toggleLockedForRow(item.id)}
                   onDragStart={(e) => beginDragItems(e, item.id)}
                   onDragOver={(e) => allowDropOn(e, 'item', item.id)}
@@ -1063,7 +1059,6 @@ function OutlinerRow({
   dragging,
   onSelect,
   onToggleHidden,
-  onToggleStarred,
   onToggleLocked,
   onDragStart,
   onDragOver,
@@ -1076,7 +1071,6 @@ function OutlinerRow({
   dragging?: boolean
   onSelect: (e: MouseEvent) => void
   onToggleHidden: () => void
-  onToggleStarred: () => void
   onToggleLocked: () => void
   onDragStart: (e: DragEvent) => void
   onDragOver: (e: DragEvent) => void
@@ -1085,7 +1079,6 @@ function OutlinerRow({
 }) {
   const hidden = item.hidden === true
   const locked = item.locked === true
-  const starred = item.starred === true
   const TypeIcon = typeIcon(item)
 
   return (
@@ -1128,31 +1121,13 @@ function OutlinerRow({
         >
           {item.title || item.type}
         </span>
-        {starred && (
-          <Star
-            className="h-2.5 w-2.5 shrink-0 fill-amber-400 text-amber-400"
-            aria-hidden
-          />
-        )}
         {locked && (
           <Lock className="h-2.5 w-2.5 shrink-0 opacity-60" aria-hidden />
         )}
       </button>
 
-      <div className="flex w-[72px] shrink-0 justify-end gap-0.5 pr-0.5">
-        <RestrictBtn
-          title={starred ? 'Unstar' : 'Star / favorite'}
-          active={starred}
-          dimmed={!starred}
-          onClick={(e) => {
-            e.stopPropagation()
-            onToggleStarred()
-          }}
-        >
-          <Star
-            className={`h-3 w-3 ${starred ? 'fill-amber-400 text-amber-400' : ''}`}
-          />
-        </RestrictBtn>
+      {/* Eye + lock only (no star — favorites live on library hearts) */}
+      <div className="flex w-[52px] shrink-0 justify-end gap-0.5 pr-0.5">
         <RestrictBtn
           title={
             hidden

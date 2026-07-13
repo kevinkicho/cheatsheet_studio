@@ -4,6 +4,7 @@ import {
   estimateLibraryCardSize,
   placeCardInVisibleViewport,
   previewRectToCanvasDrop,
+  previewSizeToCanvasSize,
 } from '@/lib/canvasDrop'
 import type { LibraryItem } from '@/types'
 
@@ -60,6 +61,28 @@ describe('previewRectToCanvasDrop', () => {
       1,
     )
     expect(p).toEqual({ x: 0, y: 0 })
+  })
+})
+
+describe('previewSizeToCanvasSize', () => {
+  it('keeps natural size at zoom 1', () => {
+    expect(previewSizeToCanvasSize({ width: 240, height: 72 }, 1)).toEqual({
+      width: 240,
+      height: 72,
+    })
+  })
+
+  it('undoes board zoom so ghost screen size matches dropped card', () => {
+    // Ghost is outside zoomed surface at 240×72 CSS px; board at 0.5×
+    // → card must be 480×144 in canvas units to paint at 240×72 on screen.
+    expect(previewSizeToCanvasSize({ width: 240, height: 72 }, 0.5)).toEqual({
+      width: 480,
+      height: 144,
+    })
+    expect(previewSizeToCanvasSize({ width: 240, height: 72 }, 2)).toEqual({
+      width: 120,
+      height: 36,
+    })
   })
 })
 

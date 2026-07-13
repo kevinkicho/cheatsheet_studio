@@ -25,6 +25,14 @@ import {
 import { useCanvasStore } from './canvasStore'
 import { createId } from '@/lib/ids'
 
+function isFirestoreNotFound(e: unknown): boolean {
+  if (!e || typeof e !== 'object') return false
+  const code = (e as { code?: string }).code
+  if (code === 'not-found') return true
+  const msg = String((e as { message?: string }).message ?? '')
+  return /not[- ]found|No document to update/i.test(msg)
+}
+
 export interface SheetMeta {
   id: string
   title: string
@@ -63,7 +71,16 @@ interface SheetsState {
   fetchSheetPreview: (sheetId: string) => Promise<SheetPreview | null>
   saveActiveSheet: (uid: string) => Promise<void>
   renameSheet: (sheetId: string, title: string) => Promise<void>
-  deleteSheet: (sheetId: string) => Promise<void>
+  /**
+   * Delete a sheet from the list (and cloud when not local).
+   * If it was open in the workspace, switches to another sheet or creates a new one
+   * so Workspace never keeps a ghost (deleted) document id.
+   * @param opts.uid — signed-in user; used to create a replacement when last sheet is deleted.
+   */
+  deleteSheet: (
+    sheetId: string,
+    opts?: { uid?: string | null },
+  ) => Promise<void>
   ensureDefaultSheet: (uid: string) => Promise<void>
   /** Force another cloud bootstrap attempt (clears sticky local mode). */
   retryCloudSync: (uid: string) => Promise<void>
@@ -396,6 +413,20 @@ export const useSheetsStore = create<SheetsState>((set, get) => ({
           .sort((a, b) => b.updatedAt - a.updatedAt),
       }))
     } catch (e) {
+      // Document was deleted (or never existed) — recreate so Workspace is not a ghost
+      if (isFirestoreNotFound(e)) {
+        console.warn(
+          '[sheets] save target missing — creating a new cloud sheet from canvas',
+        )
+        useCanvasStore.setState({ sheetId: null })
+        set((s) => ({
+          sheets: s.sheets.filter((sh) => sh.id !== sheetId),
+          activeSheetId:
+            s.activeSheetId === sheetId ? null : s.activeSheetId,
+        }))
+        await get().saveActiveSheet(uid)
+        return
+      }
       const msg = formatFirestoreError(e)
       console.warn('[sheets] save failed:', e)
       set({
@@ -428,7 +459,7 @@ export const useSheetsStore = create<SheetsState>((set, get) => ({
     }
   },
 
-  deleteSheet: async (sheetId) => {
+  deleteSheet: async (sheetId, opts) => {
     if (!sheetId.startsWith('local_')) {
       try {
         await deleteDoc(doc(db, 'sheets', sheetId))
@@ -436,11 +467,47 @@ export const useSheetsStore = create<SheetsState>((set, get) => ({
         /* ignore */
       }
     }
+
+    const canvasSheetId = useCanvasStore.getState().sheetId
+    // Ghost-sheet bug: activeSheetId was cleared but canvas.sheetId still
+    // pointed at the deleted doc → workspace looked open, saves failed.
+    const wasOpenInWorkspace =
+      get().activeSheetId === sheetId || canvasSheetId === sheetId
+
     set((s) => ({
       sheets: s.sheets.filter((sh) => sh.id !== sheetId),
       activeSheetId:
         s.activeSheetId === sheetId ? null : s.activeSheetId,
     }))
+
+    if (!wasOpenInWorkspace) return
+
+    const remaining = get().sheets
+    if (remaining.length > 0) {
+      // Prefer most recently updated remaining sheet (list is updatedAt desc)
+      await get().openSheet(remaining[0]!.id)
+      return
+    }
+
+    // Last sheet deleted — open a real empty sheet so Workspace is never orphaned
+    const uid = opts?.uid
+    if (uid) {
+      await get().createSheet(uid, 'Untitled sheet')
+      return
+    }
+    const localId = openLocalSheet('Untitled sheet')
+    set({
+      sheets: [
+        {
+          id: localId,
+          title: 'Untitled sheet',
+          updatedAt: Date.now(),
+          localOnly: true,
+        },
+      ],
+      activeSheetId: localId,
+      saveStatus: 'local',
+    })
   },
 
   /**

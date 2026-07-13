@@ -1,5 +1,18 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { useCanvasStore } from '@/stores/canvasStore'
+import type { LibraryItem } from '@/types'
+
+const libEq = (over?: Partial<LibraryItem>): LibraryItem => ({
+  id: 'lib-eq-1',
+  type: 'equation',
+  title: 'Pythagorean',
+  subject: 'mathematics',
+  topic: 'Geometry',
+  tags: [],
+  latex: 'a^2+b^2=c^2',
+  isSystem: true,
+  ...over,
+})
 
 describe('canvasStore — items, folders, multi-select', () => {
   beforeEach(() => {
@@ -14,6 +27,30 @@ describe('canvasStore — items, folders, multi-select', () => {
     expect(items[0]!.id).toBe(id)
     expect(items[0]!.latex).toBe('E=mc^2')
     expect(items[0]!.type).toBe('custom-equation')
+  })
+
+  it('addFromLibrary with matchPreview uses ghost size and freezes autoFit', () => {
+    const id = useCanvasStore.getState().addFromLibrary(libEq(), 40, 50, {
+      width: 312,
+      height: 88,
+      matchPreview: true,
+    })
+    const item = useCanvasStore.getState().items.find((i) => i.id === id)!
+    expect(item.x).toBe(40)
+    expect(item.y).toBe(50)
+    expect(item.width).toBe(312)
+    expect(item.height).toBe(88)
+    expect(item.autoFit).toBe(false)
+    expect(item.latex).toBe('a^2+b^2=c^2')
+    expect(item.libraryItemId).toBe('lib-eq-1')
+  })
+
+  it('addFromLibrary without preview keeps estimate + autoFit for equations', () => {
+    const id = useCanvasStore.getState().addFromLibrary(libEq(), 10, 20)
+    const item = useCanvasStore.getState().items.find((i) => i.id === id)!
+    expect(item.width).toBe(240)
+    expect(item.height).toBe(72)
+    expect(item.autoFit).toBe(true)
   })
 
   it('removeItem deletes card and clears selection', () => {

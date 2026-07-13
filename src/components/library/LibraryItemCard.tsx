@@ -7,7 +7,7 @@ import {
   type PointerEvent,
 } from 'react'
 import { useDraggable } from '@dnd-kit/core'
-import { Check, Copy, ImageIcon, Sigma, Star, Table2 } from 'lucide-react'
+import { Check, Copy, Heart } from 'lucide-react'
 import type { LibraryItem } from '@/types'
 import { FitContent } from '@/components/math/FitContent'
 import { FigureView } from '@/components/math/FigureView'
@@ -67,10 +67,7 @@ function LibraryItemCardInner({
     [setNodeRef],
   )
 
-  const TypeIcon =
-    item.type === 'table' ? Table2 : item.type === 'figure' ? ImageIcon : Sigma
-
-  // Taller fixed tiles + equal outer pad (p-2.5 = 10px all sides)
+  // Taller fixed tiles + equal outer pad (L/R/B match — no extra left gutter)
   // compact (bottom panel): ~11rem total · full library: ~13rem
   const tileClass = labelsOnly
     ? 'px-2.5 py-1.5'
@@ -107,6 +104,12 @@ function LibraryItemCardInner({
     else localHover.onLeave()
   }
 
+  const toggleFavorite = (e: MouseEvent | PointerEvent) => {
+    e.stopPropagation()
+    e.preventDefault()
+    toggleLibraryFavorite(item.id)
+  }
+
   return (
     <>
       <div
@@ -124,33 +127,37 @@ function LibraryItemCardInner({
           isDragging ? 'opacity-40' : 'hover:border-indigo-500/50'
         } ${tileClass}`}
       >
-        {/* Header — fixed height row */}
-        <div className="pointer-events-none flex h-5 shrink-0 items-center gap-1.5">
-          <TypeIcon className="h-3.5 w-3.5 shrink-0 text-indigo-400" />
-          <h4 className="min-w-0 flex-1 truncate text-xs font-medium leading-5 text-zinc-100">
-            {item.title}
-          </h4>
+        {/* Header: heart (favorites) top-left · title · topic */}
+        <div className="flex h-5 shrink-0 items-center gap-1">
           <button
             type="button"
             title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
-            className="pointer-events-auto flex h-5 w-5 shrink-0 items-center justify-center rounded text-zinc-500 hover:bg-zinc-800 hover:text-amber-300"
+            aria-label={
+              isFavorite ? 'Remove from favorites' : 'Add to favorites'
+            }
+            aria-pressed={isFavorite}
+            data-testid="library-card-favorite"
+            className={`pointer-events-auto flex h-5 w-5 shrink-0 items-center justify-center rounded transition ${
+              isFavorite
+                ? 'text-rose-400 hover:bg-rose-500/15'
+                : 'text-zinc-500 hover:bg-zinc-800 hover:text-rose-300'
+            }`}
             onPointerDown={(e) => {
               e.stopPropagation()
               e.preventDefault()
             }}
-            onClick={(e) => {
-              e.stopPropagation()
-              e.preventDefault()
-              toggleLibraryFavorite(item.id)
-            }}
+            onClick={toggleFavorite}
           >
-            <Star
-              className={`h-3 w-3 ${
-                isFavorite ? 'fill-amber-400 text-amber-400' : ''
+            <Heart
+              className={`h-3.5 w-3.5 ${
+                isFavorite ? 'fill-rose-500 text-rose-400' : ''
               }`}
             />
           </button>
-          <span className="max-w-[32%] shrink-0 truncate text-right text-[10px] leading-5 text-zinc-400/50">
+          <h4 className="pointer-events-none min-w-0 flex-1 truncate text-xs font-medium leading-5 text-zinc-100">
+            {item.title}
+          </h4>
+          <span className="pointer-events-none max-w-[40%] shrink-0 truncate text-right text-[10px] leading-5 text-zinc-400/50">
             {item.topic}
           </span>
         </div>

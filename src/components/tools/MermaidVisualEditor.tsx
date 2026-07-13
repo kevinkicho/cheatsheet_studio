@@ -26,11 +26,20 @@ import {
   serializeMindmap,
 } from '@/vendor/mermaid-visual-editor/lib/mindmap'
 import {
-  captureProcessFlow,
   isProcessFlowSnapshot,
   processFlowToRf,
 } from '@/lib/processFlowSnapshot'
 import type { ProcessFlowSnapshot } from '@/lib/processFlowSnapshot'
+import {
+  getVisualEditorMermaidSource,
+  getVisualEditorProcessFlow,
+} from '@/components/tools/mermaidVisualEditorApi'
+
+// Snapshot helpers (also import from mermaidVisualEditorApi for code-split)
+export {
+  getVisualEditorMermaidSource,
+  getVisualEditorProcessFlow,
+} from '@/components/tools/mermaidVisualEditorApi'
 
 type Props = {
   /** Current Mermaid source (used when loading into canvas). */
@@ -87,42 +96,6 @@ function detectKindFromSource(raw: string): DiagramKind {
   const body = stripFrontmatter(raw)
   if (/^mindmap\b/im.test(body)) return 'mindmap'
   return 'flowchart'
-}
-
-function serializeCanvas(): string {
-  const { nodes, edges, direction, theme, look, curveStyle, diagramKind } =
-    useFlowStore.getState()
-  if (nodes.length === 0) return ''
-  if (diagramKind === 'mindmap') {
-    return serializeMindmap(nodes, edges)
-  }
-  return serialize(nodes, edges, { direction, theme, look, curveStyle })
-}
-
-/** Snapshot current visual canvas as Mermaid (for Add/Update card). */
-export function getVisualEditorMermaidSource(): string {
-  return serializeCanvas()
-}
-
-/**
- * Free-form graph snapshot for sheet cards / print — matches what the
- * interactive editor shows (positions + edge routing), not a Mermaid re-layout.
- */
-export function getVisualEditorProcessFlow(): ProcessFlowSnapshot | null {
-  const { nodes, edges, direction, curveStyle, multiEdgeSpacing, diagramKind } =
-    useFlowStore.getState()
-  if (nodes.length === 0) return null
-  // Mind maps use the same free-form snapshot path as flowcharts so the card
-  // paints the RF editor geometry (not a Mermaid re-layout).
-  return captureProcessFlow(nodes, edges, {
-    direction,
-    curveStyle,
-    multiEdgeSpacing,
-    diagramKind:
-      diagramKind === 'mindmap' || diagramKind === 'flowchart'
-        ? diagramKind
-        : 'flowchart',
-  })
 }
 
 type ImportFn = ReturnType<typeof useFlowStore.getState>['importDiagram']
@@ -422,7 +395,7 @@ function VisualEditorInner({
     // Short delay so FlowEdge can publish live paths before capture
     const t = window.setTimeout(() => {
       if (suppressPush.current) return
-      const mermaid = serializeCanvas()
+      const mermaid = getVisualEditorMermaidSource()
       const flow = getVisualEditorProcessFlow()
       // Never push null flow — that would wipe processFlow on the card
       if (!flow) return

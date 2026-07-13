@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import {
   Cloud,
   CloudUpload,
@@ -13,10 +21,31 @@ import { useAuthStore } from '@/stores/authStore'
 import { useUiStore } from '@/stores/uiStore'
 import { useFlowchartLibraryStore } from '@/stores/flowchartLibraryStore'
 import {
-  MermaidVisualEditor,
   getVisualEditorMermaidSource,
   getVisualEditorProcessFlow,
-} from '@/components/tools/MermaidVisualEditor'
+} from '@/components/tools/mermaidVisualEditorApi'
+
+/** RF canvas chunk — loaded after Process panel chrome is up. */
+const MermaidVisualEditor = lazy(async () => {
+  const m = await import('@/components/tools/MermaidVisualEditor')
+  return { default: m.MermaidVisualEditor }
+})
+
+function EditorViewportFallback() {
+  return (
+    <div
+      className="flex h-full min-h-[16rem] w-full flex-col items-center justify-center gap-2 rounded-md border border-zinc-700/80"
+      style={{ background: 'var(--neu-bg, #12141a)' }}
+      data-testid="process-editor-loading"
+    >
+      <div
+        className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-600 border-t-indigo-400"
+        aria-hidden
+      />
+      <p className="text-[10px] text-zinc-500">Preparing canvas…</p>
+    </div>
+  )
+}
 import { isProcessFlowSnapshot } from '@/lib/processFlowSnapshot'
 import type { MermaidDiagramKind, MermaidFlowDirection } from '@/types'
 import {
@@ -97,6 +126,23 @@ export function CreateProcessChartPanel() {
   const [reloadToken, setReloadToken] = useState(0)
   const [status, setStatus] = useState<string | null>(null)
   const [libraryOpen, setLibraryOpen] = useState(false)
+  /**
+   * Defer mounting the RF editor until the Process panel has a real size.
+   * Avoids measuring at 0×0 (camera/fit artifacts on first open).
+   */
+  const [editorMountReady, setEditorMountReady] = useState(false)
+
+  useEffect(() => {
+    let timeoutId = 0
+    const raf = window.requestAnimationFrame(() => {
+      // One frame for sidebar layout, then a short settle for panel open
+      timeoutId = window.setTimeout(() => setEditorMountReady(true), 64)
+    })
+    return () => {
+      window.cancelAnimationFrame(raf)
+      if (timeoutId) window.clearTimeout(timeoutId)
+    }
+  }, [])
 
   const isFlowchart = kind === 'flowchart'
   const chartIdDisplay = editingProcessChartId ?? '—'
@@ -733,45 +779,51 @@ export function CreateProcessChartPanel() {
       </div>
 
       <div className="min-h-0 flex-1 p-2">
-        <MermaidVisualEditor
-          key={kind}
-          source={source}
-          onSourceChange={setSource}
-          processFlow={editorProcessFlow}
-          onEditorSnapshot={
-            editingProcessChartId ? handleEditorSnapshot : undefined
-          }
-          reloadToken={reloadToken}
-          diagramKind={toEditorKind(kind)}
-          onReset={() => {
-            // Load built-in example into the interactive editor (not a canvas card).
-            // Prefer flowchart example unless the panel is currently on mind map.
-            const exampleKind: MermaidDiagramKind =
-              kind === 'mindmap' ? 'mindmap' : 'flowchart'
-            const tpl = mermaidTemplate(exampleKind, direction)
-            const ok = loadIntoEditor(
-              {
-                source: tpl,
-                kind: exampleKind,
-                direction,
-                libId: null,
-                processFlow: null, // Mermaid layout → clean stack + pipes
-                title:
+        {editorMountReady ? (
+          <Suspense fallback={<EditorViewportFallback />}>
+            <MermaidVisualEditor
+              key={kind}
+              source={source}
+              onSourceChange={setSource}
+              processFlow={editorProcessFlow}
+              onEditorSnapshot={
+                editingProcessChartId ? handleEditorSnapshot : undefined
+              }
+              reloadToken={reloadToken}
+              diagramKind={toEditorKind(kind)}
+              onReset={() => {
+                // Load built-in example into the interactive editor (not a canvas card).
+                // Prefer flowchart example unless the panel is currently on mind map.
+                const exampleKind: MermaidDiagramKind =
+                  kind === 'mindmap' ? 'mindmap' : 'flowchart'
+                const tpl = mermaidTemplate(exampleKind, direction)
+                const ok = loadIntoEditor(
+                  {
+                    source: tpl,
+                    kind: exampleKind,
+                    direction,
+                    libId: null,
+                    processFlow: null, // Mermaid layout → clean stack + pipes
+                    title:
+                      exampleKind === 'mindmap'
+                        ? 'Mind map'
+                        : 'Process chart',
+                  },
+                  { skipConfirm: true },
+                )
+                if (!ok) return
+                flash(
                   exampleKind === 'mindmap'
-                    ? 'Mind map'
-                    : 'Process chart',
-              },
-              { skipConfirm: true },
-            )
-            if (!ok) return
-            flash(
-              exampleKind === 'mindmap'
-                ? 'Loaded example mind map into editor'
-                : 'Loaded example flowchart into editor',
-            )
-          }}
-          className="h-full min-h-[16rem]"
-        />
+                    ? 'Loaded example mind map into editor'
+                    : 'Loaded example flowchart into editor',
+                )
+              }}
+              className="h-full min-h-[16rem]"
+            />
+          </Suspense>
+        ) : (
+          <EditorViewportFallback />
+        )}
       </div>
 
       <div className="flex shrink-0 flex-col gap-1.5 border-t border-zinc-800 px-2.5 py-2">
