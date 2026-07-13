@@ -4,6 +4,7 @@
  */
 import { readFileSync } from 'node:fs'
 import { createSheet, SheetBuilder } from './builder'
+import { findCatalogItem, searchCatalog } from './catalog'
 import { composeFromOutline } from './compose'
 import { pushSheetToFirestore } from './firebase-push'
 import { pullSheetFromFirestore } from './firebase-pull'
@@ -20,6 +21,8 @@ CheatSheet Studio CLI (headless SDK) — does not start the web app
 Commands:
   init           Create a new empty sheet JSON
   compose        Build a sheet from an outline JSON file (agent-friendly)
+  catalog-search Search seed library (equations/tables/figures)
+  add-catalog    Append a seed catalog item by id or title
   add-equation | add-table | add-process | add-figure
   layout         Auto-pack items (multi-column when tall)
   validate       Check sheet JSON shape
@@ -28,15 +31,12 @@ Commands:
   pull           Download a Firestore sheet to JSON
 
 Examples:
-  npm run cheatsheet -- init -o out/sheet.json --title "Demo"
   npm run cheatsheet -- compose examples/outline.demo.json -o out/from-outline.json
-  npm run cheatsheet -- add-equation out/sheet.json --latex "E=mc^2"
-  npm run cheatsheet -- layout out/sheet.json
-  npm run cheatsheet -- validate out/sheet.json
-  npm run cheatsheet -- push out/sheet.json --uid UID --sa ./sa.json
-  npm run cheatsheet -- pull --sheet-id ID --sa ./sa.json -o out/pulled.json
+  npm run cheatsheet -- catalog-search --query quadratic --limit 5
+  npm run cheatsheet -- add-catalog out/sheet.json --id math-quad
+  npm run cheatsheet -- mcp   # stdio MCP server for coding agents
 
-In the web app: My Sheets → Import JSON (opens workspace; UI unchanged otherwise)
+In the web app: My Sheets → Import JSON
 
 Sheet schema version: v=${SHEET_DOC_VERSION}
 `.trim(),
@@ -58,7 +58,7 @@ function requireArg(args: string[], name: string, label: string): string {
   return v
 }
 
-function run() {
+async function run() {
   const args = process.argv.slice(2)
   const cmd = args[0]
 
@@ -68,6 +68,12 @@ function run() {
   }
 
   try {
+    if (cmd === 'mcp') {
+      const { startMcpServer } = await import('./mcp-server')
+      await startMcpServer()
+      return
+    }
+
     if (cmd === 'init') {
       const out = argValue(args, '-o') ?? argValue(args, '--out')
       if (!out) {
@@ -90,7 +96,7 @@ function run() {
       if (!outlinePath) {
         console.error(
           'Usage: compose <outline.json> -o <sheet.json>\n' +
-            'Outline: { title, blocks: [{ type: equation|table|process|figure|heading, ... }] }',
+            'Outline blocks: equation|table|process|figure|heading|catalog',
         )
         process.exit(1)
       }
@@ -104,10 +110,61 @@ function run() {
         console.error('Outline needs title (string) and blocks (array)')
         process.exit(1)
       }
-      const sheet = composeFromOutline(raw)
+      const sheet = await composeFromOutline(raw)
       writeSheetFile(out, sheet)
       console.log(`Composed ${out}`)
       console.log(summarizeSheet(sheet))
+      return
+    }
+
+    if (cmd === 'catalog-search') {
+      const query = argValue(args, '--query') ?? args[1] ?? ''
+      const typeRaw = argValue(args, '--type')
+      const type =
+        typeRaw === 'equation' ||
+        typeRaw === 'table' ||
+        typeRaw === 'figure'
+          ? typeRaw
+          : 'all'
+      const limit = Number(argValue(args, '--limit') ?? '15')
+      const hits = await searchCatalog({ query, type, limit })
+      if (hits.length === 0) {
+        console.log('No catalog matches')
+        return
+      }
+      for (const h of hits) {
+        console.log(
+          `${h.id.padEnd(22)} ${h.type.padEnd(9)} ${h.title}${
+            h.topic ? ` · ${h.topic}` : ''
+          }`,
+        )
+      }
+      console.log(`(${hits.length} result(s))`)
+      return
+    }
+
+    if (cmd === 'add-catalog') {
+      const file = args[1]
+      if (!file) {
+        console.error(
+          'Usage: add-catalog <sheet.json> --id <catalogId|title>',
+        )
+        process.exit(1)
+      }
+      const id =
+        argValue(args, '--id') ??
+        argValue(args, '--title') ??
+        requireArg(args, '--id', 'catalog id or title')
+      const found = await findCatalogItem(id)
+      if (!found) {
+        console.error(`Not found in seed catalog: ${id}`)
+        process.exit(1)
+      }
+      const next = await SheetBuilder.fromDocument(readSheetFile(file))
+        .addFromCatalog(id)
+        .then((b) => b.build())
+      writeSheetFile(file, next)
+      console.log(`Added catalog ${found.id} (${found.title}) ·`, summarizeSheet(next))
       return
     }
 
@@ -308,4 +365,4 @@ function run() {
   }
 }
 
-run()
+void run()

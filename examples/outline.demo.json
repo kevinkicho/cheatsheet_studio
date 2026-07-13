@@ -27,6 +27,10 @@
       "title": "Solve strategy",
       "kind": "flowchart",
       "mermaid": "flowchart TD\n  A[Read problem] --> B[Identify rule]\n  B --> C[Differentiate]\n  C --> D[Simplify]"
+    },
+    {
+      "type": "catalog",
+      "id": "math-quad"
     }
   ]
 }

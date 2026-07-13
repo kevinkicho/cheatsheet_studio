@@ -1,3 +1,4 @@
+import { findCatalogItem, type CatalogItem } from './catalog'
 import { DEFAULT_ITEM_STYLE, defaultCanvas } from './defaults'
 import { createId } from './ids'
 import { autoLayoutItems, type LayoutOptions } from './layout'
@@ -225,6 +226,45 @@ export class SheetBuilder {
       parentId: parentId ?? null,
     })
     return id
+  }
+
+  /**
+   * Append a card from the Studio seed catalog (by id or exact/partial title).
+   * Async because the catalog is loaded from monorepo seedLibrary.
+   */
+  async addFromCatalog(idOrTitle: string): Promise<this> {
+    const item = await findCatalogItem(idOrTitle)
+    if (!item) {
+      throw new Error(`Catalog item not found: "${idOrTitle}"`)
+    }
+    this.appendCatalogItem(item)
+    return this
+  }
+
+  /** Sync append when you already have a CatalogItem. */
+  appendCatalogItem(item: CatalogItem): this {
+    if (item.type === 'equation' && item.latex) {
+      return this.addEquation({
+        title: item.title,
+        latex: item.latex,
+        libraryItemId: item.id,
+      })
+    }
+    if (item.type === 'table' && item.tableMarkdown) {
+      return this.addTable({
+        title: item.title,
+        tableMarkdown: item.tableMarkdown,
+      })
+    }
+    if (item.type === 'figure' && item.imageUrl) {
+      return this.addFigure({
+        title: item.title,
+        imageUrl: item.imageUrl,
+      })
+    }
+    throw new Error(
+      `Catalog item "${item.id}" (${item.type}) is missing content fields`,
+    )
   }
 
   /** Pack all items into the printable page area (multi-column when tall). */

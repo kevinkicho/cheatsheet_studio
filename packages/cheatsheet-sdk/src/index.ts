@@ -30,6 +30,13 @@ export type {
 export { composeFromOutline } from './compose'
 export type { SheetOutline, OutlineBlock } from './outline'
 
+export {
+  loadSeedCatalog,
+  searchCatalog,
+  findCatalogItem,
+} from './catalog'
+export type { CatalogItem, CatalogSearchOpts } from './catalog'
+
 export { validateSheetDocument } from './validate'
 export type { ValidateIssue, ValidateResult } from './validate'
 

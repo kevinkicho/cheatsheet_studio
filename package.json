@@ -23,6 +23,7 @@
     "preview": "vite preview",
     "seed": "tsx scripts/seed-library.ts",
     "cheatsheet": "tsx packages/cheatsheet-sdk/src/cli.ts",
+    "cheatsheet:mcp": "tsx packages/cheatsheet-sdk/src/cli.ts mcp",
     "test:sdk": "vitest run packages/cheatsheet-sdk"
   },
   "dependencies": {

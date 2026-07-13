@@ -81,8 +81,8 @@ describe('@cheatsheet-studio/sdk builder', () => {
     expect(b.title).toBe('R')
   })
 
-  it('composeFromOutline builds multi-block sheet', () => {
-    const sheet = composeFromOutline({
+  it('composeFromOutline builds multi-block sheet', async () => {
+    const sheet = await composeFromOutline({
       title: 'Outline demo',
       blocks: [
         { type: 'heading', title: 'Section A' },

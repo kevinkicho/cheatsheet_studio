@@ -25,7 +25,7 @@
   },
   "items": [
     {
-      "id": "eq_c597ff3969bb",
+      "id": "eq_e001be8c64fa",
       "type": "equation",
       "title": "Derivatives",
       "x": 48,
@@ -52,7 +52,7 @@
       }
     },
     {
-      "id": "eq_a25311947ba2",
+      "id": "eq_5429ebae73e0",
       "type": "equation",
       "title": "Chain rule",
       "x": 48,
@@ -79,7 +79,7 @@
       }
     },
     {
-      "id": "eq_9a962f960c9e",
+      "id": "eq_c64b2273cca6",
       "type": "equation",
       "title": "Product rule",
       "x": 48,
@@ -106,7 +106,7 @@
       }
     },
     {
-      "id": "tbl_32c6b2526456",
+      "id": "tbl_3175c4d6c598",
       "type": "table",
       "title": "Common derivatives",
       "x": 48,
@@ -133,7 +133,7 @@
       }
     },
     {
-      "id": "proc_d8c69cdd4548",
+      "id": "proc_0f1370e5f04a",
       "type": "process-chart",
       "title": "Solve strategy",
       "x": 48,
@@ -146,6 +146,34 @@
       "mermaidDirection": "TD",
       "mermaidTheme": "dark",
       "autoFit": false,
+      "contentFill": true,
+      "keepAspectRatio": true,
+      "showTitle": true,
+      "style": {
+        "fontSize": 18,
+        "titleFontSize": 10,
+        "color": "#e8eaed",
+        "background": "rgba(30, 32, 40, 0.92)",
+        "borderEnabled": true,
+        "borderWidth": 1,
+        "borderStyle": "solid",
+        "borderColor": "rgba(99, 102, 241, 0.55)",
+        "border": "1px solid rgba(99, 102, 241, 0.55)",
+        "padding": 0
+      }
+    },
+    {
+      "id": "eq_62e83c160cc0",
+      "type": "equation",
+      "title": "Quadratic Formula",
+      "x": 48,
+      "y": 880,
+      "width": 360,
+      "height": 88,
+      "zIndex": 6,
+      "latex": "x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}",
+      "libraryItemId": "math-quad",
+      "autoFit": true,
       "contentFill": true,
       "keepAspectRatio": true,
       "showTitle": true,

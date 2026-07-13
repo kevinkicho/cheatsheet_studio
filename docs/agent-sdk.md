@@ -68,11 +68,35 @@ npm run cheatsheet -- pull --sheet-id ID --sa ./sa.json -o out/pulled.json
 
 > Prefer Admin only in trusted environments. Do not embed service accounts in client apps or agent prompts.
 
+## Seed catalog (agents)
+
+```bash
+npm run cheatsheet -- catalog-search --query quadratic --limit 5
+npm run cheatsheet -- add-catalog out/sheet.json --id math-quad
+```
+
+Outline blocks can use `{ "type": "catalog", "id": "math-quad" }` (id or title).
+
+## MCP server (coding agents)
+
+Minimal stdio JSON-RPC tools (no extra MCP npm dependency):
+
+```bash
+npm run cheatsheet:mcp
+```
+
+Tools: `cheatsheet_compose`, `cheatsheet_validate`, `cheatsheet_catalog_search`,
+`cheatsheet_add_catalog`, `cheatsheet_init`, `cheatsheet_summarize`.
+
+Point your agent’s MCP config at: `npx tsx packages/cheatsheet-sdk/src/cli.ts mcp`
+(from the monorepo root).
+
 ## Extending safely
 
 - Prefer adding helpers **inside** `packages/cheatsheet-sdk`  
 - If the app schema gains fields, bump `SHEET_DOC_VERSION` and document migrations  
-- Avoid importing SDK code into `src/` unless you deliberately want a shared module (today: zero coupling)
+- Avoid importing SDK code into `src/` unless you deliberately want a shared module  
+  (app import uses a thin `src/lib/sheetDocumentImport.ts` copy of validation)
 
 ## Tests
 

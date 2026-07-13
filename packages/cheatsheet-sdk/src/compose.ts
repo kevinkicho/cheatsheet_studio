@@ -4,8 +4,11 @@ import type { SheetDocument } from './types'
 
 /**
  * Compose a portable sheet from a high-level outline (agent-friendly).
+ * Supports `catalog` blocks that resolve Studio seed items by id/title.
  */
-export function composeFromOutline(outline: SheetOutline): SheetDocument {
+export async function composeFromOutline(
+  outline: SheetOutline,
+): Promise<SheetDocument> {
   const builder = createSheet({
     title: outline.title,
     canvas: {
@@ -20,7 +23,7 @@ export function composeFromOutline(outline: SheetOutline): SheetDocument {
   })
 
   for (const block of outline.blocks) {
-    applyBlock(builder, block)
+    await applyBlock(builder, block)
   }
 
   if (outline.autoLayout !== false) {
@@ -30,35 +33,40 @@ export function composeFromOutline(outline: SheetOutline): SheetDocument {
   return builder.build()
 }
 
-function applyBlock(builder: SheetBuilder, block: SheetOutline['blocks'][number]) {
+async function applyBlock(
+  builder: SheetBuilder,
+  block: SheetOutline['blocks'][number],
+) {
   switch (block.type) {
+    case 'catalog':
+      await builder.addFromCatalog(block.id)
+      return
     case 'equation':
       builder.addEquation({
         title: block.title ?? 'Equation',
         latex: block.latex,
       })
-      break
+      return
     case 'table':
       builder.addTable({
         title: block.title ?? 'Table',
         tableMarkdown: block.markdown,
       })
-      break
+      return
     case 'process':
       builder.addProcess({
         title: block.title,
         mermaidSource: block.mermaid,
         mermaidKind: block.kind === 'mindmap' ? 'mindmap' : 'flowchart',
       })
-      break
+      return
     case 'figure':
       builder.addFigure({
         title: block.title ?? 'Figure',
         imageUrl: block.imageUrl,
       })
-      break
+      return
     case 'heading':
-      // Lightweight section label as a short equation card with text-only latex
       builder.addEquation({
         title: block.title,
         latex: block.note
@@ -67,9 +75,9 @@ function applyBlock(builder: SheetBuilder, block: SheetOutline['blocks'][number]
         height: 56,
         width: 520,
       })
-      break
+      return
     default:
-      break
+      return
   }
 }
 

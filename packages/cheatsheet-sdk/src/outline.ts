@@ -31,6 +31,12 @@ export type OutlineBlock =
       title: string
       note?: string
     }
+  | {
+      /** Pull from Studio seed catalog by id or title */
+      type: 'catalog'
+      /** Catalog id (preferred) or title */
+      id: string
+    }
 
 export type SheetOutline = {
   title: string
