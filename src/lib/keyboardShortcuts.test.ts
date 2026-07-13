@@ -62,6 +62,17 @@ describe('handleCanvasKeyDown', () => {
     expect(a.calls.undo).toHaveBeenCalledOnce()
   })
 
+  it('Ctrl+Shift+E exports sheet JSON when handler provided', () => {
+    const exportSheetJson = vi.fn()
+    const a = actions({ exportSheetJson })
+    const r = handleCanvasKeyDown(
+      key('e', { ctrlKey: true, shiftKey: true }),
+      a,
+    )
+    expect(r).toEqual({ handled: true, action: 'export-sheet-json' })
+    expect(exportSheetJson).toHaveBeenCalledOnce()
+  })
+
   it('Ctrl+Shift+Z and Ctrl+Y redo', () => {
     const a = actions({ futureLength: 1 })
     expect(

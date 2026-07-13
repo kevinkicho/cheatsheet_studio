@@ -9,6 +9,13 @@
       "subjects": ["mathematics"]
     },
     {
+      "id": "lin-algebra",
+      "file": "lin-algebra.json",
+      "title": "Linear Algebra — Essentials",
+      "description": "Matrix product, inverse, det, eigenvalues.",
+      "subjects": ["mathematics"]
+    },
+    {
       "id": "finance-capm",
       "file": "finance-capm.json",
       "title": "Finance — CAPM",
@@ -23,11 +30,25 @@
       "subjects": ["physics"]
     },
     {
+      "id": "chem-stoichiometry",
+      "file": "chem-stoichiometry.json",
+      "title": "Chemistry — Stoichiometry",
+      "description": "Moles, ideal gas, limiting reagent workflow.",
+      "subjects": ["chemistry"]
+    },
+    {
       "id": "stats-bayes",
       "file": "stats-bayes.json",
       "title": "Statistics — Bayes",
       "description": "Bayes theorem, terms table, update flowchart.",
       "subjects": ["mathematics"]
+    },
+    {
+      "id": "econ-elasticity",
+      "file": "econ-elasticity.json",
+      "title": "Economics — Elasticity",
+      "description": "PED, arc form, revenue implications.",
+      "subjects": ["economics"]
     }
   ]
 }

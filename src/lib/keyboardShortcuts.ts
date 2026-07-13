@@ -11,6 +11,8 @@ export type ShortcutActions = {
   /** Select all visible canvas cards (Ctrl/Cmd+A). */
   selectAll: () => void
   setCanvasTool: (tool: 'select' | 'pan') => void
+  /** Download workspace as agent SheetDocument JSON (Ctrl/Cmd+Shift+E). */
+  exportSheetJson?: () => void
   pastLength: number
   futureLength: number
   selectedIds: string[]
@@ -91,6 +93,11 @@ export function handleCanvasKeyDown(
     if (key === 'a' && !e.shiftKey && !e.altKey) {
       actions.selectAll()
       return { handled: true, action: 'select-all' }
+    }
+    // Export sheet JSON for agents
+    if (key === 'e' && e.shiftKey && !e.altKey && actions.exportSheetJson) {
+      actions.exportSheetJson()
+      return { handled: true, action: 'export-sheet-json' }
     }
   }
 

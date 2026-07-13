@@ -1,0 +1,35 @@
+{
+  "id": "chem-stoichiometry",
+  "title": "Chemistry — Stoichiometry",
+  "description": "Mole relations, limiting reagent workflow, ideal gas snapshot.",
+  "subjects": ["chemistry"],
+  "outline": {
+    "title": "Chemistry — Stoichiometry",
+    "notes": "Topic pack: chem-stoichiometry",
+    "autoLayout": true,
+    "blocks": [
+      { "type": "heading", "title": "Moles & mass" },
+      {
+        "type": "equation",
+        "title": "Moles from mass",
+        "latex": "n = \\frac{m}{M}"
+      },
+      {
+        "type": "equation",
+        "title": "Ideal gas law",
+        "latex": "PV = nRT"
+      },
+      {
+        "type": "table",
+        "title": "Typical steps",
+        "markdown": "| Step | Action |\n|------|--------|\n| 1 | Balance equation |\n| 2 | Convert given → moles |\n| 3 | Mole ratio from coeffs |\n| 4 | Convert moles → desired unit |"
+      },
+      {
+        "type": "process",
+        "title": "Limiting reagent",
+        "kind": "flowchart",
+        "mermaid": "flowchart TD\n  A[Balance rxn] --> B[Moles of each reactant]\n  B --> C[Divide by coeff]\n  C --> D[Smallest = limiting]\n  D --> E[Product moles from limiting]"
+      }
+    ]
+  }
+}

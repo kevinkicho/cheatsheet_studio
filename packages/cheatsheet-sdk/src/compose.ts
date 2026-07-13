@@ -1,4 +1,4 @@
-import { createSheet, type SheetBuilder } from './builder'
+import { createSheet, SheetBuilder } from './builder'
 import type { SheetOutline } from './outline'
 import type { SheetDocument } from './types'
 
@@ -30,6 +30,29 @@ export async function composeFromOutline(
     builder.autoLayout()
   }
 
+  return builder.build()
+}
+
+/**
+ * Append outline blocks onto an existing sheet (agent “add more content”).
+ * Re-runs auto-layout on the full document when outline.autoLayout !== false.
+ */
+export async function appendOutlineToSheet(
+  sheet: SheetDocument,
+  outline: Pick<SheetOutline, 'blocks' | 'autoLayout' | 'notes'>,
+): Promise<SheetDocument> {
+  const builder = SheetBuilder.fromDocument(sheet)
+  if (outline.notes) {
+    builder.setMeta({
+      notes: [sheet.meta?.notes, outline.notes].filter(Boolean).join(' · '),
+    })
+  }
+  for (const block of outline.blocks) {
+    await applyBlock(builder, block)
+  }
+  if (outline.autoLayout !== false) {
+    builder.autoLayout()
+  }
   return builder.build()
 }
 

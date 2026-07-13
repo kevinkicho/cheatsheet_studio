@@ -8,9 +8,9 @@
  */
 import { createSheet, SheetBuilder } from './builder'
 import { searchCatalog, findCatalogItem } from './catalog'
-import { composeFromOutline } from './compose'
-import { readSheetFile, writeSheetFile, summarizeSheet } from './io'
+import { appendOutlineToSheet, composeFromOutline } from './compose'
 import type { SheetOutline } from './outline'
+import { readSheetFile, writeSheetFile, summarizeSheet } from './io'
 import { validateSheetDocument } from './validate'
 import { createInterface } from 'node:readline'
 
@@ -116,11 +116,27 @@ const TOOLS: ToolDef[] = [
         packId: {
           type: 'string',
           description:
-            'e.g. calc-derivatives, finance-capm, physics-kinematics, stats-bayes',
+            'e.g. calc-derivatives, lin-algebra, finance-capm, physics-kinematics, chem-stoichiometry, stats-bayes, econ-elasticity',
         },
         outPath: { type: 'string' },
       },
       required: ['packId', 'outPath'],
+    },
+  },
+  {
+    name: 'cheatsheet_append_outline',
+    description:
+      'Append outline blocks to an existing sheet JSON file and re-layout',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Existing sheet.json path' },
+        outline: {
+          type: 'object',
+          description: '{ blocks: [...], autoLayout?: boolean, notes?: string }',
+        },
+      },
+      required: ['path', 'outline'],
     },
   },
 ]
@@ -234,6 +250,19 @@ async function callTool(
       const sheet = await composeTopicPack(packId)
       writeSheetFile(outPath, sheet)
       return { ok: true, path: outPath, summary: summarizeSheet(sheet) }
+    }
+    case 'cheatsheet_append_outline': {
+      const path = String(args.path ?? '')
+      const outline = args.outline as Pick<
+        SheetOutline,
+        'blocks' | 'autoLayout' | 'notes'
+      >
+      if (!outline?.blocks || !Array.isArray(outline.blocks)) {
+        throw new Error('outline.blocks array required')
+      }
+      const next = await appendOutlineToSheet(readSheetFile(path), outline)
+      writeSheetFile(path, next)
+      return { ok: true, path, summary: summarizeSheet(next) }
     }
     default:
       throw new Error(`Unknown tool: ${name}`)

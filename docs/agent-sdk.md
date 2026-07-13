@@ -113,13 +113,18 @@ Premade outlines under `packages/cheatsheet-sdk/topic-packs/`:
 | Pack id | Theme |
 |---------|--------|
 | `calc-derivatives` | Calculus derivatives |
+| `lin-algebra` | Linear algebra essentials |
 | `finance-capm` | CAPM |
 | `physics-kinematics` | 1D kinematics |
+| `chem-stoichiometry` | Stoichiometry / limiting reagent |
 | `stats-bayes` | Bayes theorem |
+| `econ-elasticity` | Price elasticity of demand |
 
 ```bash
 npm run cheatsheet -- packs
+npm run cheatsheet -- packs --json
 npm run cheatsheet -- pack finance-capm -o out/capm.sheet.json
+npm run cheatsheet -- append-outline out/capm.sheet.json extra.outline.json
 ```
 
 Then **My Sheets → Import JSON** in the app.
@@ -128,10 +133,12 @@ Then **My Sheets → Import JSON** in the app.
 
 | Direction | Where |
 |-----------|--------|
-| Out | Workspace top bar → **Export JSON** |
+| Out | Workspace → **Export JSON** or **Ctrl/Cmd+Shift+E** |
 | In | My Sheets → **Import JSON** |
 
-Round-trip: polish in UI → Export JSON → agent edits / re-composes → Import JSON.
+Round-trip: polish in UI → Export JSON → agent appends / re-layouts → Import JSON.
+
+Agent skill for coding assistants: [`.agents/skills/cheatsheet-agent-authoring/SKILL.md`](../.agents/skills/cheatsheet-agent-authoring/SKILL.md).
 
 ## Extending safely
 

@@ -99,3 +99,17 @@ describe('@cheatsheet-studio/sdk builder', () => {
     expect(validateSheetDocument(sheet).ok).toBe(true)
   })
 })
+
+describe('appendOutlineToSheet', () => {
+  it('adds blocks to an existing sheet', async () => {
+    const { appendOutlineToSheet } = await import('./compose')
+    const base = createSheet({ title: 'Base' })
+      .addEquation({ latex: '1' })
+      .build()
+    const next = await appendOutlineToSheet(base, {
+      blocks: [{ type: 'equation', latex: '2', title: 'Two' }],
+    })
+    expect(next.items.length).toBe(2)
+    expect(next.items[1]!.latex).toBe('2')
+  })
+})

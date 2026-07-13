@@ -3,6 +3,7 @@ import {
   handleCanvasKeyDown,
   isProcessEditorTarget,
 } from '@/lib/keyboardShortcuts'
+import { downloadWorkspaceSheetJson } from '@/lib/exportSheetDocument'
 import { useCanvasStore } from '@/stores/canvasStore'
 import { useUiStore } from '@/stores/uiStore'
 import { useFlowStore } from '@/vendor/mermaid-visual-editor/lib/store'
@@ -48,6 +49,7 @@ export function useKeyboardShortcuts() {
           state.setSelectedIds(ids)
         },
         setCanvasTool: (tool) => ui.setCanvasTool(tool),
+        exportSheetJson: () => downloadWorkspaceSheetJson(),
         pastLength: state.past.length,
         futureLength: state.future.length,
         selectedIds: state.selectedIds,

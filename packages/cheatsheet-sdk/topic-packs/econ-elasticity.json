@@ -1,0 +1,35 @@
+{
+  "id": "econ-elasticity",
+  "title": "Economics — Elasticity",
+  "description": "Price elasticity of demand, revenue link, and decision flowchart.",
+  "subjects": ["economics"],
+  "outline": {
+    "title": "Economics — Elasticity",
+    "notes": "Topic pack: econ-elasticity",
+    "autoLayout": true,
+    "blocks": [
+      { "type": "heading", "title": "Price elasticity of demand" },
+      {
+        "type": "equation",
+        "title": "PED (point)",
+        "latex": "E_d = \\frac{\\%\\Delta Q_d}{\\%\\Delta P} = \\frac{dQ}{dP}\\cdot\\frac{P}{Q}"
+      },
+      {
+        "type": "equation",
+        "title": "Arc elasticity",
+        "latex": "E_d^{\\text{arc}} = \\frac{(Q_2-Q_1)/(Q_1+Q_2)}{(P_2-P_1)/(P_1+P_2)}"
+      },
+      {
+        "type": "table",
+        "title": "|E_d| interpretation",
+        "markdown": "| |E_d| | Demand |\n|-------|--------|\n| > 1 | Elastic |\n| = 1 | Unit elastic |\n| < 1 | Inelastic |"
+      },
+      {
+        "type": "process",
+        "title": "Price change → revenue",
+        "kind": "flowchart",
+        "mermaid": "flowchart TD\n  A[Raise price] --> B{|Ed| ?}\n  B -->|Elastic >1| C[Revenue falls]\n  B -->|Inelastic <1| D[Revenue rises]\n  B -->|Unit =1| E[Revenue ~ flat]"
+      }
+    ]
+  }
+}

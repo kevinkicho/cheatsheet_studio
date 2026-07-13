@@ -1,0 +1,40 @@
+{
+  "id": "lin-algebra",
+  "title": "Linear Algebra — Essentials",
+  "description": "Matrix multiply, inverse 2×2, determinant, and eigenvalue equation.",
+  "subjects": ["mathematics"],
+  "outline": {
+    "title": "Linear Algebra — Essentials",
+    "notes": "Topic pack: lin-algebra",
+    "autoLayout": true,
+    "blocks": [
+      { "type": "heading", "title": "Matrices" },
+      {
+        "type": "equation",
+        "title": "Matrix product",
+        "latex": "(AB)_{ij} = \\sum_k A_{ik} B_{kj}"
+      },
+      {
+        "type": "equation",
+        "title": "2×2 inverse",
+        "latex": "\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}^{-1} = \\frac{1}{ad-bc}\\begin{pmatrix} d & -b \\\\ -c & a \\end{pmatrix}"
+      },
+      {
+        "type": "equation",
+        "title": "Determinant 2×2",
+        "latex": "\\det\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix} = ad - bc"
+      },
+      {
+        "type": "equation",
+        "title": "Eigenvalue equation",
+        "latex": "A\\mathbf{v} = \\lambda\\mathbf{v}"
+      },
+      {
+        "type": "process",
+        "title": "Solve Av = λv",
+        "kind": "flowchart",
+        "mermaid": "flowchart TD\n  A[Form A - λI] --> B[det = 0]\n  B --> C[Find eigenvalues λ]\n  C --> D[Nullspace for each λ]\n  D --> E[Normalize eigenvectors]"
+      }
+    ]
+  }
+}

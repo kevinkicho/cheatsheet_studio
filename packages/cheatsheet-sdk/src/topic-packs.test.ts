@@ -9,8 +9,10 @@ import { validateSheetDocument } from './validate'
 describe('topic packs', () => {
   it('lists premade packs', () => {
     const packs = listTopicPacks()
-    expect(packs.length).toBeGreaterThanOrEqual(4)
+    expect(packs.length).toBeGreaterThanOrEqual(7)
     expect(packs.some((p) => p.id === 'calc-derivatives')).toBe(true)
+    expect(packs.some((p) => p.id === 'lin-algebra')).toBe(true)
+    expect(packs.some((p) => p.id === 'econ-elasticity')).toBe(true)
   })
 
   it('loads and composes calc-derivatives', async () => {

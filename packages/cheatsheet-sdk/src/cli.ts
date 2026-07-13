@@ -5,7 +5,7 @@
 import { readFileSync } from 'node:fs'
 import { createSheet, SheetBuilder } from './builder'
 import { findCatalogItem, searchCatalog } from './catalog'
-import { composeFromOutline } from './compose'
+import { appendOutlineToSheet, composeFromOutline } from './compose'
 import { pushSheetToFirestore } from './firebase-push'
 import { pullSheetFromFirestore } from './firebase-pull'
 import { readSheetFile, summarizeSheet, writeSheetFile } from './io'
@@ -23,8 +23,9 @@ Commands:
   compose        Build a sheet from an outline JSON file (agent-friendly)
   catalog-search Search seed library (equations/tables/figures)
   add-catalog    Append a seed catalog item by id or title
-  packs          List premade topic packs
+  packs          List premade topic packs (--json for machine-readable)
   pack           Compose a topic pack → sheet JSON
+  append-outline Append outline blocks onto an existing sheet
   add-equation | add-table | add-process | add-figure
   layout         Auto-pack items (multi-column when tall)
   validate       Check sheet JSON shape
@@ -35,12 +36,12 @@ Commands:
 
 Examples:
   npm run cheatsheet -- packs
-  npm run cheatsheet -- pack calc-derivatives -o out/calc.sheet.json
-  npm run cheatsheet -- compose examples/outline.demo.json -o out/from-outline.json
+  npm run cheatsheet -- pack lin-algebra -o out/la.sheet.json
+  npm run cheatsheet -- append-outline out/la.sheet.json examples/extra.outline.json
   npm run cheatsheet -- catalog-search --query quadratic --limit 5
   npm run cheatsheet -- mcp
 
-In the web app: My Sheets → Import JSON · Workspace → Export JSON
+In the web app: My Sheets → Import JSON · Workspace → Export JSON (Ctrl+Shift+E)
 
 Sheet schema version: v=${SHEET_DOC_VERSION}
 `.trim(),
@@ -175,13 +176,18 @@ async function run() {
     if (cmd === 'packs') {
       const { listTopicPacks } = await import('./topic-packs')
       const packs = listTopicPacks()
+      if (args.includes('--json')) {
+        console.log(JSON.stringify({ packs }, null, 2))
+        return
+      }
       if (packs.length === 0) {
         console.log('No topic packs found')
         return
       }
       for (const p of packs) {
+        const sub = p.subjects?.length ? ` [${p.subjects.join(', ')}]` : ''
         console.log(
-          `${p.id.padEnd(22)} ${p.title}${
+          `${p.id.padEnd(22)} ${p.title}${sub}${
             p.description ? `\n  ${p.description}` : ''
           }`,
         )
@@ -207,6 +213,32 @@ async function run() {
       writeSheetFile(out, sheet)
       console.log(`Pack ${meta.id} → ${out}`)
       console.log(summarizeSheet(sheet))
+      return
+    }
+
+    if (cmd === 'append-outline') {
+      const sheetPath = args[1]
+      const outlinePath = args[2]
+      if (!sheetPath || !outlinePath) {
+        console.error(
+          'Usage: append-outline <sheet.json> <outline.json>\n' +
+            'Adds outline.blocks to the existing sheet and re-layouts.',
+        )
+        process.exit(1)
+      }
+      const sheet = readSheetFile(sheetPath)
+      const raw = JSON.parse(readFileSync(outlinePath, 'utf8')) as SheetOutline
+      if (!Array.isArray(raw.blocks)) {
+        console.error('outline.json must have a blocks array')
+        process.exit(1)
+      }
+      const next = await appendOutlineToSheet(sheet, {
+        blocks: raw.blocks,
+        autoLayout: raw.autoLayout,
+        notes: raw.notes,
+      })
+      writeSheetFile(sheetPath, next)
+      console.log('Appended outline ·', summarizeSheet(next))
       return
     }
 

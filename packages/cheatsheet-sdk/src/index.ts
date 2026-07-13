@@ -27,7 +27,7 @@ export type {
   AddProcessInput,
 } from './builder'
 
-export { composeFromOutline } from './compose'
+export { composeFromOutline, appendOutlineToSheet } from './compose'
 export type { SheetOutline, OutlineBlock } from './outline'
 
 export {

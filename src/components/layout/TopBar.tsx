@@ -169,7 +169,7 @@ export function TopBar() {
 
           <button
             type="button"
-            title="Download this sheet as agent-compatible JSON (re-open via My Sheets → Import JSON)"
+            title="Download sheet JSON for agents (Ctrl+Shift+E) — re-open via My Sheets → Import JSON"
             data-testid="export-sheet-json"
             onClick={() => downloadWorkspaceSheetJson()}
             className="inline-flex items-center gap-1 rounded-md border border-zinc-800 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-900"
