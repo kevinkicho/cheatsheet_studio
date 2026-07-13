@@ -1,0 +1,35 @@
+{
+  "id": "accounting-basics",
+  "title": "Accounting — Core Identity",
+  "description": "Accounting equation, debits/credits table, close-the-books flowchart.",
+  "subjects": ["finance", "economics"],
+  "outline": {
+    "title": "Accounting — Core Identity",
+    "notes": "Topic pack: accounting-basics",
+    "autoLayout": true,
+    "blocks": [
+      { "type": "heading", "title": "Fundamental equation" },
+      {
+        "type": "equation",
+        "title": "Accounting equation",
+        "latex": "\\text{Assets} = \\text{Liabilities} + \\text{Equity}"
+      },
+      {
+        "type": "equation",
+        "title": "Expanded equity",
+        "latex": "\\text{Equity} = \\text{Contributed capital} + \\text{RE}"
+      },
+      {
+        "type": "table",
+        "title": "Debit / credit",
+        "markdown": "| Account | Debit | Credit |\n|---------|-------|--------|\n| Asset | ↑ | ↓ |\n| Liability | ↓ | ↑ |\n| Equity | ↓ | ↑ |\n| Revenue | ↓ | ↑ |\n| Expense | ↑ | ↓ |"
+      },
+      {
+        "type": "process",
+        "title": "Journal entry flow",
+        "kind": "flowchart",
+        "mermaid": "flowchart TD\n  A[Transaction] --> B[Identify accounts]\n  B --> C[Debit / credit]\n  C --> D[Journal]\n  D --> E[Ledger / TB]\n  E --> F[FS]"
+      }
+    ]
+  }
+}

@@ -73,6 +73,17 @@ describe('handleCanvasKeyDown', () => {
     expect(exportSheetJson).toHaveBeenCalledOnce()
   })
 
+  it('Ctrl+Shift+I imports sheet JSON when handler provided', () => {
+    const importSheetJson = vi.fn()
+    const a = actions({ importSheetJson })
+    const r = handleCanvasKeyDown(
+      key('i', { ctrlKey: true, shiftKey: true }),
+      a,
+    )
+    expect(r).toEqual({ handled: true, action: 'import-sheet-json' })
+    expect(importSheetJson).toHaveBeenCalledOnce()
+  })
+
   it('Ctrl+Shift+Z and Ctrl+Y redo', () => {
     const a = actions({ futureLength: 1 })
     expect(

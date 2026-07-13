@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.2
+
+- 16 topic packs (+ series, accounting)
+- `merge` sheets · multi `--id` on add-catalog · `packs --subject`
+- `summarize --verbose` · agent workflow scripts
+- Ctrl+Shift+I import shortcut
+
 ## 0.2.1
 
 - 14 topic packs (complex, org-chem, micro S&D, …)

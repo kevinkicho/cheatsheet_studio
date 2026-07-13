@@ -23,27 +23,28 @@ Commands:
   compose        Build a sheet from an outline JSON file (agent-friendly)
   catalog-search Search seed library (equations/tables/figures)
   add-catalog    Append a seed catalog item by id or title
-  packs          List premade topic packs (--json for machine-readable)
-  pack           Compose a topic pack → sheet JSON (or --all -o dir/)
+  packs          List packs (--json, --subject mathematics)
+  pack           Compose pack → sheet (or --all -o dir/)
+  merge          Merge multiple sheet JSON files into one
   append-outline Append outline blocks onto an existing sheet
+  add-catalog    Append one or more seed items (--id a --id b)
   doctor         Health-check SDK (catalog, packs, cloud env)
   add-equation | add-table | add-process | add-figure
   layout         Auto-pack items (multi-column when tall)
   validate       Check sheet JSON shape
-  summarize      Print a one-line summary
-  push           Upload to Firestore (firebase-admin)
-  pull           Download a Firestore sheet to JSON
+  summarize      Print summary (--verbose lists items)
+  push / pull    Firestore (CHEATSHEET_SA_PATH + CHEATSHEET_UID)
   mcp            Stdio MCP server for coding agents
 
 Examples:
   npm run cheatsheet -- doctor
-  npm run cheatsheet -- packs
+  npm run cheatsheet -- packs --subject finance
   npm run cheatsheet -- pack --all -o out/packs/
-  npm run cheatsheet -- pack lin-algebra -o out/la.sheet.json
-  npm run cheatsheet -- catalog-search --query quadratic --limit 5
+  npm run cheatsheet -- merge a.sheet.json b.sheet.json -o combined.sheet.json
+  npm run cheatsheet -- add-catalog sheet.json --id math-quad --id math-binom
   npm run cheatsheet -- mcp
 
-In the web app: Import/Export JSON (Workspace + My Sheets)
+Web: Import/Export JSON · Ctrl+Shift+E export · Ctrl+Shift+I import
 
 Sheet schema version: v=${SHEET_DOC_VERSION}
 `.trim(),
@@ -63,6 +64,18 @@ function requireArg(args: string[], name: string, label: string): string {
     process.exit(1)
   }
   return v
+}
+
+/** Collect all values after repeated flags: --id a --id b */
+function argValues(args: string[], name: string): string[] {
+  const out: string[] = []
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === name && args[i + 1]) {
+      out.push(args[i + 1]!)
+      i++
+    }
+  }
+  return out
 }
 
 async function run() {
@@ -154,47 +167,82 @@ async function run() {
       const file = args[1]
       if (!file) {
         console.error(
-          'Usage: add-catalog <sheet.json> --id <catalogId|title>',
+          'Usage: add-catalog <sheet.json> --id <id> [--id <id2> ...]',
         )
         process.exit(1)
       }
-      const id =
-        argValue(args, '--id') ??
-        argValue(args, '--title') ??
-        requireArg(args, '--id', 'catalog id or title')
-      const found = await findCatalogItem(id)
-      if (!found) {
-        console.error(`Not found in seed catalog: ${id}`)
+      let ids = argValues(args, '--id')
+      const titleOnce = argValue(args, '--title')
+      if (titleOnce) ids = [...ids, titleOnce]
+      if (ids.length === 0) {
+        console.error('Pass one or more --id <catalogId|title>')
         process.exit(1)
       }
-      const next = await SheetBuilder.fromDocument(readSheetFile(file))
-        .addFromCatalog(id)
-        .then((b) => b.build())
+      let builder = SheetBuilder.fromDocument(readSheetFile(file))
+      const added: string[] = []
+      for (const id of ids) {
+        const found = await findCatalogItem(id)
+        if (!found) {
+          console.error(`Not found in seed catalog: ${id}`)
+          process.exit(1)
+        }
+        builder = await builder.addFromCatalog(id)
+        added.push(`${found.id} (${found.title})`)
+      }
+      const next = builder.autoLayout().build()
       writeSheetFile(file, next)
-      console.log(`Added catalog ${found.id} (${found.title}) ·`, summarizeSheet(next))
+      console.log(`Added: ${added.join(', ')}`)
+      console.log(summarizeSheet(next))
+      return
+    }
+
+    if (cmd === 'merge') {
+      // merge a.json b.json c.json -o out.json
+      const files = args.slice(1).filter((a) => !a.startsWith('-') && a !== argValue(args, '-o') && a !== argValue(args, '--out'))
+      const out = argValue(args, '-o') ?? argValue(args, '--out')
+      if (files.length < 2 || !out) {
+        console.error(
+          'Usage: merge <sheet1.json> <sheet2.json> [...] -o <combined.sheet.json>',
+        )
+        process.exit(1)
+      }
+      const { mergeSheets } = await import('./merge')
+      const sheets = files.map((f) => readSheetFile(f))
+      const title = argValue(args, '--title')
+      const merged = mergeSheets(sheets, { title })
+      writeSheetFile(out, merged)
+      console.log(`Merged ${files.length} sheets → ${out}`)
+      console.log(summarizeSheet(merged))
       return
     }
 
     if (cmd === 'packs') {
       const { listTopicPacks } = await import('./topic-packs')
-      const packs = listTopicPacks()
+      const subject = argValue(args, '--subject')
+      const packs = listTopicPacks({ subject })
       if (args.includes('--json')) {
-        console.log(JSON.stringify({ packs }, null, 2))
+        console.log(JSON.stringify({ packs, subject: subject ?? null }, null, 2))
         return
       }
       if (packs.length === 0) {
-        console.log('No topic packs found')
+        console.log(
+          subject
+            ? `No packs for subject "${subject}"`
+            : 'No topic packs found',
+        )
         return
       }
       for (const p of packs) {
         const sub = p.subjects?.length ? ` [${p.subjects.join(', ')}]` : ''
         console.log(
-          `${p.id.padEnd(22)} ${p.title}${sub}${
+          `${p.id.padEnd(24)} ${p.title}${sub}${
             p.description ? `\n  ${p.description}` : ''
           }`,
         )
       }
-      console.log(`\nCompose: npm run cheatsheet -- pack <id> -o out.sheet.json`)
+      console.log(
+        `\nCompose: npm run cheatsheet -- pack <id> -o out.sheet.json`,
+      )
       return
     }
 
@@ -302,10 +350,24 @@ async function run() {
     if (cmd === 'summarize') {
       const file = args[1]
       if (!file) {
-        console.error('Usage: summarize <sheet.json>')
+        console.error('Usage: summarize <sheet.json> [--verbose]')
         process.exit(1)
       }
-      console.log(summarizeSheet(readSheetFile(file)))
+      const sheet = readSheetFile(file)
+      console.log(summarizeSheet(sheet))
+      if (args.includes('--verbose') || args.includes('-v')) {
+        for (const it of sheet.items) {
+          const extra =
+            it.latex?.slice(0, 40) ||
+            it.tableMarkdown?.split('\n')[0] ||
+            it.mermaidSource?.split('\n')[0] ||
+            it.imageUrl?.slice(0, 40) ||
+            ''
+          console.log(
+            `  [${it.zIndex}] ${it.type.padEnd(14)} ${(it.title ?? '').padEnd(24)} ${extra}`,
+          )
+        }
+      }
       return
     }
 

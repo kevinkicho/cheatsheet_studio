@@ -1,6 +1,6 @@
 {
   "name": "@cheatsheet-studio/sdk",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Headless SDK + CLI for agent-authored CheatSheet Studio sheets",
   "type": "module",
   "license": "MIT",

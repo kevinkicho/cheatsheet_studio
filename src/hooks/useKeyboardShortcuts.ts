@@ -50,6 +50,9 @@ export function useKeyboardShortcuts() {
         },
         setCanvasTool: (tool) => ui.setCanvasTool(tool),
         exportSheetJson: () => downloadWorkspaceSheetJson(),
+        importSheetJson: () => {
+          window.dispatchEvent(new CustomEvent('cheatsheet:import-sheet-json'))
+        },
         pastLength: state.past.length,
         futureLength: state.future.length,
         selectedIds: state.selectedIds,

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   BookOpen,
   ChevronDown,
@@ -57,6 +57,16 @@ export function TopBar() {
   const setView = useUiStore((s) => s.setView)
   const importInputRef = useRef<HTMLInputElement>(null)
   const [importBusy, setImportBusy] = useState(false)
+
+  // Ctrl+Shift+I (and any code that dispatches this event) opens the importer
+  useEffect(() => {
+    const open = () => {
+      if (!user || importBusy) return
+      importInputRef.current?.click()
+    }
+    window.addEventListener('cheatsheet:import-sheet-json', open)
+    return () => window.removeEventListener('cheatsheet:import-sheet-json', open)
+  }, [user, importBusy])
   const leftOpen = useUiStore((s) => s.leftOpen)
   const rightOpen = useUiStore((s) => s.rightOpen)
   const bottomOpen = useUiStore((s) => s.bottomOpen)
@@ -185,7 +195,7 @@ export function TopBar() {
 
           <button
             type="button"
-            title="Import agent sheet JSON as a new sheet"
+            title="Import agent sheet JSON as a new sheet (Ctrl+Shift+I)"
             data-testid="import-sheet-json"
             disabled={!user || importBusy}
             onClick={() => importInputRef.current?.click()}

@@ -65,3 +65,6 @@ export type { CloudAuthConfig } from './auth'
 
 export { runDoctor } from './doctor'
 export type { DoctorCheck, DoctorReport } from './doctor'
+
+export { mergeSheets } from './merge'
+export type { MergeOptions } from './merge'

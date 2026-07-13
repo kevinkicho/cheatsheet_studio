@@ -1,0 +1,40 @@
+{
+  "id": "calc-series",
+  "title": "Calculus — Series",
+  "description": "Taylor, geometric series, and convergence tests flowchart.",
+  "subjects": ["mathematics"],
+  "outline": {
+    "title": "Calculus — Series",
+    "notes": "Topic pack: calc-series",
+    "autoLayout": true,
+    "blocks": [
+      { "type": "heading", "title": "Power series" },
+      {
+        "type": "equation",
+        "title": "Geometric series",
+        "latex": "\\sum_{n=0}^{\\infty} ar^n = \\frac{a}{1-r},\\quad |r|<1"
+      },
+      {
+        "type": "equation",
+        "title": "Taylor series",
+        "latex": "f(x) = \\sum_{n=0}^{\\infty} \\frac{f^{(n)}(a)}{n!}(x-a)^n"
+      },
+      {
+        "type": "equation",
+        "title": "Maclaurin (a=0)",
+        "latex": "e^x = \\sum_{n=0}^{\\infty} \\frac{x^n}{n!}"
+      },
+      {
+        "type": "table",
+        "title": "Common tests",
+        "markdown": "| Test | Use when |\n|------|----------|\n| Ratio | Factorials / exp |\n| Root | nth powers |\n| Alternating | (-1)^n terms |\n| Comparison | Positive terms |"
+      },
+      {
+        "type": "process",
+        "title": "Convergence checklist",
+        "kind": "flowchart",
+        "mermaid": "flowchart TD\n  A[Identify a_n] --> B{Absolute?}\n  B -->|Yes| C[Ratio / root / compare]\n  B -->|Alternating| D[AST]\n  C --> E[Interval of conv.]\n  D --> E"
+      }
+    ]
+  }
+}

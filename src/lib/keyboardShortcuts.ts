@@ -13,6 +13,8 @@ export type ShortcutActions = {
   setCanvasTool: (tool: 'select' | 'pan') => void
   /** Download workspace as agent SheetDocument JSON (Ctrl/Cmd+Shift+E). */
   exportSheetJson?: () => void
+  /** Open import file picker (Ctrl/Cmd+Shift+I). */
+  importSheetJson?: () => void
   pastLength: number
   futureLength: number
   selectedIds: string[]
@@ -98,6 +100,11 @@ export function handleCanvasKeyDown(
     if (key === 'e' && e.shiftKey && !e.altKey && actions.exportSheetJson) {
       actions.exportSheetJson()
       return { handled: true, action: 'export-sheet-json' }
+    }
+    // Import sheet JSON (file picker)
+    if (key === 'i' && e.shiftKey && !e.altKey && actions.importSheetJson) {
+      actions.importSheetJson()
+      return { handled: true, action: 'import-sheet-json' }
     }
   }
 

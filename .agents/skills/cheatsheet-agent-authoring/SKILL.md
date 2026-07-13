@@ -25,12 +25,14 @@ npm run cheatsheet -- packs
 npm run cheatsheet -- pack calc-derivatives -o out/calc.sheet.json
 ```
 
-14 packs — run `npm run cheatsheet -- packs` for the live list.
-Includes calc, lin-algebra, complex, finance, econ, physics, chem, bio, stats.
+16+ packs — run `npm run cheatsheet -- packs` (filter: `--subject finance`).
 
 ```bash
 npm run cheatsheet -- doctor
+npm run cheatsheet -- packs --subject mathematics
 npm run cheatsheet -- pack --all -o out/packs/
+npm run cheatsheet -- merge a.sheet.json b.sheet.json -o combined.sheet.json
+# Demo: pwsh scripts/agent-sheet-workflow.ps1 calc-derivatives
 ```
 
 User: **My Sheets → Import JSON** → polish in Workspace.

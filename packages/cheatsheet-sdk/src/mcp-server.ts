@@ -105,7 +105,15 @@ const TOOLS: ToolDef[] = [
   {
     name: 'cheatsheet_list_packs',
     description: 'List premade topic packs (calc, finance, physics, stats, …)',
-    inputSchema: { type: 'object', properties: {} },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        subject: {
+          type: 'string',
+          description: 'Filter e.g. mathematics, finance, physics',
+        },
+      },
+    },
   },
   {
     name: 'cheatsheet_compose_pack',
@@ -178,6 +186,23 @@ const TOOLS: ToolDef[] = [
     name: 'cheatsheet_doctor',
     description: 'Health-check SDK (packs, catalog, optional cloud env)',
     inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'cheatsheet_merge',
+    description: 'Merge multiple sheet JSON files into one (re-layout)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        paths: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Input sheet.json paths',
+        },
+        outPath: { type: 'string' },
+        title: { type: 'string' },
+      },
+      required: ['paths', 'outPath'],
+    },
   },
 ]
 
@@ -281,7 +306,8 @@ async function callTool(
     }
     case 'cheatsheet_list_packs': {
       const { listTopicPacks } = await import('./topic-packs')
-      return { ok: true, packs: listTopicPacks() }
+      const subject = args.subject ? String(args.subject) : undefined
+      return { ok: true, packs: listTopicPacks({ subject }) }
     }
     case 'cheatsheet_compose_pack': {
       const packId = String(args.packId ?? '')
@@ -350,6 +376,20 @@ async function callTool(
     case 'cheatsheet_doctor': {
       const { runDoctor } = await import('./doctor')
       return runDoctor()
+    }
+    case 'cheatsheet_merge': {
+      const { mergeSheets } = await import('./merge')
+      const paths = args.paths as string[]
+      const outPath = String(args.outPath ?? '')
+      if (!Array.isArray(paths) || paths.length < 2) {
+        throw new Error('paths must be an array of ≥2 sheet files')
+      }
+      const sheets = paths.map((p) => readSheetFile(p))
+      const merged = mergeSheets(sheets, {
+        title: args.title ? String(args.title) : undefined,
+      })
+      writeSheetFile(outPath, merged)
+      return { ok: true, path: outPath, summary: summarizeSheet(merged) }
     }
     default:
       throw new Error(`Unknown tool: ${name}`)

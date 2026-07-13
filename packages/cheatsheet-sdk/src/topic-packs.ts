@@ -25,34 +25,49 @@ function packsDir(): string {
   return path.resolve(here, '../topic-packs')
 }
 
-export function listTopicPacks(): TopicPackMeta[] {
+export function listTopicPacks(opts?: {
+  subject?: string
+}): TopicPackMeta[] {
   const dir = packsDir()
   const indexPath = path.join(dir, 'index.json')
+  let packs: TopicPackMeta[] = []
   try {
     const raw = JSON.parse(readFileSync(indexPath, 'utf8')) as {
       packs?: TopicPackMeta[]
     }
-    if (Array.isArray(raw.packs) && raw.packs.length > 0) return raw.packs
+    if (Array.isArray(raw.packs) && raw.packs.length > 0) packs = raw.packs
   } catch {
     /* fall through */
   }
-  return readdirSync(dir)
-    .filter((f) => f.endsWith('.json') && f !== 'index.json')
-    .map((f) => {
-      const full = JSON.parse(readFileSync(path.join(dir, f), 'utf8')) as {
-        id?: string
-        title?: string
-        description?: string
-        subjects?: string[]
-      }
-      return {
-        id: full.id ?? f.replace(/\.json$/, ''),
-        file: f,
-        title: full.title ?? f,
-        description: full.description ?? '',
-        subjects: full.subjects,
-      }
-    })
+  if (packs.length === 0) {
+    packs = readdirSync(dir)
+      .filter((f) => f.endsWith('.json') && f !== 'index.json')
+      .map((f) => {
+        const full = JSON.parse(readFileSync(path.join(dir, f), 'utf8')) as {
+          id?: string
+          title?: string
+          description?: string
+          subjects?: string[]
+        }
+        return {
+          id: full.id ?? f.replace(/\.json$/, ''),
+          file: f,
+          title: full.title ?? f,
+          description: full.description ?? '',
+          subjects: full.subjects,
+        }
+      })
+  }
+  const sub = opts?.subject?.trim().toLowerCase()
+  if (!sub) return packs
+  return packs.filter((p) =>
+    (p.subjects ?? []).some(
+      (s) =>
+        s.toLowerCase() === sub ||
+        s.toLowerCase().includes(sub) ||
+        sub.includes(s.toLowerCase()),
+    ),
+  )
 }
 
 export function loadTopicPack(id: string): TopicPack {

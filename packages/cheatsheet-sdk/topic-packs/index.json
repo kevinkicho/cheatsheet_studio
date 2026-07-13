@@ -16,6 +16,13 @@
       "subjects": ["mathematics"]
     },
     {
+      "id": "calc-series",
+      "file": "calc-series.json",
+      "title": "Calculus — Series",
+      "description": "Taylor, geometric series, convergence tests.",
+      "subjects": ["mathematics"]
+    },
+    {
       "id": "lin-algebra",
       "file": "lin-algebra.json",
       "title": "Linear Algebra — Essentials",
@@ -49,6 +56,13 @@
       "title": "Finance — NPV & IRR",
       "description": "NPV, IRR, project decision flowchart.",
       "subjects": ["finance"]
+    },
+    {
+      "id": "accounting-basics",
+      "file": "accounting-basics.json",
+      "title": "Accounting — Core Identity",
+      "description": "Accounting equation, debits/credits, journal flow.",
+      "subjects": ["finance", "economics"]
     },
     {
       "id": "econ-elasticity",

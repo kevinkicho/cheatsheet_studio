@@ -28,7 +28,8 @@
     "sdk:export-catalog": "tsx packages/cheatsheet-sdk/scripts/export-seed-catalog.ts",
     "sdk:build": "npm run sdk:export-catalog && npm run build --prefix packages/cheatsheet-sdk",
     "sdk:pack": "npm run sdk:build && npm pack --dry-run --workspace=false -C packages/cheatsheet-sdk",
-    "sdk:publish:dry": "npm run sdk:pack"
+    "sdk:publish:dry": "npm run sdk:pack",
+    "agent:demo": "tsx packages/cheatsheet-sdk/src/cli.ts pack calc-derivatives -o examples/agent-out/calc-derivatives.sheet.json"
   },
   "dependencies": {
     "@dagrejs/dagre": "^3.0.0",
