@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { ChevronDown, ChevronRight, Scan, Trash2 } from 'lucide-react'
+import { AutoLayoutPanel } from '@/components/properties/AutoLayoutPanel'
 import type {
   BorderStroke,
   CanvasItem,
@@ -71,6 +72,7 @@ export function PropertiesPanel() {
 
   const [sheetPropsOpen, setSheetPropsOpen] = useState(false)
   const [gridSettingsOpen, setGridSettingsOpen] = useState(false)
+  const [autoLayoutOpen, setAutoLayoutOpen] = useState(true)
   // Item properties collapsibles (when a card is selected)
   const [titleOpen, setTitleOpen] = useState(false)
   const [sizeOpen, setSizeOpen] = useState(false)
@@ -109,6 +111,29 @@ export function PropertiesPanel() {
                 aria-label="Sheet background"
               />
             </Field>
+          </div>
+        )}
+
+        {/* Auto layout (collapsible) — cheatsheet packing + Ollama */}
+        <button
+          type="button"
+          onClick={() => setAutoLayoutOpen((o) => !o)}
+          className="flex shrink-0 items-center gap-1.5 border-b border-zinc-800 bg-zinc-900/80 px-3 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-zinc-300 hover:bg-zinc-900"
+          data-testid="auto-layout-toggle"
+        >
+          {autoLayoutOpen ? (
+            <ChevronDown className="h-3.5 w-3.5 text-zinc-500" />
+          ) : (
+            <ChevronRight className="h-3.5 w-3.5 text-zinc-500" />
+          )}
+          Auto layout
+          <span className="ml-auto font-normal normal-case tracking-normal text-zinc-600">
+            pack · AI
+          </span>
+        </button>
+        {autoLayoutOpen && (
+          <div className="min-h-0 max-h-[55%] shrink-0 overflow-y-auto border-b border-zinc-800">
+            <AutoLayoutPanel />
           </div>
         )}
 
@@ -254,7 +279,7 @@ export function PropertiesPanel() {
           </div>
         )}
 
-        {!sheetPropsOpen && !gridSettingsOpen && (
+        {!sheetPropsOpen && !gridSettingsOpen && !autoLayoutOpen && (
           <p className="p-3 text-xs text-zinc-600">
             Expand a section above, or select a card on the canvas.
           </p>

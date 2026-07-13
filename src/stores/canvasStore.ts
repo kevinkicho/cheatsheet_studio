@@ -3,8 +3,10 @@ import { createId } from '@/lib/ids'
 import {
   getPrintAwareSnapOrigin,
   layoutItemsInRows,
+  packCheatsheetLayout,
   snapToGridValue,
   ORGANIZE_GRID,
+  type CheatsheetLayoutOptions,
 } from '@/lib/autoOrganize'
 import {
   autoPrintPageOrigins,
@@ -177,7 +179,19 @@ interface CanvasState {
   setPrintPagePositions: (positions: PrintPageOrigin[]) => void
   setMargins: (margins: Partial<PrintMargins>) => void
   setUniformMargin: (px: number) => void
-  autoOrganize: () => void
+  autoOrganize: (opts?: CheatsheetLayoutOptions) => void
+  /** Apply absolute positions from AI / external packer (ids must match). */
+  applyItemLayout: (
+    placements: Array<{
+      id: string
+      x: number
+      y: number
+      width?: number
+      height?: number
+      fontSize?: number
+      titleFontSize?: number
+    }>,
+  ) => void
   toggleGrid: () => void
   toggleSnapToGrid: () => void
   markClean: () => void
@@ -806,10 +820,9 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     get().setMargins({ top: v, right: v, bottom: v, left: v })
   },
 
-  autoOrganize: () =>
+  autoOrganize: (opts) =>
     set((s) => {
       if (s.items.length === 0) return s
-      // Snapshot page size + margins at click time for grid packing
       const configSnapshot: SheetCanvas = {
         ...s.canvas,
         width: s.canvas.width,
@@ -819,8 +832,76 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           ...(s.canvas.margins ?? {}),
         },
       }
-      const next = layoutItemsInRows(s.items, configSnapshot)
+      // Prefer denser cheatsheet pack when options provided (sidebar Auto layout).
+      // Toolbar button with no args keeps classic row flow for light tidying.
+      if (
+        opts &&
+        (opts.density ||
+          opts.columns ||
+          opts.gap != null ||
+          opts.mode ||
+          opts.fitPrint !== undefined)
+      ) {
+        const packed = packCheatsheetLayout(s.items, configSnapshot, {
+          density: opts.density ?? 'sm',
+          gap: opts.gap,
+          columns: opts.columns ?? 'auto',
+          mode: opts.mode ?? 'columns',
+          fitPrint: opts.fitPrint !== false,
+          multiPage: opts.multiPage,
+        })
+        const pageCount = Math.max(
+          1,
+          packed.printPageCount,
+          s.canvas.printPageCount ?? 1,
+        )
+        return {
+          items: packed.items,
+          dirty: true,
+          canvas:
+            pageCount !== (s.canvas.printPageCount ?? 1)
+              ? { ...s.canvas, printPageCount: pageCount }
+              : s.canvas,
+        }
+      }
+      const next = layoutItemsInRows(s.items, configSnapshot, {
+        gap: opts?.gap,
+      })
       return { items: next, dirty: true }
+    }),
+
+  applyItemLayout: (placements) =>
+    set((s) => {
+      if (placements.length === 0) return s
+      const byId = new Map(placements.map((p) => [p.id, p]))
+      const items = s.items.map((it) => {
+        const p = byId.get(it.id)
+        if (!p) return it
+        return {
+          ...it,
+          x: Math.round(p.x),
+          y: Math.round(p.y),
+          width:
+            typeof p.width === 'number' && p.width > 0
+              ? Math.round(p.width)
+              : it.width,
+          height:
+            typeof p.height === 'number' && p.height > 0
+              ? Math.round(p.height)
+              : it.height,
+          autoFit: false,
+          style: {
+            ...it.style,
+            ...(typeof p.fontSize === 'number'
+              ? { fontSize: p.fontSize }
+              : {}),
+            ...(typeof p.titleFontSize === 'number'
+              ? { titleFontSize: p.titleFontSize }
+              : {}),
+          },
+        }
+      })
+      return { items, dirty: true }
     }),
 
   toggleGrid: () =>

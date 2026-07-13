@@ -414,7 +414,7 @@ const SEED_LIBRARY_RAW: LibraryItem[] = [
     "Bayes' Theorem",
     'mathematics',
     'Probability',
-    'P(A|B) = \\frac{P(B|A)P(A)}{P(B)}',
+    'P(A\\mid B) = \\frac{P(B\\mid A)\\,P(A)}{P(B)}',
     ['probability', 'stats'],
     'Update beliefs given evidence B.',
   ),

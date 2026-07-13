@@ -55,6 +55,17 @@ Process charts: agents supply `mermaidSource`. Workspace **Export JSON** preserv
 npm run cheatsheet -- layout sheet.json --dense --mode sections
 ```
 
+### In-app Auto layout (left sidebar)
+
+With nothing selected on the canvas:
+
+1. Open **Auto layout**
+2. Pick **content size** (Extra small → Large), **gap**, **columns**
+3. **Apply auto layout** — deterministic multi-column pack into print margins
+4. Optional **AI organize with Ollama** — local `127.0.0.1:11434`, default model `gemma4:31b-cloud`
+
+Ollama must be running (`ollama serve`). Optional env: `VITE_OLLAMA_MODEL`, `VITE_OLLAMA_BASE_URL`, `VITE_OLLAMA_USE_PROXY=true`.
+
 ## Publish SDK
 
 ```bash

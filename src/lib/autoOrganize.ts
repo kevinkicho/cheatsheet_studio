@@ -285,3 +285,313 @@ export function layoutItemsInRows(
     }
   })
 }
+
+/** Semantic content density for cheatsheet packing (not raw px in the UI). */
+export type ContentDensity = 'xs' | 'sm' | 'md' | 'lg'
+
+export type CheatsheetLayoutMode = 'columns' | 'flow'
+
+export type CheatsheetLayoutOptions = {
+  /** Gap between cards (px). Default 10. */
+  gap?: number
+  /** 1–3 or auto (guess from density + count). */
+  columns?: number | 'auto'
+  /**
+   * How small content/cards get:
+   * xs = densest midterm, lg = roomy study sheet.
+   */
+  density?: ContentDensity
+  /** Pack into multi-column grid (default) or single-row flow wrap. */
+  mode?: CheatsheetLayoutMode
+  /**
+   * After packing, uniformly shrink so everything fits the print content box
+   * (and bump print pages only if still overflowing and multiPage is true).
+   */
+  fitPrint?: boolean
+  /** Prefer more pages instead of extreme shrink when overflowing. Default false. */
+  multiPage?: boolean
+}
+
+/** Maps density labels → size scale + ItemStyle font sizes (vector KaTeX/tables). */
+export const DENSITY_PRESETS: Record<
+  ContentDensity,
+  {
+    label: string
+    hint: string
+    sizeScale: number
+    fontSize: number
+    titleFontSize: number
+    /** Process charts start larger — scale them a bit more aggressively. */
+    processSizeScale: number
+  }
+> = {
+  xs: {
+    label: 'Extra small',
+    hint: 'Densest midterm — more cards per page',
+    sizeScale: 0.58,
+    fontSize: 11,
+    titleFontSize: 8,
+    processSizeScale: 0.52,
+  },
+  sm: {
+    label: 'Small',
+    hint: 'Tight cheat sheet (recommended)',
+    sizeScale: 0.72,
+    fontSize: 13,
+    titleFontSize: 9,
+    processSizeScale: 0.65,
+  },
+  md: {
+    label: 'Medium',
+    hint: 'Balanced study layout',
+    sizeScale: 0.88,
+    fontSize: 15,
+    titleFontSize: 10,
+    processSizeScale: 0.8,
+  },
+  lg: {
+    label: 'Large',
+    hint: 'Roomy cards, fewer per page',
+    sizeScale: 1,
+    fontSize: 17,
+    titleFontSize: 11,
+    processSizeScale: 0.95,
+  },
+}
+
+function isProcessItem(it: CanvasItem): boolean {
+  return it.type === 'process-chart' || Boolean(it.mermaidSource)
+}
+
+function isHeadingCard(it: CanvasItem): boolean {
+  if (!it.latex) return false
+  const t = it.latex.trim()
+  return /^\\text\{/.test(t) && t.length < 100
+}
+
+/**
+ * Pack cards for print cheatsheets: multi-column, density-scaled sizes,
+ * semantic font sizes, optional fit-to-print-box.
+ */
+export function packCheatsheetLayout(
+  items: CanvasItem[],
+  canvas: SheetCanvas,
+  options: CheatsheetLayoutOptions = {},
+): { items: CanvasItem[]; printPageCount: number } {
+  if (items.length === 0) {
+    return { items, printPageCount: Math.max(1, canvas.printPageCount ?? 1) }
+  }
+
+  const density = options.density ?? 'sm'
+  const preset = DENSITY_PRESETS[density]
+  const gap = Math.max(2, options.gap ?? (density === 'xs' ? 6 : density === 'sm' ? 8 : 12))
+  const mode = options.mode ?? 'columns'
+  const fitPrint = options.fitPrint !== false
+  const box = getContentBox(canvas)
+
+  const visible = items.filter((i) => !i.hidden)
+  const hidden = items.filter((i) => i.hidden)
+
+  // Base sizes from current boxes, scaled by density
+  const scaled = visible.map((it) => {
+    const isProc = isProcessItem(it)
+    const isHead = isHeadingCard(it)
+    const scale = isHead
+      ? Math.min(1, preset.sizeScale * 1.05)
+      : isProc
+        ? preset.processSizeScale
+        : preset.sizeScale
+    const minW = isHead ? 160 : isProc ? 140 : 100
+    const minH = isHead ? 28 : isProc ? 100 : 48
+    const maxW = isHead
+      ? box.width
+      : isProc
+        ? Math.min(box.width, 340)
+        : Math.min(box.width, 300)
+    const w = Math.max(minW, Math.min(maxW, Math.round(it.width * scale)))
+    const h = Math.max(
+      minH,
+      Math.round(
+        (isHead ? Math.min(it.height, 48) : it.height) * (isHead ? 0.85 : scale),
+      ),
+    )
+    return {
+      ...it,
+      width: w,
+      height: h,
+      style: {
+        ...it.style,
+        fontSize: preset.fontSize,
+        titleFontSize: preset.titleFontSize,
+      },
+      autoFit: false,
+      contentFill: true,
+    }
+  })
+
+  const colCount =
+    mode === 'flow'
+      ? 1
+      : options.columns === 'auto' || options.columns == null
+        ? guessCheatColumns(scaled.length, density, box.width)
+        : Math.min(3, Math.max(1, options.columns))
+
+  // Full-width headings, multi-column body under each section
+  const placed: CanvasItem[] = []
+  let cursorY = box.top
+  let z = 1
+
+  const sections: CanvasItem[][] = []
+  let cur: CanvasItem[] = []
+  for (const it of scaled) {
+    if (isHeadingCard(it) && cur.length > 0) {
+      sections.push(cur)
+      cur = [it]
+    } else {
+      cur.push(it)
+    }
+  }
+  if (cur.length) sections.push(cur)
+
+  for (const section of sections) {
+    const heading = section.find(isHeadingCard)
+    const body = section.filter((i) => !isHeadingCard(i))
+
+    if (heading) {
+      placed.push({
+        ...heading,
+        x: Math.round(box.left),
+        y: Math.round(cursorY),
+        width: Math.min(heading.width, box.width),
+        zIndex: z++,
+      })
+      cursorY += heading.height + gap
+    }
+
+    if (body.length === 0) continue
+
+    if (mode === 'flow' || colCount === 1) {
+      let x = box.left
+      let rowH = 0
+      let y = cursorY
+      for (const it of body) {
+        if (x > box.left && x + it.width > box.left + box.width) {
+          x = box.left
+          y += rowH + gap
+          rowH = 0
+        }
+        placed.push({
+          ...it,
+          x: Math.round(x),
+          y: Math.round(y),
+          zIndex: z++,
+        })
+        x += it.width + gap
+        rowH = Math.max(rowH, it.height)
+      }
+      cursorY = y + rowH + gap
+    } else {
+      const colGap = gap
+      const colW = Math.floor(
+        (box.width - colGap * (colCount - 1)) / colCount,
+      )
+      const colHeights = Array.from({ length: colCount }, () => cursorY)
+      for (const it of body) {
+        let col = 0
+        for (let c = 1; c < colCount; c++) {
+          if (colHeights[c]! < colHeights[col]!) col = c
+        }
+        const w = Math.min(it.width, colW)
+        const x = box.left + col * (colW + colGap)
+        const y = colHeights[col]!
+        placed.push({
+          ...it,
+          x: Math.round(x),
+          y: Math.round(y),
+          width: Math.round(w),
+          zIndex: z++,
+        })
+        colHeights[col] = y + it.height + gap
+      }
+      cursorY = Math.max(...colHeights) + gap * 0.5
+    }
+  }
+
+  let result = placed
+  let pageCount = Math.max(1, canvas.printPageCount ?? 1)
+  const maxBottom = result.reduce(
+    (m, it) => Math.max(m, it.y + it.height),
+    box.top,
+  )
+  const contentBottom = box.top + box.height
+
+  if (fitPrint && maxBottom > contentBottom + 4) {
+    const overflow = maxBottom - box.top
+    const avail = box.height
+    const shrink = Math.max(0.45, Math.min(1, (avail - gap) / overflow))
+    if (shrink < 0.98) {
+      result = result.map((it) => ({
+        ...it,
+        x: Math.round(box.left + (it.x - box.left) * shrink),
+        y: Math.round(box.top + (it.y - box.top) * shrink),
+        width: Math.max(48, Math.round(it.width * shrink)),
+        height: Math.max(28, Math.round(it.height * shrink)),
+        style: {
+          ...it.style,
+          fontSize: Math.max(
+            9,
+            Math.round((it.style?.fontSize ?? preset.fontSize) * Math.sqrt(shrink)),
+          ),
+          titleFontSize: Math.max(
+            7,
+            Math.round(
+              (it.style?.titleFontSize ?? preset.titleFontSize) *
+                Math.sqrt(shrink),
+            ),
+          ),
+        },
+      }))
+    }
+    const bottom2 = result.reduce(
+      (m, it) => Math.max(m, it.y + it.height),
+      box.top,
+    )
+    if (options.multiPage && bottom2 > contentBottom + 8) {
+      pageCount = Math.min(
+        20,
+        Math.max(pageCount, Math.ceil((bottom2 - box.top) / box.height)),
+      )
+    }
+  }
+
+  const byId = new Map(result.map((p) => [p.id, p]))
+  const merged = [
+    ...items.map((old) => {
+      if (old.hidden) return old
+      const n = byId.get(old.id)
+      if (!n) return { ...old, autoFit: false }
+      return n
+    }),
+    // keep hidden as-is (already in items)
+  ]
+  // Avoid duplicating hidden if they were in items already
+  void hidden
+
+  return { items: merged, printPageCount: pageCount }
+}
+
+function guessCheatColumns(
+  n: number,
+  density: ContentDensity,
+  boxW: number,
+): number {
+  if (n <= 3) return 1
+  if (boxW < 480) return 1
+  if (density === 'xs' || density === 'sm') {
+    if (n >= 14 && boxW >= 640) return 3
+    if (n >= 6) return 2
+  }
+  if (n >= 10 && boxW >= 600) return 2
+  return 1
+}
+

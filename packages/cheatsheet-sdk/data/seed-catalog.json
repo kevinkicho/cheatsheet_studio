@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "exportedAt": "2026-07-13T18:47:01.003Z",
+  "exportedAt": "2026-07-13T21:32:08.422Z",
   "count": 184,
   "types": {
     "equation": 143,
@@ -397,7 +397,7 @@
         "probability",
         "stats"
       ],
-      "latex": "P(A|B) = \\frac{P(B|A)P(A)}{P(B)}",
+      "latex": "P(A\\mid B) = \\frac{P(B\\mid A)\\,P(A)}{P(B)}",
       "description": "Update beliefs given evidence B."
     },
     {
@@ -2036,7 +2036,7 @@
         "flowchart"
       ],
       "description": "Generic exam problem workflow.",
-      "mermaidSource": "flowchart TD\n  A[Read problem] --> B[Identify givens / unknown]\n  B --> C[Pick formula or method]\n  C --> D[Compute carefully]\n  D --> E[Check units / reasonableness]\n  E --> F[State answer]",
+      "mermaidSource": "flowchart TD\n  A[Read problem] --> B[Identify givens]\n  B --> C[Pick formula or method]\n  C --> D[Compute carefully]\n  D --> E[Check units]\n  E --> F[State answer]",
       "mermaidKind": "flowchart",
       "mermaidDirection": "TD"
     },
@@ -2051,7 +2051,7 @@
         "flowchart"
       ],
       "description": "Chain / product / quotient decision tree.",
-      "mermaidSource": "flowchart TD\n  A[Identify f] --> B{Product / chain / quotient?}\n  B -->|Chain| C[Inner then outer]\n  B -->|Product| D[u'v + uv']\n  B -->|Quotient| E[(u'v - uv') / v²]\n  C --> F[Simplify]\n  D --> F\n  E --> F",
+      "mermaidSource": "flowchart TD\n  A[Identify f] --> B{Which rule?}\n  B -->|Chain| C[Inner then outer]\n  B -->|Product| D[\"u v product\"]\n  B -->|Quotient| E[\"u over v\"]\n  C --> F[Simplify]\n  D --> F\n  E --> F",
       "mermaidKind": "flowchart",
       "mermaidDirection": "TD"
     },
@@ -2066,7 +2066,7 @@
         "flowchart"
       ],
       "description": "Choose u-sub, parts, or partial fractions.",
-      "mermaidSource": "flowchart TD\n  A[Look at integrand] --> B{f(g) g' form?}\n  B -->|Yes| C[u-substitution]\n  B -->|No| D{Product of unlike?}\n  D -->|Yes| E[Integration by parts]\n  D -->|No| F{Rational?}\n  F -->|Yes| G[Partial fractions]\n  F -->|No| H[Table / rewrite]\n  C --> I[Simplify + +C]\n  E --> I\n  G --> I\n  H --> I",
+      "mermaidSource": "flowchart TD\n  A[Look at integrand] --> B{Composition form?}\n  B -->|Yes| C[u-substitution]\n  B -->|No| D{Unlike product?}\n  D -->|Yes| E[Integration by parts]\n  D -->|No| F{Rational?}\n  F -->|Yes| G[Partial fractions]\n  F -->|No| H[Table or rewrite]\n  C --> I[Simplify]\n  E --> I\n  G --> I\n  H --> I",
       "mermaidKind": "flowchart",
       "mermaidDirection": "TD"
     },
@@ -2081,8 +2081,8 @@
         "p-value",
         "flowchart"
       ],
-      "description": "H0/Ha → statistic → decision.",
-      "mermaidSource": "flowchart TD\n  A[State H0 / Ha] --> B[Choose α and test]\n  B --> C[Compute statistic]\n  C --> D[p-value or critical region]\n  D --> E{Reject H0?}\n  E -->|Yes| F[Significant at α]\n  E -->|No| G[Fail to reject]\n  F --> H[Context sentence]\n  G --> H",
+      "description": "H0/Ha to decision.",
+      "mermaidSource": "flowchart TD\n  A[\"State H0 and Ha\"] --> B[\"Choose alpha and test\"]\n  B --> C[Compute statistic]\n  C --> D[p-value or critical]\n  D --> E{Reject H0?}\n  E -->|Yes| F[Significant]\n  E -->|No| G[Fail to reject]\n  F --> H[Context sentence]\n  G --> H",
       "mermaidKind": "flowchart",
       "mermaidDirection": "TD"
     },
@@ -2096,8 +2096,8 @@
         "bayes",
         "flowchart"
       ],
-      "description": "Prior → likelihood → posterior.",
-      "mermaidSource": "flowchart LR\n  A[Prior P(H)] --> B[Likelihood P(D|H)]\n  B --> C[Evidence P(D)]\n  C --> D[Posterior P(H|D)]\n  D --> E[Decision / next data]",
+      "description": "Prior to posterior.",
+      "mermaidSource": "flowchart LR\n  A[Prior] --> B[Likelihood]\n  B --> C[Evidence]\n  C --> D[Posterior]\n  D --> E[Decision]",
       "mermaidKind": "flowchart",
       "mermaidDirection": "LR"
     },
@@ -2112,8 +2112,8 @@
         "irr",
         "flowchart"
       ],
-      "description": "Estimate CF → discount → accept/reject.",
-      "mermaidSource": "flowchart TD\n  A[Estimate free cash flows] --> B[Choose discount rate r]\n  B --> C[Compute NPV / IRR / PI]\n  C --> D{NPV > 0?}\n  D -->|Yes| E[Rank and fund]\n  D -->|No| F[Reject or rework CF]\n  E --> G[Sensitivity / scenarios]",
+      "description": "Estimate CF then accept/reject.",
+      "mermaidSource": "flowchart TD\n  A[Estimate free cash flows] --> B[Choose discount rate]\n  B --> C[Compute NPV IRR PI]\n  C --> D{NPV positive?}\n  D -->|Yes| E[Rank and fund]\n  D -->|No| F[Reject or rework]\n  E --> G[Sensitivity check]",
       "mermaidKind": "flowchart",
       "mermaidDirection": "TD"
     },
@@ -2128,7 +2128,7 @@
         "beta",
         "flowchart"
       ],
-      "description": "Rf, beta, market premium → required return.",
+      "description": "Rf, beta, market premium to required return.",
       "mermaidSource": "flowchart LR\n  A[Get Rf] --> B[Estimate beta]\n  B --> C[Estimate E Rm]\n  C --> D[Compute E Ri]\n  D --> E[Compare to forecast]",
       "mermaidKind": "flowchart",
       "mermaidDirection": "LR"
@@ -2144,8 +2144,8 @@
         "equilibrium",
         "flowchart"
       ],
-      "description": "Identify shock → shift → new equilibrium.",
-      "mermaidSource": "flowchart TD\n  A[Identify shock] --> B{Demand or supply?}\n  B -->|Demand| C[Shift D]\n  B -->|Supply| D[Shift S]\n  C --> E[New eq P*, Q*]\n  D --> E\n  E --> F[Surplus / shortage transition]",
+      "description": "Identify shock then new equilibrium.",
+      "mermaidSource": "flowchart TD\n  A[Identify shock] --> B{Demand or supply?}\n  B -->|Demand| C[Shift D]\n  B -->|Supply| D[Shift S]\n  C --> E[New equilibrium]\n  D --> E\n  E --> F[Surplus or shortage path]",
       "mermaidKind": "flowchart",
       "mermaidDirection": "TD"
     },
@@ -2159,8 +2159,8 @@
         "lab",
         "flowchart"
       ],
-      "description": "Plan → measure → analyze → report.",
-      "mermaidSource": "flowchart TD\n  A[Hypothesis] --> B[Design procedure]\n  B --> C[Measure data]\n  C --> D[Analyze / error]\n  D --> E[Conclusion]\n  E --> F[Report]",
+      "description": "Plan measure analyze report.",
+      "mermaidSource": "flowchart TD\n  A[Hypothesis] --> B[Design procedure]\n  B --> C[Measure data]\n  C --> D[Analyze error]\n  D --> E[Conclusion]\n  E --> F[Report]",
       "mermaidKind": "flowchart",
       "mermaidDirection": "TD"
     },
@@ -2174,8 +2174,8 @@
         "kinematics",
         "flowchart"
       ],
-      "description": "List knowns → pick equation → solve.",
-      "mermaidSource": "flowchart TD\n  A[List knowns / unknown] --> B{Constant a?}\n  B -->|Yes| C[Pick kinematic equation]\n  B -->|No| D[Use calculus / energy]\n  C --> E[Solve algebraically]\n  D --> E\n  E --> F[Check units & sign]",
+      "description": "List knowns then pick equation.",
+      "mermaidSource": "flowchart TD\n  A[List knowns and unknown] --> B{Constant a?}\n  B -->|Yes| C[Pick kinematic equation]\n  B -->|No| D[Use calculus or energy]\n  C --> E[Solve algebraically]\n  D --> E\n  E --> F[Check units and sign]",
       "mermaidKind": "flowchart",
       "mermaidDirection": "TD"
     },
@@ -2190,8 +2190,8 @@
         "work",
         "flowchart"
       ],
-      "description": "System → energy types → solve.",
-      "mermaidSource": "flowchart TD\n  A[Define system] --> B[Initial energy]\n  B --> C[Final energy]\n  C --> D{Non-conservative work?}\n  D -->|Yes| E[ΔE_mech = W_nc]\n  D -->|No| F[E_i = E_f]\n  E --> G[Solve for unknown]\n  F --> G",
+      "description": "System energy types solve.",
+      "mermaidSource": "flowchart TD\n  A[Define system] --> B[Initial energy]\n  B --> C[Final energy]\n  C --> D{Nonconservative work?}\n  D -->|Yes| E[\"Delta E equals Wnc\"]\n  D -->|No| F[\"Ei equals Ef\"]\n  E --> G[Solve for unknown]\n  F --> G",
       "mermaidKind": "flowchart",
       "mermaidDirection": "TD"
     },
@@ -2205,8 +2205,8 @@
         "moles",
         "flowchart"
       ],
-      "description": "Balance → moles → limiting → product.",
-      "mermaidSource": "flowchart TD\n  A[Balance equation] --> B[Convert to moles]\n  B --> C[Compare mole ratios]\n  C --> D[Identify limiting reagent]\n  D --> E[Compute product moles]\n  E --> F[Mass / yield if needed]",
+      "description": "Balance moles limiting product.",
+      "mermaidSource": "flowchart TD\n  A[Balance equation] --> B[Convert to moles]\n  B --> C[Compare mole ratios]\n  C --> D[Identify limiting reagent]\n  D --> E[Compute product moles]\n  E --> F[Mass or yield]",
       "mermaidKind": "flowchart",
       "mermaidDirection": "TD"
     },
@@ -2221,7 +2221,7 @@
         "punnett",
         "flowchart"
       ],
-      "description": "Parents → gametes → Punnett → ratios.",
+      "description": "Parents gametes Punnett ratios.",
       "mermaidSource": "flowchart TD\n  A[Parental genotypes] --> B[Gametes]\n  B --> C[Punnett square]\n  C --> D[Offspring genotypes]\n  D --> E[Phenotype ratios]",
       "mermaidKind": "flowchart",
       "mermaidDirection": "TD"
@@ -2237,7 +2237,7 @@
         "flowchart"
       ],
       "description": "Fast midterm checklist.",
-      "mermaidSource": "flowchart LR\n  A[Read carefully] --> B[Identify topic]\n  B --> C[Pick formula]\n  C --> D[Plug numbers]\n  D --> E[Units / sanity]\n  E --> F[Box answer]",
+      "mermaidSource": "flowchart LR\n  A[Read carefully] --> B[Identify topic]\n  B --> C[Pick formula]\n  C --> D[Plug numbers]\n  D --> E[Units sanity]\n  E --> F[Box answer]",
       "mermaidKind": "flowchart",
       "mermaidDirection": "LR"
     },
@@ -2252,7 +2252,7 @@
         "overview"
       ],
       "description": "High-level calc topic map.",
-      "mermaidSource": "mindmap\n  root((Calculus))\n    Limits\n      Continuity\n      L'Hôpital\n    Derivatives\n      Rules\n      Applications\n    Integrals\n      FTC\n      Techniques\n    Series\n      Taylor\n      Convergence",
+      "mermaidSource": "mindmap\n  root((Calculus))\n    Limits\n      Continuity\n      LHopital\n    Derivatives\n      Rules\n      Applications\n    Integrals\n      FTC\n      Techniques\n    Series\n      Taylor\n      Convergence",
       "mermaidKind": "mindmap"
     },
     {
@@ -2265,7 +2265,7 @@
         "mindmap",
         "midterm"
       ],
-      "description": "TVM / risk / capital map.",
+      "description": "TVM risk capital map.",
       "mermaidSource": "mindmap\n  root((Finance))\n    TVM\n      PV FV\n      Annuities\n    Projects\n      NPV\n      IRR\n    Risk\n      CAPM\n      Beta\n    Capital\n      WACC\n      Leverage",
       "mermaidKind": "mindmap"
     },
@@ -2279,7 +2279,7 @@
         "mindmap",
         "overview"
       ],
-      "description": "S&D, elasticity, surplus map.",
+      "description": "S and D elasticity surplus map.",
       "mermaidSource": "mindmap\n  root((Micro))\n    Markets\n      Supply\n      Demand\n      Equilibrium\n    Elasticity\n      PED\n      Revenue\n    Welfare\n      CS PS\n      DWL\n    Firm\n      Cost\n      Profit",
       "mermaidKind": "mindmap"
     },
@@ -2293,7 +2293,7 @@
         "template",
         "flowchart"
       ],
-      "description": "Blank-ish starter flowchart (edit after import).",
+      "description": "Starter flowchart edit after import.",
       "mermaidSource": "flowchart TD\n  Start([Start]) --> Input[Collect input]\n  Input --> Check{Valid?}\n  Check -->|Yes| Process[Process data]\n  Check -->|No| Input\n  Process --> Done([Done])",
       "mermaidKind": "flowchart",
       "mermaidDirection": "TD"
@@ -2308,8 +2308,8 @@
         "template",
         "mindmap"
       ],
-      "description": "Starter mind map (edit after import).",
-      "mermaidSource": "mindmap\n  root((Topic))\n    Branch A\n      Detail 1\n      Detail 2\n    Branch B\n      Detail 3\n    Branch C",
+      "description": "Starter mind map edit after import.",
+      "mermaidSource": "mindmap\n  root((Topic))\n    BranchA\n      Detail1\n      Detail2\n    BranchB\n      Detail3\n    BranchC",
       "mermaidKind": "mindmap"
     }
   ]

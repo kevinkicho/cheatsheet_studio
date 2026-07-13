@@ -12,8 +12,8 @@ export function LeftSidebar() {
         </h2>
         <p className="mt-0.5 text-[10px] text-zinc-600">
           {hasSelection
-            ? 'Click empty canvas for sheet / grid settings'
-            : 'Title, grid covers, background'}
+            ? 'Click empty canvas for sheet / auto layout / grid'
+            : 'Title, auto layout, grid covers'}
         </p>
       </div>
       <div className="min-h-0 flex-1 overflow-hidden">

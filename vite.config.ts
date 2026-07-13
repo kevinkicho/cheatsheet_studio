@@ -10,4 +10,14 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  // Optional: browser → local Ollama (avoids CORS if OLLAMA_ORIGINS is strict)
+  server: {
+    proxy: {
+      '/ollama-proxy': {
+        target: 'http://127.0.0.1:11434',
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/ollama-proxy/, ''),
+      },
+    },
+  },
 })

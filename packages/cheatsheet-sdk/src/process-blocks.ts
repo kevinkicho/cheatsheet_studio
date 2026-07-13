@@ -1,11 +1,9 @@
 /**
  * Curated process-chart blocks (flowcharts + mind maps) for the SDK catalog.
- * Seed library historically covers equations/tables/figures only; agents use these
- * for process cards that match Studio Mermaid process charts.
+ * Mermaid labels avoid bare quotes/unicode that break parse (use double-quoted nodes).
  */
 import type { CatalogItem } from './catalog'
 
-/** Process-capable catalog entries (mermaidSource required). */
 export type ProcessBlock = CatalogItem & {
   type: 'process'
   mermaidSource: string
@@ -15,7 +13,6 @@ export type ProcessBlock = CatalogItem & {
 
 /**
  * Premade process blocks — ids are stable for agents (`proc-…`).
- * Prefer these over inventing Mermaid when the intent matches.
  */
 export const PROCESS_BLOCKS: ProcessBlock[] = [
   {
@@ -29,10 +26,10 @@ export const PROCESS_BLOCKS: ProcessBlock[] = [
     mermaidKind: 'flowchart',
     mermaidDirection: 'TD',
     mermaidSource: `flowchart TD
-  A[Read problem] --> B[Identify givens / unknown]
+  A[Read problem] --> B[Identify givens]
   B --> C[Pick formula or method]
   C --> D[Compute carefully]
-  D --> E[Check units / reasonableness]
+  D --> E[Check units]
   E --> F[State answer]`,
   },
   {
@@ -46,10 +43,10 @@ export const PROCESS_BLOCKS: ProcessBlock[] = [
     mermaidKind: 'flowchart',
     mermaidDirection: 'TD',
     mermaidSource: `flowchart TD
-  A[Identify f] --> B{Product / chain / quotient?}
+  A[Identify f] --> B{Which rule?}
   B -->|Chain| C[Inner then outer]
-  B -->|Product| D[u'v + uv']
-  B -->|Quotient| E[(u'v - uv') / v²]
+  B -->|Product| D["u v product"]
+  B -->|Quotient| E["u over v"]
   C --> F[Simplify]
   D --> F
   E --> F`,
@@ -65,14 +62,14 @@ export const PROCESS_BLOCKS: ProcessBlock[] = [
     mermaidKind: 'flowchart',
     mermaidDirection: 'TD',
     mermaidSource: `flowchart TD
-  A[Look at integrand] --> B{f(g) g' form?}
+  A[Look at integrand] --> B{Composition form?}
   B -->|Yes| C[u-substitution]
-  B -->|No| D{Product of unlike?}
+  B -->|No| D{Unlike product?}
   D -->|Yes| E[Integration by parts]
   D -->|No| F{Rational?}
   F -->|Yes| G[Partial fractions]
-  F -->|No| H[Table / rewrite]
-  C --> I[Simplify + +C]
+  F -->|No| H[Table or rewrite]
+  C --> I[Simplify]
   E --> I
   G --> I
   H --> I`,
@@ -84,15 +81,15 @@ export const PROCESS_BLOCKS: ProcessBlock[] = [
     subject: 'mathematics',
     topic: 'Statistics',
     tags: ['stats', 'p-value', 'flowchart'],
-    description: 'H0/Ha → statistic → decision.',
+    description: 'H0/Ha to decision.',
     mermaidKind: 'flowchart',
     mermaidDirection: 'TD',
     mermaidSource: `flowchart TD
-  A[State H0 / Ha] --> B[Choose α and test]
+  A["State H0 and Ha"] --> B["Choose alpha and test"]
   B --> C[Compute statistic]
-  C --> D[p-value or critical region]
+  C --> D[p-value or critical]
   D --> E{Reject H0?}
-  E -->|Yes| F[Significant at α]
+  E -->|Yes| F[Significant]
   E -->|No| G[Fail to reject]
   F --> H[Context sentence]
   G --> H`,
@@ -104,14 +101,14 @@ export const PROCESS_BLOCKS: ProcessBlock[] = [
     subject: 'mathematics',
     topic: 'Probability',
     tags: ['bayes', 'flowchart'],
-    description: 'Prior → likelihood → posterior.',
+    description: 'Prior to posterior.',
     mermaidKind: 'flowchart',
     mermaidDirection: 'LR',
     mermaidSource: `flowchart LR
-  A[Prior P(H)] --> B[Likelihood P(D|H)]
-  B --> C[Evidence P(D)]
-  C --> D[Posterior P(H|D)]
-  D --> E[Decision / next data]`,
+  A[Prior] --> B[Likelihood]
+  B --> C[Evidence]
+  C --> D[Posterior]
+  D --> E[Decision]`,
   },
   {
     id: 'proc-npv-screen',
@@ -120,16 +117,16 @@ export const PROCESS_BLOCKS: ProcessBlock[] = [
     subject: 'finance',
     topic: 'Capital budgeting',
     tags: ['npv', 'irr', 'flowchart'],
-    description: 'Estimate CF → discount → accept/reject.',
+    description: 'Estimate CF then accept/reject.',
     mermaidKind: 'flowchart',
     mermaidDirection: 'TD',
     mermaidSource: `flowchart TD
-  A[Estimate free cash flows] --> B[Choose discount rate r]
-  B --> C[Compute NPV / IRR / PI]
-  C --> D{NPV > 0?}
+  A[Estimate free cash flows] --> B[Choose discount rate]
+  B --> C[Compute NPV IRR PI]
+  C --> D{NPV positive?}
   D -->|Yes| E[Rank and fund]
-  D -->|No| F[Reject or rework CF]
-  E --> G[Sensitivity / scenarios]`,
+  D -->|No| F[Reject or rework]
+  E --> G[Sensitivity check]`,
   },
   {
     id: 'proc-capm-apply',
@@ -138,7 +135,7 @@ export const PROCESS_BLOCKS: ProcessBlock[] = [
     subject: 'finance',
     topic: 'Asset pricing',
     tags: ['capm', 'beta', 'flowchart'],
-    description: 'Rf, beta, market premium → required return.',
+    description: 'Rf, beta, market premium to required return.',
     mermaidKind: 'flowchart',
     mermaidDirection: 'LR',
     mermaidSource: `flowchart LR
@@ -154,16 +151,16 @@ export const PROCESS_BLOCKS: ProcessBlock[] = [
     subject: 'economics',
     topic: 'Microeconomics',
     tags: ['elasticity', 'equilibrium', 'flowchart'],
-    description: 'Identify shock → shift → new equilibrium.',
+    description: 'Identify shock then new equilibrium.',
     mermaidKind: 'flowchart',
     mermaidDirection: 'TD',
     mermaidSource: `flowchart TD
   A[Identify shock] --> B{Demand or supply?}
   B -->|Demand| C[Shift D]
   B -->|Supply| D[Shift S]
-  C --> E[New eq P*, Q*]
+  C --> E[New equilibrium]
   D --> E
-  E --> F[Surplus / shortage transition]`,
+  E --> F[Surplus or shortage path]`,
   },
   {
     id: 'proc-lab-method',
@@ -172,13 +169,13 @@ export const PROCESS_BLOCKS: ProcessBlock[] = [
     subject: 'chemistry',
     topic: 'General',
     tags: ['lab', 'flowchart'],
-    description: 'Plan → measure → analyze → report.',
+    description: 'Plan measure analyze report.',
     mermaidKind: 'flowchart',
     mermaidDirection: 'TD',
     mermaidSource: `flowchart TD
   A[Hypothesis] --> B[Design procedure]
   B --> C[Measure data]
-  C --> D[Analyze / error]
+  C --> D[Analyze error]
   D --> E[Conclusion]
   E --> F[Report]`,
   },
@@ -189,16 +186,16 @@ export const PROCESS_BLOCKS: ProcessBlock[] = [
     subject: 'physics',
     topic: 'Mechanics',
     tags: ['kinematics', 'flowchart'],
-    description: 'List knowns → pick equation → solve.',
+    description: 'List knowns then pick equation.',
     mermaidKind: 'flowchart',
     mermaidDirection: 'TD',
     mermaidSource: `flowchart TD
-  A[List knowns / unknown] --> B{Constant a?}
+  A[List knowns and unknown] --> B{Constant a?}
   B -->|Yes| C[Pick kinematic equation]
-  B -->|No| D[Use calculus / energy]
+  B -->|No| D[Use calculus or energy]
   C --> E[Solve algebraically]
   D --> E
-  E --> F[Check units & sign]`,
+  E --> F[Check units and sign]`,
   },
   {
     id: 'proc-energy-conservation',
@@ -207,15 +204,15 @@ export const PROCESS_BLOCKS: ProcessBlock[] = [
     subject: 'physics',
     topic: 'Mechanics',
     tags: ['energy', 'work', 'flowchart'],
-    description: 'System → energy types → solve.',
+    description: 'System energy types solve.',
     mermaidKind: 'flowchart',
     mermaidDirection: 'TD',
     mermaidSource: `flowchart TD
   A[Define system] --> B[Initial energy]
   B --> C[Final energy]
-  C --> D{Non-conservative work?}
-  D -->|Yes| E[ΔE_mech = W_nc]
-  D -->|No| F[E_i = E_f]
+  C --> D{Nonconservative work?}
+  D -->|Yes| E["Delta E equals Wnc"]
+  D -->|No| F["Ei equals Ef"]
   E --> G[Solve for unknown]
   F --> G`,
   },
@@ -226,7 +223,7 @@ export const PROCESS_BLOCKS: ProcessBlock[] = [
     subject: 'chemistry',
     topic: 'Stoichiometry',
     tags: ['moles', 'flowchart'],
-    description: 'Balance → moles → limiting → product.',
+    description: 'Balance moles limiting product.',
     mermaidKind: 'flowchart',
     mermaidDirection: 'TD',
     mermaidSource: `flowchart TD
@@ -234,7 +231,7 @@ export const PROCESS_BLOCKS: ProcessBlock[] = [
   B --> C[Compare mole ratios]
   C --> D[Identify limiting reagent]
   D --> E[Compute product moles]
-  E --> F[Mass / yield if needed]`,
+  E --> F[Mass or yield]`,
   },
   {
     id: 'proc-monohybrid',
@@ -243,7 +240,7 @@ export const PROCESS_BLOCKS: ProcessBlock[] = [
     subject: 'biology',
     topic: 'Genetics',
     tags: ['mendel', 'punnett', 'flowchart'],
-    description: 'Parents → gametes → Punnett → ratios.',
+    description: 'Parents gametes Punnett ratios.',
     mermaidKind: 'flowchart',
     mermaidDirection: 'TD',
     mermaidSource: `flowchart TD
@@ -266,7 +263,7 @@ export const PROCESS_BLOCKS: ProcessBlock[] = [
   A[Read carefully] --> B[Identify topic]
   B --> C[Pick formula]
   C --> D[Plug numbers]
-  D --> E[Units / sanity]
+  D --> E[Units sanity]
   E --> F[Box answer]`,
   },
   {
@@ -282,7 +279,7 @@ export const PROCESS_BLOCKS: ProcessBlock[] = [
   root((Calculus))
     Limits
       Continuity
-      L'Hôpital
+      LHopital
     Derivatives
       Rules
       Applications
@@ -300,7 +297,7 @@ export const PROCESS_BLOCKS: ProcessBlock[] = [
     subject: 'finance',
     topic: 'Corporate finance',
     tags: ['mindmap', 'midterm'],
-    description: 'TVM / risk / capital map.',
+    description: 'TVM risk capital map.',
     mermaidKind: 'mindmap',
     mermaidSource: `mindmap
   root((Finance))
@@ -324,7 +321,7 @@ export const PROCESS_BLOCKS: ProcessBlock[] = [
     subject: 'economics',
     topic: 'Microeconomics',
     tags: ['mindmap', 'overview'],
-    description: 'S&D, elasticity, surplus map.',
+    description: 'S and D elasticity surplus map.',
     mermaidKind: 'mindmap',
     mermaidSource: `mindmap
   root((Micro))
@@ -349,7 +346,7 @@ export const PROCESS_BLOCKS: ProcessBlock[] = [
     subject: 'general',
     topic: 'Templates',
     tags: ['template', 'flowchart'],
-    description: 'Blank-ish starter flowchart (edit after import).',
+    description: 'Starter flowchart edit after import.',
     mermaidKind: 'flowchart',
     mermaidDirection: 'TD',
     mermaidSource: `flowchart TD
@@ -366,16 +363,16 @@ export const PROCESS_BLOCKS: ProcessBlock[] = [
     subject: 'general',
     topic: 'Templates',
     tags: ['template', 'mindmap'],
-    description: 'Starter mind map (edit after import).',
+    description: 'Starter mind map edit after import.',
     mermaidKind: 'mindmap',
     mermaidSource: `mindmap
   root((Topic))
-    Branch A
-      Detail 1
-      Detail 2
-    Branch B
-      Detail 3
-    Branch C`,
+    BranchA
+      Detail1
+      Detail2
+    BranchB
+      Detail3
+    BranchC`,
   },
 ]
 

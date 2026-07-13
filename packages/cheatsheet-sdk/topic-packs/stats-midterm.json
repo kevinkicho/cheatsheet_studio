@@ -15,12 +15,12 @@
       {
         "type": "equation",
         "title": "Conditional probability",
-        "latex": "P(A\\mid B) = \\frac{P(A\\cap B)}{P(B)}"
+        "latex": "P(A\\mid B)=\\frac{P(A\\cap B)}{P(B)}"
       },
       {
         "type": "equation",
         "title": "Law of total probability",
-        "latex": "P(D)=\\sum_{i} P(D\\mid H_i)P(H_i)"
+        "latex": "P(D)=\\sum_{i} P(D\\mid H_{i})\\,P(H_{i})"
       },
       {
         "type": "table",
@@ -37,13 +37,13 @@
       {
         "type": "equation",
         "title": "z / t CI for mean",
-        "latex": "\\bar{x} \\pm z^{*}\\frac{\\sigma}{\\sqrt{n}}\\quad\\text{or}\\quad \\bar{x} \\pm t^{*}_{n-1}\\frac{s}{\\sqrt{n}}"
+        "latex": "\\bar{x}\\pm z^{*}\\frac{\\sigma}{\\sqrt{n}}\\quad\\text{or}\\quad\\bar{x}\\pm t^{*}_{n-1}\\frac{s}{\\sqrt{n}}"
       },
       { "type": "heading", "title": "3. Hypothesis tests" },
       {
         "type": "equation",
         "title": "Test statistic (mean)",
-        "latex": "z=\\frac{\\bar{x}-\\mu_0}{\\sigma/\\sqrt{n}}\\quad t=\\frac{\\bar{x}-\\mu_0}{s/\\sqrt{n}}"
+        "latex": "z=\\frac{\\bar{x}-\\mu_{0}}{\\sigma/\\sqrt{n}}\\quad t=\\frac{\\bar{x}-\\mu_{0}}{s/\\sqrt{n}}"
       },
       {
         "type": "table",

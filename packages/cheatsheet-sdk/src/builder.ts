@@ -115,8 +115,9 @@ export class SheetBuilder {
   }
 
   addEquation(input: AddEquationInput): this {
-    const width = input.width ?? 360
-    const height = input.height ?? 88
+    // Compact defaults for multi-column cheatsheets
+    const width = input.width ?? 300
+    const height = input.height ?? 72
     const item: CanvasItem = {
       id: createId('eq'),
       type: 'equation',
@@ -132,7 +133,7 @@ export class SheetBuilder {
       contentFill: true,
       keepAspectRatio: true,
       showTitle: true,
-      style: { ...DEFAULT_ITEM_STYLE },
+      style: { ...DEFAULT_ITEM_STYLE, fontSize: 14, titleFontSize: 9 },
     }
     this.items.push(item)
     this.advanceCursor(height)
@@ -140,8 +141,8 @@ export class SheetBuilder {
   }
 
   addTable(input: AddTableInput): this {
-    const width = input.width ?? 420
-    const height = input.height ?? 160
+    const width = input.width ?? 340
+    const height = input.height ?? 140
     const item: CanvasItem = {
       id: createId('tbl'),
       type: 'table',
@@ -190,8 +191,9 @@ export class SheetBuilder {
   }
 
   addProcess(input: AddProcessInput & { libraryItemId?: string }): this {
-    const width = input.width ?? 480
-    const height = input.height ?? 360
+    // Denser defaults for cheatsheet packing (was 480×360)
+    const width = input.width ?? 300
+    const height = input.height ?? 220
     const kind = input.mermaidKind ?? 'flowchart'
     const item: CanvasItem = {
       id: createId('proc'),
@@ -301,9 +303,14 @@ export class SheetBuilder {
   /**
    * Pack all items into the printable area (dense multi-column / sections when tall).
    * May raise canvas.printPageCount when content overflows one page.
+   * Defaults favor tight midterm cheatsheets (dense sections).
    */
   autoLayout(opts?: LayoutOptions): this {
-    const result = layoutSheet(this.items, this.canvas, opts)
+    const result = layoutSheet(this.items, this.canvas, {
+      dense: true,
+      mode: 'sections',
+      ...opts,
+    })
     this.items = result.items
     if (result.printPageCount > (this.canvas.printPageCount ?? 1)) {
       this.canvas = {

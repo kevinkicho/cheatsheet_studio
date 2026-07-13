@@ -136,9 +136,15 @@ async function applyBlock(
   }
 }
 
+/** Escape free text for use inside \\text{...} headings. */
 function escapeLatexText(s: string): string {
   return s
     .replace(/\\/g, '\\textbackslash{}')
     .replace(/[{}]/g, '')
-    .replace(/[%&#_$]/g, '')
+    .replace(/%/g, '\\%')
+    .replace(/&/g, '\\&')
+    .replace(/#/g, '\\#')
+    .replace(/\$/g, '\\$')
+    .replace(/_/g, '\\_')
+    .replace(/\^/g, '')
 }
