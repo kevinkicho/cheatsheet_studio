@@ -7,17 +7,26 @@ This is the canonical story of CheatSheet Studio: headless authoring + polished 
 ## 1. Agent (terminal)
 
 ```bash
-# All flagships → JSON + HTML + PDF + PNG + JPG (needs Playwright Chromium once)
-npx playwright install chromium   # once
+# Interactive: pick packs, formats, density; then “continue?” after each batch
+npx playwright install chromium   # once (for PDF/PNG/JPG)
 npm run agent:flagships
 
-# JSON only (fast, no Playwright)
+# Non-interactive — full pipeline (all packs + all formats + dense auto-layout)
+npm run agent:flagships:all
+# same as: npm run agent:flagships -- --yes
+
+# Full run + Ollama layout refine (needs OLLAMA_API_KEY in .env)
+npm run agent:flagships:ai
+
+# JSON only (fast)
 npm run agent:flagships:json
 
-# Single finance pack JSON
-npm run agent:flagship
-npm run agent:flagship:validate
+# Custom non-interactive
+npm run agent:flagships -- --yes --packs finance-midterm,calc-final --formats json,png --density xs
+npm run agent:flagships -- --yes --ai --density sm --columns 2
 ```
+
+Pipeline per pack: **compose Studio blocks → dense auto-layout (app density presets) → optional Ollama refine → export**.
 
 Output under `examples/agent-out/` (gitignored):
 

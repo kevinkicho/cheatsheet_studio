@@ -28,9 +28,9 @@ jobs:
           npm run test:sdk
           npm run cheatsheet -- doctor
 
-      - name: Flagship packs smoke (block-rich JSON)
+      - name: Flagship packs smoke (block-rich JSON + auto-layout)
         run: |
-          npm run agent:flagships:json
+          npm run agent:flagships -- --yes --json-only --density sm
           npm run cheatsheet -- validate examples/agent-out/finance-midterm.sheet.json
           npm run cheatsheet -- validate examples/agent-out/calc-final.sheet.json
           npm run cheatsheet -- validate examples/agent-out/stats-midterm.sheet.json
