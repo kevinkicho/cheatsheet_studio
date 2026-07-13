@@ -29,18 +29,41 @@ describe('topic packs', () => {
     expect(sheet.items.length).toBeGreaterThan(3)
   })
 
-  it('flagship finance-midterm pack composes a full midterm sheet', async () => {
+  it('flagship finance-midterm uses Studio blocks (eq + process + figure)', async () => {
     const pack = loadTopicPack('finance-midterm')
-    expect(pack.outline.blocks.length).toBeGreaterThan(10)
+    expect(pack.outline.blocks.length).toBeGreaterThan(8)
     const sheet = await composeTopicPack('finance-midterm')
     expect(validateSheetDocument(sheet).ok).toBe(true)
     expect(sheet.title.toLowerCase()).toMatch(/finance|midterm/)
-    expect(sheet.items.length).toBeGreaterThan(8)
-    const hasEq = sheet.items.some((i) => i.type === 'equation' || i.latex)
-    const hasTable = sheet.items.some((i) => i.type === 'table' || i.tableMarkdown)
-    const hasProcess = sheet.items.some(
-      (i) => i.type === 'process-chart' || i.mermaidSource,
+    expect(sheet.items.length).toBeGreaterThan(12)
+    const hasEq = sheet.items.some((i) => i.latex)
+    const hasTable = sheet.items.some((i) => i.tableMarkdown)
+    const hasProcess = sheet.items.some((i) => i.mermaidSource)
+    const hasFigure = sheet.items.some((i) => i.imageUrl)
+    const catalogLinked = sheet.items.filter((i) => i.libraryItemId).length
+    expect(hasEq && hasTable && hasProcess && hasFigure).toBe(true)
+    expect(catalogLinked).toBeGreaterThan(8)
+    // flowchart + mindmap process kinds
+    const kinds = new Set(
+      sheet.items
+        .filter((i) => i.mermaidKind)
+        .map((i) => i.mermaidKind),
     )
-    expect(hasEq && hasTable && hasProcess).toBe(true)
+    expect(kinds.has('flowchart') || sheet.items.some((i) => i.mermaidSource?.includes('flowchart'))).toBe(true)
+    expect(
+      sheet.items.some(
+        (i) =>
+          i.mermaidKind === 'mindmap' ||
+          i.mermaidSource?.trimStart().startsWith('mindmap'),
+      ),
+    ).toBe(true)
+  })
+
+  it('calc-final flagship mixes catalog process + figure', async () => {
+    const sheet = await composeTopicPack('calc-final')
+    expect(validateSheetDocument(sheet).ok).toBe(true)
+    expect(sheet.items.some((i) => i.mermaidSource)).toBe(true)
+    expect(sheet.items.some((i) => i.imageUrl)).toBe(true)
+    expect(sheet.items.filter((i) => i.libraryItemId).length).toBeGreaterThan(5)
   })
 })

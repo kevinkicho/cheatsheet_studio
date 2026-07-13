@@ -32,10 +32,13 @@ Sheets produced here use the **same document shape** the app already loads (`can
 **Agent builds a midterm → Import JSON → Export PDF**
 
 ```bash
-# From monorepo root
-npm run agent:flagship          # finance-midterm
-npm run agent:flagships         # + calc-final, stats-midterm, micro-midterm
-npm run agent:flagship:pdf      # agent Playwright PDF (not Studio WYSIWYG)
+# From monorepo root — block-rich midterms + PDF/PNG/JPG
+npx playwright install chromium   # once
+npm run agent:flagships
+# → examples/agent-out/*.{sheet.json,html,pdf,png,jpg}
+
+npm run agent:flagships:json      # JSON only
+npm run cheatsheet -- export-png out/sheet.json -o out/sheet.png
 ```
 
 In the Studio (signed in):

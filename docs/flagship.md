@@ -7,14 +7,27 @@ This is the canonical story of CheatSheet Studio: headless authoring + polished 
 ## 1. Agent (terminal)
 
 ```bash
-npm run agent:flagship          # finance-midterm
-npm run agent:flagships         # + calc-final, stats-midterm, micro-midterm
+# All flagships → JSON + HTML + PDF + PNG + JPG (needs Playwright Chromium once)
+npx playwright install chromium   # once
+npm run agent:flagships
+
+# JSON only (fast, no Playwright)
+npm run agent:flagships:json
+
+# Single finance pack JSON
+npm run agent:flagship
 npm run agent:flagship:validate
-# optional agent PDF (not Studio WYSIWYG):
-npm run agent:flagship:pdf
 ```
 
-Output: `examples/agent-out/*.sheet.json` (gitignored dumps; regenerate anytime).
+Output under `examples/agent-out/` (gitignored):
+
+| File | Purpose |
+|------|---------|
+| `*.sheet.json` | **Import** into Studio |
+| `*.html` | Preview print layout |
+| `*.pdf` / `*.png` / `*.jpg` | Shareable agent exports (not Studio WYSIWYG) |
+
+Flagships are built from **Studio blocks**: seed equations/tables/figures + curated process flowcharts and mind maps.
 
 ## 2. Import (Studio)
 

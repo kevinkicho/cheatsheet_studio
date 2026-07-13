@@ -28,15 +28,15 @@ jobs:
           npm run test:sdk
           npm run cheatsheet -- doctor
 
-      - name: Flagship packs smoke (agent → sheet JSON)
+      - name: Flagship packs smoke (block-rich JSON)
         run: |
-          npm run agent:flagship:validate
-          npm run cheatsheet -- pack calc-final -o examples/agent-out/calc-final.sheet.json
+          npm run agent:flagships:json
+          npm run cheatsheet -- validate examples/agent-out/finance-midterm.sheet.json
           npm run cheatsheet -- validate examples/agent-out/calc-final.sheet.json
-          npm run cheatsheet -- pack stats-midterm -o examples/agent-out/stats-midterm.sheet.json
           npm run cheatsheet -- validate examples/agent-out/stats-midterm.sheet.json
-          npm run cheatsheet -- pack micro-midterm -o examples/agent-out/micro-midterm.sheet.json
           npm run cheatsheet -- validate examples/agent-out/micro-midterm.sheet.json
+          # Capability check: finance pack must link catalog blocks + process
+          node -e "const s=require('./examples/agent-out/finance-midterm.sheet.json'); if(!s.items.some(i=>i.libraryItemId)) process.exit(1); if(!s.items.some(i=>i.mermaidSource)) process.exit(2); if(!s.items.some(i=>i.imageUrl)) process.exit(3); console.log('finance-midterm ok', s.items.length, 'items')"
 
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium

@@ -39,8 +39,10 @@ Commands:
   layout         Auto-pack items (multi-column when tall)
   validate       Check sheet JSON shape
   summarize      Print summary (--verbose lists items)
-  export-html    Sheet JSON → print HTML
+  export-html    Sheet JSON → print HTML (KaTeX + Mermaid CDN)
   export-pdf     Sheet JSON → PDF (Playwright Chromium)
+  export-png     Sheet JSON → PNG screenshot
+  export-jpg     Sheet JSON → JPEG screenshot
   push / pull    Firestore (CHEATSHEET_SA_PATH + CHEATSHEET_UID)
   mcp            Stdio MCP server for coding agents
 
@@ -460,7 +462,7 @@ async function run() {
       const file = args[1]
       if (!file) {
         console.error(
-          'Usage: export-pdf <sheet.json> -o <out.pdf> [--keep-html] [--light]\n' +
+          'Usage: export-pdf <sheet.json> -o <out.pdf> [--keep-html] [--light] [--plain]\n' +
             'Requires: npx playwright install chromium',
         )
         process.exit(1)
@@ -475,8 +477,40 @@ async function run() {
       const result = await exportSheetPdf(sheet, out, {
         dark: !args.includes('--light'),
         keepHtml: args.includes('--keep-html'),
+        rich: !args.includes('--plain'),
       })
       console.log(`PDF → ${result.pdfPath} (${result.engine})`)
+      return
+    }
+
+    if (cmd === 'export-png' || cmd === 'export-jpg' || cmd === 'export-jpeg') {
+      const file = args[1]
+      const isJpg = cmd === 'export-jpg' || cmd === 'export-jpeg'
+      if (!file) {
+        console.error(
+          `Usage: ${cmd} <sheet.json> -o <out.${isJpg ? 'jpg' : 'png'}> [--keep-html] [--light] [--plain]\n` +
+            'Requires: npx playwright install chromium',
+        )
+        process.exit(1)
+      }
+      const out = argValue(args, '-o') ?? argValue(args, '--out')
+      if (!out) {
+        console.error('Missing -o / --out path')
+        process.exit(1)
+      }
+      const { exportSheetPng, exportSheetJpeg } = await import('./export-print')
+      const sheet = readSheetFile(file)
+      const common = {
+        dark: !args.includes('--light'),
+        keepHtml: args.includes('--keep-html'),
+        rich: !args.includes('--plain'),
+      }
+      const result = isJpg
+        ? await exportSheetJpeg(sheet, out, common)
+        : await exportSheetPng(sheet, out, common)
+      console.log(
+        `${result.format.toUpperCase()} → ${result.imagePath} (${result.engine})`,
+      )
       if (result.htmlPath) console.log(`HTML kept → ${result.htmlPath}`)
       return
     }

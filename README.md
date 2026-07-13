@@ -353,16 +353,14 @@ Agents and scripts can **compose sheet JSON** without opening the React app. The
 ### Flagship path
 
 ```bash
-# Agent builds finance midterm sheet
-npm run agent:flagship
-# → examples/agent-out/finance-midterm.sheet.json
-
-# Also: calc-final, stats-midterm, micro-midterm
+# All flagships (Studio blocks + process charts) → JSON/HTML/PDF/PNG/JPG
+npx playwright install chromium   # once
 npm run agent:flagships
+# → examples/agent-out/finance-midterm.{sheet.json,pdf,png,jpg} (+ calc/stats/micro)
 ```
 
-Then in the Studio: **Import JSON** (new / replace / append) or **drop** the file → auto fit-print → polish → **Export PDF** (Studio WYSIWYG).  
-CLI `export-pdf` is a separate agent print path (not pixel-identical).
+Then in the Studio: **Import** the `.sheet.json` → polish → **Export PDF** (Studio WYSIWYG).  
+CLI PNG/JPG/PDF are shareable agent previews (not pixel-identical to the canvas).
 
 ```bash
 # Outline → sheet (also fine for agents)

@@ -29,4 +29,19 @@ describe('export-print', () => {
     const raw = readFileSync(out, 'utf8')
     expect(raw).toContain('</html>')
   })
+
+  it('rich HTML includes KaTeX hooks and mermaid blocks', () => {
+    const sheet = createSheet({ title: 'Rich' })
+      .addEquation({ title: 'E', latex: 'E=mc^2' })
+      .addProcess({
+        title: 'Flow',
+        mermaidSource: 'flowchart TD\n  A-->B',
+      })
+      .build()
+    const html = sheetToPrintHtml(sheet, { rich: true })
+    expect(html).toContain('katex')
+    expect(html).toContain('data-latex')
+    expect(html).toContain('class="mermaid"')
+    expect(html).toContain('flowchart TD')
+  })
 })

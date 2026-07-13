@@ -1,73 +1,42 @@
 {
   "id": "calc-final",
   "title": "Calculus — Final Review",
-  "description": "Flagship-style final: derivatives, integrals, series, and exam workflow.",
+  "description": "Flagship math: seed derivatives/integrals + process workflows + mind map + figure.",
   "subjects": ["mathematics"],
   "outline": {
     "title": "Calculus Final — Cheat Sheet",
-    "notes": "Topic pack: calc-final (flagship math path)",
+    "notes": "Studio blocks: equations, table, process (flowchart + mindmap), figure",
     "autoLayout": true,
     "printSizeId": "letter",
     "orientation": "portrait",
     "blocks": [
       { "type": "heading", "title": "1. Derivatives" },
       {
-        "type": "equation",
-        "title": "Chain rule",
-        "latex": "\\frac{dy}{dx} = \\frac{dy}{du}\\,\\frac{du}{dx}"
+        "type": "catalog",
+        "ids": [
+          "math-deriv-def",
+          "math-chain",
+          "math-product",
+          "math-quotient",
+          "math-mean-value"
+        ]
       },
-      {
-        "type": "equation",
-        "title": "Product / quotient",
-        "latex": "(uv)'=u'v+uv'\\quad\\left(\\frac{u}{v}\\right)'=\\frac{u'v-uv'}{v^{2}}"
-      },
-      {
-        "type": "table",
-        "title": "Common derivatives",
-        "markdown": "| f | f' |\n|---|----|\n| x^n | n x^{n-1} |\n| e^x | e^x |\n| ln x | 1/x |\n| sin x | cos x |\n| cos x | -sin x |\n| tan x | sec² x |"
-      },
+      { "type": "catalog", "id": "math-deriv-table" },
+      { "type": "catalog", "id": "proc-differentiate" },
       { "type": "heading", "title": "2. Integrals" },
       {
-        "type": "equation",
-        "title": "FTC",
-        "latex": "\\frac{d}{dx}\\int_{a}^{x} f(t)\\,dt = f(x)"
+        "type": "catalog",
+        "ids": ["math-ftc", "math-sub", "math-int-parts"]
       },
-      {
-        "type": "equation",
-        "title": "Substitution",
-        "latex": "\\int f(g(x))g'(x)\\,dx = \\int f(u)\\,du"
-      },
-      {
-        "type": "equation",
-        "title": "Integration by parts",
-        "latex": "\\int u\\,dv = uv - \\int v\\,du"
-      },
+      { "type": "catalog", "id": "proc-integrate" },
+      { "type": "heading", "title": "3. Map & check" },
+      { "type": "catalog", "id": "proc-mind-calc-topics" },
+      { "type": "catalog", "id": "fig-parabola" },
+      { "type": "catalog", "id": "proc-problem-solve" },
       {
         "type": "table",
-        "title": "Technique picker",
-        "markdown": "| Form | Try |\n|------|-----|\n| f(g) g' | u-sub |\n| product of unlike | parts |\n| rational | partial fractions |\n| √(a²-x²) etc. | trig sub |"
-      },
-      { "type": "heading", "title": "3. Series" },
-      {
-        "type": "equation",
-        "title": "Taylor",
-        "latex": "f(x)=\\sum_{n=0}^{\\infty}\\frac{f^{(n)}(a)}{n!}(x-a)^{n}"
-      },
-      {
-        "type": "equation",
-        "title": "Geometric series",
-        "latex": "\\sum_{n=0}^{\\infty} r^{n} = \\frac{1}{1-r}\\quad(|r|<1)"
-      },
-      {
-        "type": "process",
-        "title": "Exam problem flow",
-        "kind": "flowchart",
-        "mermaid": "flowchart TD\n  A[Read carefully] --> B{Diff / int / series?}\n  B -->|Diff| C[Chain/product/quotient]\n  B -->|Int| D[Pick technique]\n  B -->|Series| E[Known series or tests]\n  C --> F[Simplify + check domain]\n  D --> F\n  E --> F"
-      },
-      {
-        "type": "table",
-        "title": "Quick tips",
-        "markdown": "| Pitfall | Fix |\n|---------|-----|\n| Forgot +C | Indefinite only |\n| Chain rule miss | Inner derivative |\n| Series radius | Ratio/root test |\n| Units/domain | State assumptions |"
+        "title": "Exam tips",
+        "markdown": "| Pitfall | Fix |\n|---------|-----|\n| Forgot +C | Indefinite only |\n| Chain rule miss | Inner derivative |\n| Wrong technique | Match form first |"
       }
     ]
   }

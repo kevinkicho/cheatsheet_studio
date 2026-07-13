@@ -21,17 +21,22 @@ description: >
 ### 0. Flagship path (demo the product)
 
 ```bash
-npm run agent:flagship
-# → examples/agent-out/finance-midterm.sheet.json
-npm run agent:flagships   # + calc-final, stats-midterm, micro-midterm
+# All flagships → JSON + HTML + PDF + PNG + JPG (block-rich sheets)
+npx playwright install chromium   # once
+npm run agent:flagships
+# → examples/agent-out/{finance-midterm,calc-final,stats-midterm,micro-midterm}.{sheet.json,html,pdf,png,jpg}
+
+npm run agent:flagships:json      # JSON only, no Playwright
 npm run agent:flagship:validate
-# optional agent PDF (not Studio WYSIWYG):
-npm run agent:flagship:pdf
-# denser layout pass:
+
+# denser layout / single format:
 npm run cheatsheet -- layout out/sheet.json --dense --mode sections
+npm run cheatsheet -- export-png out/sheet.json -o out/sheet.png
+npm run cheatsheet -- export-jpg out/sheet.json -o out/sheet.jpg
 ```
 
-User: **Import JSON** (new / replace / append) or **drop** → fit-print → polish → **Export PDF** (Studio).
+Flagships use **Studio blocks** (seed equations/figures + process flowcharts/mind maps).  
+User: **Import** `*.sheet.json` → polish → Studio **Export PDF** (WYSIWYG).
 
 ### 1. Topic pack (fastest)
 

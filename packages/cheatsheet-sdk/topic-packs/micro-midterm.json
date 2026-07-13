@@ -1,11 +1,11 @@
 {
   "id": "micro-midterm",
   "title": "Microeconomics — Midterm Review",
-  "description": "Flagship micro: supply/demand, elasticity, surplus, costs & profit.",
+  "description": "Flagship micro: elasticity blocks, S&D figure, shock flowchart, mind map.",
   "subjects": ["economics"],
   "outline": {
     "title": "Microeconomics Midterm — Cheat Sheet",
-    "notes": "Topic pack: micro-midterm",
+    "notes": "Studio econ blocks + figure + process (flowchart + mindmap)",
     "autoLayout": true,
     "printSizeId": "letter",
     "orientation": "portrait",
@@ -16,22 +16,17 @@
         "title": "Market equilibrium",
         "latex": "Q_d(P^{*})=Q_s(P^{*})"
       },
+      { "type": "catalog", "id": "fig-supply-demand" },
+      { "type": "catalog", "id": "proc-supply-demand-shock" },
       {
         "type": "table",
         "title": "Shifts vs moves",
-        "markdown": "| Change | Curve | Along curve |\n|--------|-------|-------------|\n| Income, tastes, # buyers | Demand shift | — |\n| Input costs, tech, # sellers | Supply shift | — |\n| Price change only | — | Movement |"
-      },
-      {
-        "type": "process",
-        "title": "Shock analysis",
-        "kind": "flowchart",
-        "mermaid": "flowchart TD\n  A[Identify shock] --> B{Demand or supply?}\n  B -->|Demand| C[Shift D]\n  B -->|Supply| D[Shift S]\n  C --> E[New eq P*, Q*]\n  D --> E\n  E --> F[Surplus / shortage transition]"
+        "markdown": "| Change | Curve | Along curve |\n|--------|-------|-------------|\n| Income, tastes | Demand shift | — |\n| Input costs, tech | Supply shift | — |\n| Price only | — | Movement |"
       },
       { "type": "heading", "title": "2. Elasticity" },
       {
-        "type": "equation",
-        "title": "Price elasticity of demand",
-        "latex": "\\varepsilon = \\frac{\\%\\Delta Q_d}{\\%\\Delta P}"
+        "type": "catalog",
+        "ids": ["econ-elasticity", "econ-income-elast"]
       },
       {
         "type": "equation",
@@ -43,7 +38,7 @@
         "title": "Revenue & elasticity",
         "markdown": "| |ε| | Demand | Price ↑ → TR |\n|------|--------|-------------|\n| > 1 | Elastic | Falls |\n| = 1 | Unit | Unchanged |\n| < 1 | Inelastic | Rises |"
       },
-      { "type": "heading", "title": "3. Surplus, cost, profit" },
+      { "type": "heading", "title": "3. Surplus, firm & map" },
       {
         "type": "equation",
         "title": "Consumer / producer surplus (linear)",
@@ -54,22 +49,10 @@
         "title": "Profit",
         "latex": "\\pi = TR - TC = P\\cdot q - TC(q)"
       },
-      {
-        "type": "equation",
-        "title": "Competitive shutdown / entry (long run idea)",
-        "latex": "P < AVC \\Rightarrow \\text{shut down short run}"
-      },
-      {
-        "type": "table",
-        "title": "Cost terms",
-        "markdown": "| Symbol | Meaning |\n|--------|--------|\n| FC, VC | Fixed / variable cost |\n| ATC, AVC | Average total / variable |\n| MC | Marginal cost |\n| MR | Marginal revenue |"
-      },
-      {
-        "type": "process",
-        "title": "Exam checklist",
-        "kind": "flowchart",
-        "mermaid": "flowchart LR\n  A[Graph or algebra?] --> B[Label axes & curves]\n  B --> C[Find eq / elasticity / surplus]\n  C --> D[Direction of shift]\n  D --> E[Welfare / policy note]"
-      }
+      { "type": "catalog", "id": "econ-market-structures" },
+      { "type": "catalog", "id": "fig-ppf" },
+      { "type": "catalog", "id": "proc-mind-micro-topics" },
+      { "type": "catalog", "id": "proc-exam-checklist" }
     ]
   }
 }

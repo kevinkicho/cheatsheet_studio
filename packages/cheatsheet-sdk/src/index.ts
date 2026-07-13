@@ -88,5 +88,12 @@ export {
   sheetToPrintHtml,
   writeSheetHtml,
   exportSheetPdf,
+  exportSheetImage,
+  exportSheetPng,
+  exportSheetJpeg,
 } from './export-print'
-export type { ExportHtmlOptions, ExportPdfResult } from './export-print'
+export type {
+  ExportHtmlOptions,
+  ExportPdfResult,
+  ExportImageResult,
+} from './export-print'

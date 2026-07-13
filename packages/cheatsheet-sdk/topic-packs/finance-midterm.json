@@ -1,95 +1,50 @@
 {
   "id": "finance-midterm",
   "title": "Finance — Midterm Review",
-  "description": "Flagship demo: TVM, NPV/IRR, CAPM, WACC, and decision process — agent build → Import JSON → Export PDF.",
+  "description": "Flagship: Studio finance blocks + NPV flowchart + finance mind map + cash-flow figure.",
   "subjects": ["finance", "economics"],
   "outline": {
     "title": "Finance Midterm — Cheat Sheet",
-    "notes": "Topic pack: finance-midterm (flagship agent → Studio → PDF path)",
+    "notes": "Built from Studio blocks (equations/figures/process) — agent → Import → Export",
     "autoLayout": true,
     "printSizeId": "letter",
     "orientation": "portrait",
     "blocks": [
       { "type": "heading", "title": "1. Time value of money" },
       {
-        "type": "equation",
-        "title": "Future value (lump sum)",
-        "latex": "FV = PV\\,(1+r)^{n}"
+        "type": "catalog",
+        "ids": [
+          "fin-pv",
+          "fin-fv",
+          "fin-annuity",
+          "fin-annuity-fv",
+          "fin-perp",
+          "fin-ear",
+          "fin-continuous"
+        ]
       },
-      {
-        "type": "equation",
-        "title": "Present value (lump sum)",
-        "latex": "PV = \\frac{FV}{(1+r)^{n}}"
-      },
-      {
-        "type": "equation",
-        "title": "Ordinary annuity PV",
-        "latex": "PV_{\\mathrm{ann}} = C\\,\\frac{1-(1+r)^{-n}}{r}"
-      },
-      {
-        "type": "equation",
-        "title": "Growing perpetuity",
-        "latex": "PV_{\\infty} = \\frac{C}{r-g}\\quad (r>g)"
-      },
+      { "type": "catalog", "id": "fin-compound" },
+      { "type": "catalog", "id": "fig-cashflow" },
       { "type": "heading", "title": "2. Project appraisal" },
       {
-        "type": "equation",
-        "title": "NPV",
-        "latex": "\\mathrm{NPV} = -C_0 + \\sum_{t=1}^{T} \\frac{C_t}{(1+r)^t}"
-      },
-      {
-        "type": "equation",
-        "title": "IRR (definition)",
-        "latex": "0 = -C_0 + \\sum_{t=1}^{T} \\frac{C_t}{(1+\\mathrm{IRR})^t}"
-      },
-      {
-        "type": "equation",
-        "title": "Profitability index",
-        "latex": "\\mathrm{PI} = \\frac{\\mathrm{PV}(\\text{inflows})}{C_0}"
+        "type": "catalog",
+        "ids": ["fin-npv", "fin-irr"]
       },
       {
         "type": "table",
         "title": "Accept / reject rules",
-        "markdown": "| Metric | Accept if | Watch out |\n|--------|-----------|----------|\n| NPV | NPV > 0 | Scale / mutually exclusive |\n| IRR | IRR > r | Multiple IRRs, reinvestment |\n| PI | PI > 1 | Capital rationing |\n| Payback | ≤ cutoff | Ignores TVM / late CF |"
+        "markdown": "| Metric | Accept if | Watch out |\n|--------|-----------|----------|\n| NPV | NPV > 0 | Scale / mutually exclusive |\n| IRR | IRR > r | Multiple IRRs |\n| PI | PI > 1 | Capital rationing |"
       },
+      { "type": "catalog", "id": "proc-npv-screen" },
+      { "type": "heading", "title": "3. Risk, return & capital" },
       {
-        "type": "process",
-        "title": "Capital budgeting flow",
-        "kind": "flowchart",
-        "mermaid": "flowchart TD\n  A[Estimate free cash flows] --> B[Choose discount rate r]\n  B --> C[Compute NPV / IRR / PI]\n  C --> D{NPV > 0?}\n  D -->|Yes| E[Rank & fund]\n  D -->|No| F[Reject or rework CF]\n  E --> G[Sensitivity / scenarios]"
+        "type": "catalog",
+        "ids": ["fin-capm", "fin-beta", "fin-wacc", "fin-sharpe", "fin-gordon"]
       },
-      { "type": "heading", "title": "3. Risk & return" },
-      {
-        "type": "equation",
-        "title": "CAPM expected return",
-        "latex": "E[R_i] = R_f + \\beta_i\\bigl(E[R_m]-R_f\\bigr)"
-      },
-      {
-        "type": "equation",
-        "title": "Portfolio beta",
-        "latex": "\\beta_p = \\sum_i w_i\\,\\beta_i"
-      },
-      {
-        "type": "equation",
-        "title": "WACC (simple)",
-        "latex": "r_{\\mathrm{WACC}} = w_E r_E + w_D r_D(1-t_c)"
-      },
-      {
-        "type": "table",
-        "title": "Midterm symbols",
-        "markdown": "| Symbol | Meaning |\n|--------|--------|\n| r, r_E | Discount / equity cost |\n| R_f | Risk-free rate |\n| β | Systematic risk vs market |\n| C_t | Cash flow at t |\n| t_c | Corporate tax rate |\n| w_E, w_D | Target capital weights |"
-      },
-      {
-        "type": "process",
-        "title": "Exam problem checklist",
-        "kind": "flowchart",
-        "mermaid": "flowchart LR\n  A[Read: CF timing] --> B[Identify: PV / NPV / CAPM / WACC]\n  B --> C[Pick formula]\n  C --> D[Plug numbers carefully]\n  D --> E[Units: % vs decimal]\n  E --> F[Sanity: sign & magnitude]"
-      },
-      {
-        "type": "table",
-        "title": "Quick tips",
-        "markdown": "| Pitfall | Fix |\n|---------|-----|\n| Annuity vs perpetuity | Finite n → annuity formula |\n| Beginning vs end of period | Annuity due: ×(1+r) |\n| Real vs nominal r | Match CF inflation treatment |\n| Equity vs project r | CAPM → r_E; ops CF → WACC |"
-      }
+      { "type": "catalog", "id": "fin-ratios" },
+      { "type": "catalog", "id": "proc-capm-apply" },
+      { "type": "catalog", "id": "proc-mind-finance-topics" },
+      { "type": "catalog", "id": "proc-exam-checklist" }
     ]
   }
 }

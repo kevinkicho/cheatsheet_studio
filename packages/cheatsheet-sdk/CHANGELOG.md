@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.1
+
+- `export-png` / `export-jpg` (Playwright full-page screenshots)
+- Rich print HTML: KaTeX + Mermaid CDN for PDF/PNG/JPG
+- Flagship packs rebuilt from **Studio blocks** (eq/table/figure/process flowchart+mindmap)
+- `npm run agent:flagships` → JSON + HTML + PDF + PNG + JPG for all midterms
+
 ## 0.4.0
 
 - **Studio blocks API**: browse/add equations, tables, figures, and process charts
