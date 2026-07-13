@@ -30,7 +30,6 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { composeTopicPack } from '../packages/cheatsheet-sdk/src/topic-packs.ts'
-import { SheetBuilder } from '../packages/cheatsheet-sdk/src/builder.ts'
 import {
   writeSheetFile,
   summarizeSheet,
@@ -43,6 +42,10 @@ import {
   exportSheetPng,
   exportSheetJpeg,
 } from '../packages/cheatsheet-sdk/src/export-print.ts'
+import {
+  packSheetDocument,
+  type PackDensity,
+} from '../packages/cheatsheet-sdk/src/cheatsheet-pack.ts'
 
 const FLAGSHIPS = [
   {
@@ -69,19 +72,9 @@ const FLAGSHIPS = [
 
 type PackId = (typeof FLAGSHIPS)[number]['id']
 type Format = 'json' | 'html' | 'pdf' | 'png' | 'jpg'
-type Density = 'xs' | 'sm' | 'md' | 'lg'
+type Density = PackDensity
 
 const ALL_FORMATS: Format[] = ['json', 'html', 'pdf', 'png', 'jpg']
-
-const DENSITY: Record<
-  Density,
-  { size: number; process: number; font: number; title: number; gap: number }
-> = {
-  xs: { size: 0.58, process: 0.52, font: 11, title: 8, gap: 6 },
-  sm: { size: 0.72, process: 0.65, font: 13, title: 9, gap: 8 },
-  md: { size: 0.88, process: 0.8, font: 15, title: 10, gap: 10 },
-  lg: { size: 1, process: 0.95, font: 17, title: 11, gap: 12 },
-}
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const outDir = path.join(root, 'examples', 'agent-out')
@@ -147,7 +140,9 @@ function parseArgs(argv: string[]): Partial<RunConfig> & { help?: boolean } {
       )
   }
   const dens = take('--density') as Density | undefined
-  if (dens && dens in DENSITY) out.density = dens
+  if (dens === 'xs' || dens === 'sm' || dens === 'md' || dens === 'lg') {
+    out.density = dens
+  }
   const cols = take('--columns')
   if (cols === 'auto') out.columns = 'auto'
   else if (cols && Number.isFinite(Number(cols))) {
@@ -248,60 +243,23 @@ async function pickOne<T extends string>(
   return byId?.id ?? defaultId
 }
 
-/** Dense cheatsheet pack — mirrors app Auto layout density presets. */
+/**
+ * Dense mosaic pack — content-sized blocks, multi-column, fit letter (or minimal).
+ * Matches real exam sheets, not a vertical document stack.
+ */
 function applyAutoLayout(
   sheet: SheetDocument,
   density: Density,
-  columns: number | 'auto',
+  _columns: number | 'auto',
   gap?: number,
+  target: 'letter' | 'minimal' = 'letter',
 ): SheetDocument {
-  const preset = DENSITY[density]
-  const g = gap ?? preset.gap
-  const scaled = sheet.items.map((it) => {
-    const isProc = Boolean(it.mermaidSource) || it.type === 'process-chart'
-    const isHead =
-      typeof it.latex === 'string' &&
-      it.latex.trim().startsWith('\\text{') &&
-      it.latex.length < 100
-    const scale = isHead ? Math.min(1, preset.size * 1.05) : isProc ? preset.process : preset.size
-    const w = Math.max(
-      isHead ? 160 : isProc ? 140 : 100,
-      Math.round(it.width * scale),
-    )
-    const h = Math.max(
-      isHead ? 28 : isProc ? 100 : 48,
-      Math.round((isHead ? Math.min(it.height, 48) : it.height) * (isHead ? 0.85 : scale)),
-    )
-    return {
-      ...it,
-      width: w,
-      height: h,
-      style: {
-        ...it.style,
-        fontSize: preset.font,
-        titleFontSize: preset.title,
-      },
-      autoFit: false,
-      contentFill: true,
-    }
+  return packSheetDocument(sheet, {
+    density,
+    gap,
+    target,
+    fitOnePage: true,
   })
-  const cols =
-    columns === 'auto'
-      ? scaled.length >= 14
-        ? 3
-        : scaled.length >= 6
-          ? 2
-          : 1
-      : columns
-  return SheetBuilder.fromDocument({ ...sheet, items: scaled })
-    .autoLayout({
-      dense: true,
-      mode: 'sections',
-      columns: cols,
-      gap: g,
-      columnGap: g,
-    })
-    .build()
 }
 
 async function aiRefineLayout(
@@ -376,15 +334,16 @@ async function aiRefineLayout(
       rationale?: string
     }
     const dens =
-      parsed.density && parsed.density in DENSITY ? parsed.density : density
-    const cols =
-      typeof parsed.columns === 'number'
-        ? Math.min(3, Math.max(1, Math.round(parsed.columns)))
-        : 'auto'
-    const next = applyAutoLayout(sheet, dens, cols, parsed.gap)
+      parsed.density === 'xs' ||
+      parsed.density === 'sm' ||
+      parsed.density === 'md' ||
+      parsed.density === 'lg'
+        ? parsed.density
+        : density
+    const next = applyAutoLayout(sheet, dens, 'auto', parsed.gap, 'letter')
     return {
       sheet: next,
-      note: `AI ${model}: density=${dens} cols=${cols}${
+      note: `AI ${model}: density=${dens}${
         parsed.rationale ? ` — ${parsed.rationale.slice(0, 80)}` : ''
       }`,
     }
@@ -415,15 +374,23 @@ async function buildAndExport(
     )
   }
 
-  // App-aligned dense auto-layout
+  // Content-sized mosaic pack into letter (or minimal) — real cheatsheet density
   sheet = applyAutoLayout(
     sheet,
     layout.density,
     layout.columns,
     layout.gap,
+    'letter',
+  )
+  const bb = sheet.items.reduce(
+    (a, it) => ({
+      maxX: Math.max(a.maxX, it.x + it.width),
+      maxY: Math.max(a.maxY, it.y + it.height),
+    }),
+    { maxX: 0, maxY: 0 },
   )
   console.log(
-    `  layout density=${layout.density} columns=${layout.columns} gap=${layout.gap ?? DENSITY[layout.density].gap}`,
+    `  layout mosaic density=${layout.density} gap=${layout.gap ?? 'auto'} · bbox ~${Math.round(bb.maxX)}×${Math.round(bb.maxY)}px`,
   )
 
   if (layout.ai) {
@@ -461,18 +428,15 @@ async function buildAndExport(
     writeSheetFile(jsonPath, sheet)
     console.log(`  JSON  ${path.relative(root, jsonPath)}`)
   }
+  const exportOpts = { dark: true as const, rich: true as const, layout: 'canvas' as const }
   if (want.has('html')) {
-    const htmlPath = writeSheetHtml(sheet, `${base}.html`, {
-      dark: true,
-      rich: true,
-    })
+    const htmlPath = writeSheetHtml(sheet, `${base}.html`, exportOpts)
     console.log(`  HTML  ${path.relative(root, htmlPath)}`)
   }
   if (want.has('pdf')) {
     try {
       const pdf = await exportSheetPdf(sheet, `${base}.pdf`, {
-        dark: true,
-        rich: true,
+        ...exportOpts,
         keepHtml: false,
       })
       console.log(`  PDF   ${path.relative(root, pdf.pdfPath)}`)
@@ -484,10 +448,7 @@ async function buildAndExport(
   }
   if (want.has('png')) {
     try {
-      const png = await exportSheetPng(sheet, `${base}.png`, {
-        dark: true,
-        rich: true,
-      })
+      const png = await exportSheetPng(sheet, `${base}.png`, exportOpts)
       console.log(`  PNG   ${path.relative(root, png.imagePath)}`)
     } catch (e) {
       console.warn(
@@ -498,8 +459,7 @@ async function buildAndExport(
   if (want.has('jpg')) {
     try {
       const jpg = await exportSheetJpeg(sheet, `${base}.jpg`, {
-        dark: true,
-        rich: true,
+        ...exportOpts,
         quality: 88,
       })
       console.log(`  JPG   ${path.relative(root, jpg.imagePath)}`)

@@ -97,3 +97,12 @@ export type {
   ExportPdfResult,
   ExportImageResult,
 } from './export-print'
+
+export {
+  packCheatsheetDocument,
+  packSheetDocument,
+  estimateBlockSize,
+  packRectsShelf,
+  packRectsMaxRects,
+} from './cheatsheet-pack'
+export type { CheatsheetPackOptions, PackDensity, PackResult } from './cheatsheet-pack'

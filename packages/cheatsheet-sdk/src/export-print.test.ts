@@ -38,10 +38,11 @@ describe('export-print', () => {
         mermaidSource: 'flowchart TD\n  A-->B',
       })
       .build()
-    const html = sheetToPrintHtml(sheet, { rich: true })
+    const html = sheetToPrintHtml(sheet, { rich: true, layout: 'canvas' })
     expect(html).toContain('katex')
     expect(html).toContain('data-latex')
     expect(html).toContain('class="mermaid"')
     expect(html).toContain('flowchart TD')
+    expect(html).toContain('position: absolute')
   })
 })

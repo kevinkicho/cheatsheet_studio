@@ -1,7 +1,7 @@
 /**
- * Headless print export for agents: HTML always; PDF / PNG / JPG via Playwright.
- * Not a pixel-perfect match of the Studio canvas — readable delivery layout.
- * Prefer Studio Export after Import when WYSIWYG fidelity matters.
+ * Headless print export: HTML / PDF / PNG / JPG.
+ * Default layout is **canvas** (absolute x/y positions) so dense cheatsheet
+ * packing is visible — not a vertical document stack.
  */
 import { mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
@@ -9,15 +9,17 @@ import type { CanvasItem, SheetDocument } from './types'
 import { LETTER_PX } from './defaults'
 
 export type ExportHtmlOptions = {
-  /** Dark theme like the Studio (default true). */
   dark?: boolean
-  /** Include page footer with title (default true). */
   footer?: boolean
-  /**
-   * Load KaTeX + Mermaid from CDN for nicer PDF/PNG (default true).
-   * Offline/CI can set false for static markup only.
-   */
   rich?: boolean
+  /**
+   * canvas — absolute positions (cheatsheet mosaic). Default.
+   * stack — legacy vertical list (ignores x/y).
+   */
+  layout?: 'canvas' | 'stack'
+  /** Page background size; default letter or content bounds for canvas. */
+  pageWidth?: number
+  pageHeight?: number
 }
 
 function escapeHtml(s: string): string {
@@ -66,7 +68,6 @@ function itemBodyHtml(it: CanvasItem, rich: boolean): string {
     return mdTableToHtml(it.tableMarkdown)
   }
   if (it.mermaidSource) {
-    // Mermaid CDN script renders .mermaid blocks
     return `<pre class="mermaid">${escapeHtml(it.mermaidSource)}</pre>`
   }
   if (it.imageUrl) {
@@ -74,6 +75,24 @@ function itemBodyHtml(it: CanvasItem, rich: boolean): string {
     return `<img src="${src}" alt="${escapeHtml(it.title ?? 'figure')}" class="fig" />`
   }
   return '<p class="empty">—</p>'
+}
+
+function contentBounds(items: CanvasItem[]) {
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = 0
+  let maxY = 0
+  for (const it of items) {
+    if (it.hidden) continue
+    minX = Math.min(minX, it.x)
+    minY = Math.min(minY, it.y)
+    maxX = Math.max(maxX, it.x + it.width)
+    maxY = Math.max(maxY, it.y + it.height)
+  }
+  if (!Number.isFinite(minX)) {
+    return { minX: 0, minY: 0, maxX: LETTER_PX.width, maxY: LETTER_PX.height }
+  }
+  return { minX, minY, maxX, maxY }
 }
 
 /**
@@ -86,12 +105,13 @@ export function sheetToPrintHtml(
   const dark = opts.dark !== false
   const footer = opts.footer !== false
   const rich = opts.rich !== false
-  const bg = dark ? '#0f1115' : '#ffffff'
-  const fg = dark ? '#e8eaed' : '#111827'
-  const card = dark ? 'rgba(30,32,40,0.95)' : '#f9fafb'
-  const border = dark ? 'rgba(99,102,241,0.45)' : '#d1d5db'
-  const muted = dark ? '#9ca3af' : '#6b7280'
-  const mermaidTheme = dark ? 'dark' : 'default'
+  const layout = opts.layout ?? 'canvas'
+  const bg = dark ? '#0f1115' : '#faf9f6'
+  const fg = dark ? '#e8eaed' : '#1a1a1a'
+  const card = dark ? 'rgba(28,30,36,0.98)' : 'rgba(255,255,255,0.92)'
+  const border = dark ? 'rgba(99,102,241,0.4)' : 'rgba(0,0,0,0.12)'
+  const muted = dark ? '#9ca3af' : '#555'
+  const mermaidTheme = dark ? 'dark' : 'neutral'
 
   const sorted = [...sheet.items]
     .filter((i) => !i.hidden)
@@ -102,20 +122,47 @@ export function sheetToPrintHtml(
   const nProc = sorted.filter((i) => i.mermaidSource).length
   const nFig = sorted.filter((i) => i.imageUrl).length
 
-  const cards = sorted
-    .map((it) => {
-      const title = it.title
-        ? `<div class="card-title">${escapeHtml(it.title)}</div>`
-        : ''
-      return `<article class="card" data-type="${escapeHtml(it.type)}">
+  const bounds = contentBounds(sorted)
+  const pageW =
+    opts.pageWidth ??
+    (layout === 'canvas'
+      ? Math.max(LETTER_PX.width, Math.ceil(bounds.maxX + 24))
+      : LETTER_PX.width)
+  const pageH =
+    opts.pageHeight ??
+    (layout === 'canvas'
+      ? Math.max(LETTER_PX.height, Math.ceil(bounds.maxY + 24))
+      : LETTER_PX.height)
+
+  let cards: string
+  if (layout === 'stack') {
+    cards = sorted
+      .map((it) => {
+        const title = it.title
+          ? `<div class="card-title">${escapeHtml(it.title)}</div>`
+          : ''
+        return `<article class="card stack" data-type="${escapeHtml(it.type)}">
   ${title}
   <div class="card-body">${itemBodyHtml(it, rich)}</div>
 </article>`
-    })
-    .join('\n')
-
-  const pageW = LETTER_PX.width
-  const pageH = LETTER_PX.height
+      })
+      .join('\n')
+  } else {
+    cards = sorted
+      .map((it) => {
+        const fs = it.style?.fontSize ?? 11
+        const tfs = it.style?.titleFontSize ?? 8
+        const title = it.title
+          ? `<div class="card-title" style="font-size:${tfs}px">${escapeHtml(it.title)}</div>`
+          : ''
+        return `<article class="card abs" data-type="${escapeHtml(it.type)}"
+  style="left:${Math.round(it.x)}px;top:${Math.round(it.y)}px;width:${Math.round(it.width)}px;height:${Math.round(it.height)}px;font-size:${fs}px">
+  ${title}
+  <div class="card-body">${itemBodyHtml(it, rich)}</div>
+</article>`
+      })
+      .join('\n')
+  }
 
   const richHead = rich
     ? `
@@ -128,8 +175,8 @@ export function sheetToPrintHtml(
       theme: '${mermaidTheme}',
       securityLevel: 'loose',
       fontFamily: 'ui-sans-serif, system-ui, sans-serif',
+      flowchart: { nodeSpacing: 12, rankSpacing: 18, padding: 4 },
     });
-    window.__mermaidReady = true;
   </script>
   <script>
     function renderKatex() {
@@ -142,19 +189,23 @@ export function sheetToPrintHtml(
           el.textContent = src;
         }
       });
-      window.__katexReady = true;
     }
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', function () {
-        setTimeout(renderKatex, 50);
-        setTimeout(renderKatex, 400);
-      });
-    } else {
-      setTimeout(renderKatex, 50);
-      setTimeout(renderKatex, 400);
-    }
+    document.addEventListener('DOMContentLoaded', function () {
+      setTimeout(renderKatex, 40);
+      setTimeout(renderKatex, 350);
+    });
   </script>`
     : ''
+
+  const boardClass = layout === 'canvas' ? 'board canvas' : 'board stack'
+  const boardInner =
+    layout === 'canvas'
+      ? `<div class="surface" style="width:${pageW}px;height:${pageH}px">${cards}</div>`
+      : `<div class="stack-flow">
+    <h1>${escapeHtml(sheet.title)}</h1>
+    <div class="meta">${sorted.length} cards · ${nEq} eq · ${nTable} table · ${nProc} process · ${nFig} figure</div>
+    ${cards}
+  </div>`
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -162,121 +213,153 @@ export function sheetToPrintHtml(
   <meta charset="utf-8" />
   <title>${escapeHtml(sheet.title)}</title>
   <style>
-    @page { size: letter portrait; margin: 0.5in; }
+    @page { size: letter portrait; margin: 0.35in; }
     * { box-sizing: border-box; }
     body {
       margin: 0;
       font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-      background: ${bg};
+      background: ${dark ? '#09090b' : '#e8e4dc'};
       color: ${fg};
-      font-size: 14px;
-      line-height: 1.45;
-    }
-    .page {
-      max-width: ${pageW}px;
-      min-height: ${pageH * 0.5}px;
-      margin: 0 auto;
-      padding: 24px 28px 40px;
-    }
-    h1 {
-      font-size: 1.35rem;
-      font-weight: 650;
-      margin: 0 0 0.35rem;
-      letter-spacing: -0.02em;
-    }
-    .meta {
-      color: ${muted};
       font-size: 11px;
-      margin-bottom: 1.25rem;
+      line-height: 1.25;
     }
-    .cards {
+    .board.canvas {
       display: flex;
-      flex-direction: column;
-      gap: 12px;
+      justify-content: center;
+      padding: 12px;
     }
-    .card {
+    .surface {
+      position: relative;
+      background: ${bg};
+      box-shadow: 0 4px 24px rgba(0,0,0,0.35);
+      overflow: hidden;
+    }
+    .surface::before {
+      content: ${JSON.stringify(sheet.title)};
+      position: absolute;
+      left: 10px;
+      top: 6px;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: ${muted};
+      opacity: 0.85;
+      z-index: 0;
+      pointer-events: none;
+      max-width: 90%;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .card.abs {
+      position: absolute;
+      z-index: 1;
       background: ${card};
       border: 1px solid ${border};
-      border-radius: 8px;
-      padding: 10px 12px;
-      break-inside: avoid;
-      page-break-inside: avoid;
+      border-radius: 4px;
+      padding: 3px 5px 4px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .card.stack {
+      background: ${card};
+      border: 1px solid ${border};
+      border-radius: 6px;
+      padding: 8px 10px;
+      margin-bottom: 8px;
     }
     .card[data-type="process-chart"] {
-      border-color: ${dark ? 'rgba(129,140,248,0.55)' : '#a5b4fc'};
+      border-color: ${dark ? 'rgba(129,140,248,0.5)' : 'rgba(79,70,229,0.35)'};
     }
     .card[data-type="figure"] {
-      border-color: ${dark ? 'rgba(52,211,153,0.45)' : '#6ee7b7'};
+      border-color: ${dark ? 'rgba(52,211,153,0.4)' : 'rgba(16,185,129,0.35)'};
     }
     .card-title {
-      font-size: 10px;
+      font-size: 7px;
       text-transform: uppercase;
-      letter-spacing: 0.06em;
+      letter-spacing: 0.04em;
       color: ${muted};
-      margin-bottom: 6px;
-      font-weight: 600;
+      margin-bottom: 2px;
+      font-weight: 650;
+      line-height: 1.15;
+      flex-shrink: 0;
     }
-    .card-body { overflow-x: auto; }
-    .latex { font-size: 1.05em; overflow-x: auto; }
+    .card-body {
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .latex { font-size: 1em; overflow: hidden; max-width: 100%; }
+    .latex .katex { font-size: 1em !important; }
     .latex code {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size: 13px;
+      font-family: ui-monospace, Menlo, Consolas, monospace;
+      font-size: 0.9em;
       white-space: pre-wrap;
       word-break: break-word;
     }
     table {
       border-collapse: collapse;
       width: 100%;
-      font-size: 12px;
+      font-size: 0.85em;
     }
     th, td {
       border: 1px solid ${border};
-      padding: 4px 8px;
+      padding: 1px 3px;
       text-align: left;
     }
     th { color: ${muted}; font-weight: 600; }
     pre.mermaid {
       margin: 0;
-      font-size: 11px;
+      font-size: 8px;
       white-space: pre-wrap;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      color: ${muted};
+      max-width: 100%;
+      max-height: 100%;
+      overflow: hidden;
       background: transparent;
     }
-    pre.mermaid svg { max-width: 100%; height: auto; }
+    pre.mermaid svg { max-width: 100% !important; height: auto !important; }
     img.fig {
       max-width: 100%;
-      height: auto;
+      max-height: 100%;
+      object-fit: contain;
       display: block;
-      margin: 0 auto;
     }
-    footer {
-      margin-top: 2rem;
-      font-size: 10px;
+    .stack-flow {
+      max-width: ${LETTER_PX.width}px;
+      margin: 0 auto;
+      padding: 20px;
+      background: ${bg};
+    }
+    .stack-flow h1 { font-size: 1.1rem; margin: 0 0 0.4rem; }
+    .meta { color: ${muted}; font-size: 10px; margin-bottom: 0.8rem; }
+    footer.sheet-foot {
+      margin-top: 8px;
+      text-align: center;
+      font-size: 8px;
       color: ${muted};
-      border-top: 1px solid ${border};
-      padding-top: 8px;
     }
     @media print {
       body { background: ${bg}; }
-      .page { max-width: none; padding: 0; }
+      .board.canvas { padding: 0; }
+      .surface { box-shadow: none; }
     }
   </style>
   ${richHead}
 </head>
 <body>
-  <div class="page" data-export-ready="0">
-    <h1>${escapeHtml(sheet.title)}</h1>
-    <div class="meta">${sorted.length} cards · ${nEq} eq · ${nTable} table · ${nProc} process · ${nFig} figure · agent export</div>
-    <div class="cards">
-${cards}
-    </div>
-    ${
-      footer
-        ? `<footer>Generated for print · re-open JSON in Studio for interactive editing · Studio PDF is WYSIWYG</footer>`
-        : ''
-    }
+  <div class="${boardClass}">
+    ${boardInner}
   </div>
+  ${
+    footer
+      ? `<footer class="sheet-foot">${escapeHtml(sheet.title)} · ${sorted.length} blocks · agent canvas export</footer>`
+      : ''
+  }
 </body>
 </html>
 `
@@ -306,52 +389,6 @@ export type ExportImageResult = {
   engine: 'playwright'
 }
 
-async function withPlaywrightPage(
-  htmlPath: string,
-  opts: ExportHtmlOptions | undefined,
-  run: (page: {
-    screenshot: (o: Record<string, unknown>) => Promise<Buffer>
-    pdf: (o: Record<string, unknown>) => Promise<Buffer>
-    goto: (url: string, o?: Record<string, unknown>) => Promise<unknown>
-    waitForTimeout: (ms: number) => Promise<void>
-    setViewportSize: (s: { width: number; height: number }) => Promise<void>
-    locator: (sel: string) => { boundingBox: () => Promise<{ width: number; height: number } | null> }
-    evaluate: (fn: () => unknown) => Promise<unknown>
-  }) => Promise<void>,
-): Promise<void> {
-  const { chromium } = await import('playwright')
-  const browser = await chromium.launch({ headless: true })
-  try {
-    const page = await browser.newPage()
-    await page.setViewportSize({ width: 920, height: 1280 })
-    const fileUrl = pathToFileUrl(htmlPath)
-    await page.goto(fileUrl, { waitUntil: 'networkidle', timeout: 60_000 })
-    // Allow KaTeX + Mermaid CDN time to paint
-    if (opts?.rich !== false) {
-      await page.waitForTimeout(800)
-      try {
-        await page.waitForFunction(
-          () => {
-            const latex = document.querySelectorAll('.latex .katex, .latex[data-latex]').length
-            const mermaidSvg = document.querySelectorAll('pre.mermaid svg, .mermaid svg').length
-            const mermaidBlocks = document.querySelectorAll('pre.mermaid').length
-            // ready if no mermaid or at least one svg, and katex attempted
-            const mermaidOk = mermaidBlocks === 0 || mermaidSvg > 0
-            return mermaidOk
-          },
-          { timeout: 12_000 },
-        )
-      } catch {
-        /* still screenshot partial */
-      }
-      await page.waitForTimeout(300)
-    }
-    await run(page as never)
-  } finally {
-    await browser.close()
-  }
-}
-
 function pathToFileUrl(p: string): string {
   const resolved = path.resolve(p)
   if (process.platform === 'win32') {
@@ -360,9 +397,70 @@ function pathToFileUrl(p: string): string {
   return 'file://' + resolved
 }
 
-/**
- * Export PDF using Playwright Chromium when available.
- */
+async function withPlaywrightPage(
+  htmlPath: string,
+  opts: ExportHtmlOptions | undefined,
+  pageSize: { width: number; height: number },
+  run: (page: {
+    screenshot: (o: Record<string, unknown>) => Promise<Buffer>
+    pdf: (o: Record<string, unknown>) => Promise<Buffer>
+    goto: (url: string, o?: Record<string, unknown>) => Promise<unknown>
+    waitForTimeout: (ms: number) => Promise<void>
+    setViewportSize: (s: { width: number; height: number }) => Promise<void>
+  }) => Promise<void>,
+): Promise<void> {
+  const { chromium } = await import('playwright')
+  const browser = await chromium.launch({ headless: true })
+  try {
+    const page = await browser.newPage()
+    await page.setViewportSize({
+      width: Math.min(1400, Math.max(900, pageSize.width + 48)),
+      height: Math.min(2000, Math.max(1100, pageSize.height + 48)),
+    })
+    await page.goto(pathToFileUrl(htmlPath), {
+      waitUntil: 'networkidle',
+      timeout: 60_000,
+    })
+    if (opts?.rich !== false) {
+      await page.waitForTimeout(900)
+      try {
+        await page.waitForFunction(
+          () => {
+            const blocks = document.querySelectorAll('pre.mermaid').length
+            const svgs = document.querySelectorAll('pre.mermaid svg, .mermaid svg')
+              .length
+            return blocks === 0 || svgs > 0
+          },
+          { timeout: 14_000 },
+        )
+      } catch {
+        /* partial ok */
+      }
+      await page.waitForTimeout(400)
+    }
+    await run(page as never)
+  } finally {
+    await browser.close()
+  }
+}
+
+function pageDims(sheet: SheetDocument, opts?: ExportHtmlOptions) {
+  const items = sheet.items.filter((i) => !i.hidden)
+  const b = contentBounds(items)
+  const layout = opts?.layout ?? 'canvas'
+  const width =
+    opts?.pageWidth ??
+    (layout === 'canvas'
+      ? Math.max(LETTER_PX.width, Math.ceil(b.maxX + 24))
+      : LETTER_PX.width)
+  const height =
+    opts?.pageHeight ??
+    (layout === 'canvas'
+      ? Math.max(LETTER_PX.height, Math.ceil(b.maxY + 24))
+      : LETTER_PX.height)
+  return { width, height }
+}
+
 export async function exportSheetPdf(
   sheet: SheetDocument,
   outPath: string,
@@ -371,15 +469,17 @@ export async function exportSheetPdf(
   const absPdf = path.resolve(outPath)
   mkdirSync(path.dirname(absPdf), { recursive: true })
   const htmlPath = absPdf.replace(/\.pdf$/i, '') + '.print.html'
-  writeSheetHtml(sheet, htmlPath, opts)
+  const dims = pageDims(sheet, opts)
+  writeSheetHtml(sheet, htmlPath, { layout: 'canvas', ...opts })
 
   try {
-    await withPlaywrightPage(htmlPath, opts, async (page) => {
+    await withPlaywrightPage(htmlPath, opts, dims, async (page) => {
       await page.pdf({
         path: absPdf,
-        format: 'Letter',
+        width: `${dims.width}px`,
+        height: `${dims.height}px`,
         printBackground: true,
-        margin: { top: '0.5in', right: '0.5in', bottom: '0.5in', left: '0.5in' },
+        margin: { top: '0', right: '0', bottom: '0', left: '0' },
       })
     })
     if (!opts?.keepHtml) {
@@ -396,36 +496,34 @@ export async function exportSheetPdf(
     const msg = e instanceof Error ? e.message : String(e)
     throw new Error(
       `PDF export needs Playwright (npx playwright install chromium).\n` +
-        `HTML was written to ${htmlPath}\n` +
-        `Original error: ${msg}`,
+        `HTML was written to ${htmlPath}\nOriginal error: ${msg}`,
     )
   }
 }
 
-/**
- * Full-page PNG or JPEG screenshot of the print HTML (Playwright).
- */
 export async function exportSheetImage(
   sheet: SheetDocument,
   outPath: string,
   opts?: ExportHtmlOptions & {
     keepHtml?: boolean
     format?: 'png' | 'jpeg'
-    /** JPEG quality 0–100 (default 88) */
     quality?: number
   },
 ): Promise<ExportImageResult> {
   const format =
-    opts?.format ??
-    (/\.jpe?g$/i.test(outPath) ? 'jpeg' : 'png')
+    opts?.format ?? (/\.jpe?g$/i.test(outPath) ? 'jpeg' : 'png')
   const abs = path.resolve(outPath)
   mkdirSync(path.dirname(abs), { recursive: true })
-  const htmlPath =
-    abs.replace(/\.(png|jpe?g)$/i, '') + '.print.html'
-  writeSheetHtml(sheet, htmlPath, { ...opts, rich: opts?.rich !== false })
+  const htmlPath = abs.replace(/\.(png|jpe?g)$/i, '') + '.print.html'
+  const dims = pageDims(sheet, opts)
+  writeSheetHtml(sheet, htmlPath, {
+    layout: 'canvas',
+    rich: opts?.rich !== false,
+    ...opts,
+  })
 
   try {
-    await withPlaywrightPage(htmlPath, opts, async (page) => {
+    await withPlaywrightPage(htmlPath, opts, dims, async (page) => {
       const shot: Record<string, unknown> = {
         path: abs,
         fullPage: true,
@@ -449,9 +547,7 @@ export async function exportSheetImage(
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     throw new Error(
-      `Image export needs Playwright (npx playwright install chromium).\n` +
-        `HTML was written to ${htmlPath}\n` +
-        `Original error: ${msg}`,
+      `Image export needs Playwright.\nHTML: ${htmlPath}\n${msg}`,
     )
   }
 }
