@@ -5,6 +5,7 @@ import { useFlowStore } from './store'
 import { serialize } from './serializer'
 import { cleanFlowchartLayout, organizeConnectionRoutes } from './layout'
 import { layoutWithMermaid } from './layoutFromMermaid'
+import { asMindmapEdges } from './mindmap'
 
 /** Rearrange nodes (dagre / Mermaid sizes) and re-route pipes. */
 export function runAutoLayout(syntaxHint?: string): void {
@@ -62,14 +63,16 @@ export function runAutoLayout(syntaxHint?: string): void {
 /**
  * Keep node positions; clear bend/shaft waypoints and re-assign face ports
  * so pipes re-route cleanly (overlap/align encouraged).
+ * Mindmap: re-stamp straight spokes (no pipe geometry).
  */
 export function runOrganizeConnections(): void {
-  const { nodes, edges, diagramKind, layoutMindmap, pushHistory } =
-    useFlowStore.getState()
+  const { nodes, edges, diagramKind, pushHistory } = useFlowStore.getState()
   if (nodes.length === 0) return
 
   if (diagramKind === 'mindmap') {
-    layoutMindmap({ fit: false })
+    // Ensure edges are straight mindmap spokes after free-form edits
+    pushHistory()
+    useFlowStore.setState({ edges: asMindmapEdges(edges) })
     return
   }
 

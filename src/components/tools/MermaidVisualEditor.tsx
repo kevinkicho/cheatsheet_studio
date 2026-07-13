@@ -109,15 +109,19 @@ export function getVisualEditorMermaidSource(): string {
  * interactive editor shows (positions + edge routing), not a Mermaid re-layout.
  */
 export function getVisualEditorProcessFlow(): ProcessFlowSnapshot | null {
-  const { nodes, edges, direction, curveStyle, diagramKind, multiEdgeSpacing } =
+  const { nodes, edges, direction, curveStyle, multiEdgeSpacing, diagramKind } =
     useFlowStore.getState()
   if (nodes.length === 0) return null
-  // Mind maps still use Mermaid SVG on cards (radial layout is stable)
-  if (diagramKind === 'mindmap') return null
+  // Mind maps use the same free-form snapshot path as flowcharts so the card
+  // paints the RF editor geometry (not a Mermaid re-layout).
   return captureProcessFlow(nodes, edges, {
     direction,
     curveStyle,
     multiEdgeSpacing,
+    diagramKind:
+      diagramKind === 'mindmap' || diagramKind === 'flowchart'
+        ? diagramKind
+        : 'flowchart',
   })
 }
 
@@ -153,19 +157,25 @@ async function tryImport(
       : detectKindFromSource(body || 'flowchart TD')
 
   // Card free-form snapshot → editor (exact match, no Mermaid re-layout).
-  // Always restore snapshot edges — they are user/card truth, not auto-wire.
+  // Flowchart + mindmap both use processFlow as geometry truth.
   if (
-    kind === 'flowchart' &&
+    (kind === 'flowchart' || kind === 'mindmap') &&
     isProcessFlowSnapshot(processFlow) &&
     processFlow.nodes.length > 0
   ) {
-    const { nodes, edges } = processFlowToRf(processFlow)
+    // Prefer Process chip kind so mindmap edges restore as straight spokes
+    // even if an older snapshot omitted diagramKind.
+    const snapForRf =
+      kind === 'mindmap' && processFlow.diagramKind !== 'mindmap'
+        ? { ...processFlow, diagramKind: 'mindmap' as const }
+        : processFlow
+    const { nodes, edges } = processFlowToRf(snapForRf)
     importDiagram(nodes, edges, {
       direction: processFlow.direction ?? 'TD',
       theme: 'dark',
       look: 'classic',
       curveStyle: processFlow.curveStyle ?? 'basis',
-      diagramKind: 'flowchart',
+      diagramKind: kind,
       // Keep snapshot handles/paths exactly as saved on the card
       skipHandleReconcile: true,
     })
@@ -173,6 +183,13 @@ async function tryImport(
       useFlowStore.setState({ multiEdgeSpacing: processFlow.multiEdgeSpacing })
     }
     useFlowStore.setState((s) => ({ layoutEpoch: s.layoutEpoch + 1 }))
+    if (kind === 'mindmap') {
+      const syntaxOut =
+        trimmed && /^mindmap\b/im.test(body)
+          ? trimmed
+          : serializeMindmap(nodes, edges)
+      return syntaxOut
+    }
     const syntaxOut =
       trimmed && /^(flowchart|graph)\b/im.test(body)
         ? trimmed
@@ -521,7 +538,7 @@ function VisualEditorInner({
         }}
       >
         {diagramKind === 'mindmap'
-          ? 'Mind map · Tab=child · Enter=sibling · Shift+Tab=promote · Inspector for shape/color/icon/reparent'
+          ? 'Mind map · straight spokes · Auto Layout = radial tree · Tab=child · Enter=sibling · Shift+Tab=promote'
           : 'Select (V) · Pan (H or Shift+drag) · scroll to zoom · drop a link on empty → new rectangle'}
       </p>
     </div>

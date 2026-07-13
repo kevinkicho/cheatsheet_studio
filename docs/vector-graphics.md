@@ -11,7 +11,7 @@ Whenever you add **new equations or figures** (seed library, tools, or docs samp
 |------|-----------|-----|
 | **Equation** | KaTeX-compatible **LaTeX** in the `latex` field | Scalable type (web fonts); canvas uses font-size fit |
 | **Figure / diagram** | **SVG** with a `viewBox` (`svgUrl(\`<svg…>\`)` or imported `.svg`) | Paths repaint at the card’s display size |
-| **Process chart** | **Mermaid source** + flowchart **`processFlow` snapshot** | Flowcharts paint editor geometry as SVG; mind maps use Mermaid SVG |
+| **Process chart** | **Mermaid source** + **`processFlow` snapshot** | Flowchart + mind map paint editor geometry as SVG (Mermaid fallback if no snapshot) |
 | **Photo** | PNG / JPEG / WebP / GIF via Import Image | Raster is appropriate for photographs |
 
 Euler’s identity is a pure LaTeX equation (`e^{i\pi} + 1 = 0`), not a bitmap.
@@ -41,11 +41,12 @@ Photographic images remain supported for real-world pictures; **diagrams and mat
 
 ## Process charts
 
-- **Flowcharts** store a free-form **`processFlow` snapshot** from the interactive
-  editor and paint it with `ProcessFlowView` (SVG viewBox, including pipe
-  U-turns). Card geometry matches the Process tool — not a Mermaid re-layout.
-- **Mind maps** (and flowcharts without a snapshot) use **Mermaid → SVG** via
-  `MermaidView` `fillContainer`.
+- **Flowcharts and mind maps** store a free-form **`processFlow` snapshot** from
+  the interactive editor and paint it with `ProcessFlowView` (SVG viewBox,
+  including pipe U-turns). Card geometry matches the Process tool — not a
+  Mermaid re-layout.
+- **Legacy cards** without a snapshot (older mind maps) still use
+  **Mermaid → SVG** via `MermaidView` `fillContainer`.
 
 See [process-charts.md](./process-charts.md).
 

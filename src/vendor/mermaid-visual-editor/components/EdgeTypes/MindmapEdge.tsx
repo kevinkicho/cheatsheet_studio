@@ -1,53 +1,54 @@
 /**
- * Radial mindmap connector: shortest path between two circular nodes.
- * Path runs along the line of centers, clipped to each circle's perimeter
- * so multiple children leave the hub at different angles (not one stacked handle).
+ * Radial mindmap connector: straight line of centers, clipped to each node’s
+ * radius so children leave the hub at different angles.
+ *
+ * Uses RF handle coords as a reliable fallback when internals are not ready.
+ * Stroke uses non-scaling-stroke so spokes stay visible at low zoom.
  */
 import {
   BaseEdge,
-  getStraightPath,
   useInternalNode,
   type EdgeProps,
 } from '@xyflow/react'
+import { useEffect, useMemo } from 'react'
 import type { FlowEdgeData } from '../../lib/store'
+import {
+  clearLiveEdgePaint,
+  setLiveEdgePaint,
+} from '../../lib/liveEdgePaint'
+import { straightMindmapPath } from '../../lib/mindmap'
 
-/** Point on circle edge along the ray from center toward (tx, ty). */
-function pointOnCircle(
-  cx: number,
-  cy: number,
-  tx: number,
-  ty: number,
-  radius: number,
-): { x: number; y: number } {
-  const dx = tx - cx
-  const dy = ty - cy
-  const len = Math.hypot(dx, dy) || 1
-  return {
-    x: cx + (dx / len) * radius,
-    y: cy + (dy / len) * radius,
-  }
-}
-
-function nodeCenterAndRadius(node: {
-  internals: { positionAbsolute: { x: number; y: number } }
+function nodeBox(node: {
+  internals?: { positionAbsolute?: { x: number; y: number } }
   measured?: { width?: number; height?: number }
   position: { x: number; y: number }
-}): { cx: number; cy: number; r: number } {
-  const w = node.measured?.width ?? 96
-  const h = node.measured?.height ?? 96
-  const pos = node.internals.positionAbsolute ?? node.position
-  return {
-    cx: pos.x + w / 2,
-    cy: pos.y + h / 2,
-    // inset slightly so stroke sits on the border ring
-    r: Math.min(w, h) / 2 - 1,
-  }
+  width?: number
+  height?: number
+}): { x: number; y: number; width: number; height: number } {
+  const w =
+    node.measured?.width ??
+    (typeof node.width === 'number' ? node.width : undefined) ??
+    96
+  const h =
+    node.measured?.height ??
+    (typeof node.height === 'number' ? node.height : undefined) ??
+    96
+  const pos = node.internals?.positionAbsolute ?? node.position
+  return { x: pos.x, y: pos.y, width: Math.max(8, w), height: Math.max(8, h) }
+}
+
+function fmt(n: number) {
+  return (Math.round(n * 10) / 10).toString()
 }
 
 export function MindmapEdge({
   id,
   source,
   target,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
   style,
   data,
   selected,
@@ -55,44 +56,71 @@ export function MindmapEdge({
   const sourceNode = useInternalNode(source)
   const targetNode = useInternalNode(target)
   const edgeData = data as FlowEdgeData | undefined
+  // Prefer explicit hex so SVG always paints (CSS vars can fail on path stroke)
   const strokeColor =
-    edgeData?.strokeColor ?? 'var(--edge-stroke, #a1a1aa)'
+    (typeof edgeData?.strokeColor === 'string' && edgeData.strokeColor) ||
+    '#a1a1aa'
   const edgeStyle = edgeData?.edgeStyle ?? 'solid'
 
-  if (!sourceNode || !targetNode) return null
+  const routed = useMemo(() => {
+    if (sourceNode && targetNode) {
+      return straightMindmapPath(nodeBox(sourceNode), nodeBox(targetNode))
+    }
+    // Fallback: RF handle positions (center handles → near node centers)
+    if (
+      Number.isFinite(sourceX) &&
+      Number.isFinite(sourceY) &&
+      Number.isFinite(targetX) &&
+      Number.isFinite(targetY)
+    ) {
+      return {
+        path: `M${fmt(sourceX)},${fmt(sourceY)} L${fmt(targetX)},${fmt(targetY)}`,
+        labelX: (sourceX + targetX) / 2,
+        labelY: (sourceY + targetY) / 2,
+      }
+    }
+    return null
+  }, [sourceNode, targetNode, sourceX, sourceY, targetX, targetY])
 
-  const s = nodeCenterAndRadius(sourceNode)
-  const t = nodeCenterAndRadius(targetNode)
+  // Publish exact paint so processFlow cards match the editor
+  useEffect(() => {
+    if (!routed?.path) {
+      clearLiveEdgePaint(id)
+      return
+    }
+    setLiveEdgePaint(id, {
+      path: routed.path,
+      labelX: routed.labelX,
+      labelY: routed.labelY,
+    })
+    return () => clearLiveEdgePaint(id)
+  }, [id, routed?.path, routed?.labelX, routed?.labelY])
 
-  // Shortest path = line of centers, attach at each circle perimeter
-  const start = pointOnCircle(s.cx, s.cy, t.cx, t.cy, s.r)
-  const end = pointOnCircle(t.cx, t.cy, s.cx, s.cy, t.r)
-
-  const [path] = getStraightPath({
-    sourceX: start.x,
-    sourceY: start.y,
-    targetX: end.x,
-    targetY: end.y,
-  })
+  if (!routed?.path) return null
 
   let strokeDasharray: string | undefined
-  let strokeWidth = selected ? 2.5 : 1.75
+  // Slightly thicker base; non-scaling-stroke keeps screen weight at low zoom
+  let strokeWidth = selected ? 2.75 : 2.25
   if (edgeStyle === 'dashed') strokeDasharray = '6 4'
   if (edgeStyle === 'thick') strokeWidth = 3.5
 
   return (
     <BaseEdge
       id={id}
-      path={path}
-      // No arrow heads — mindmap branches are undirected lines
+      path={routed.path}
       markerEnd={undefined}
       markerStart={undefined}
+      interactionWidth={20}
       style={{
         ...style,
         stroke: strokeColor,
         strokeWidth,
         strokeDasharray,
         strokeLinecap: 'round',
+        // Keep spokes readable when the viewport is zoomed far out
+        vectorEffect: 'non-scaling-stroke',
+        fill: 'none',
+        opacity: 1,
       }}
     />
   )

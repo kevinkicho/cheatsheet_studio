@@ -9,11 +9,33 @@ import {
   parseMermaidMindmap,
   parseMindmapNodeText,
   serializeMindmap,
+  measureMindmapNodeSize,
+  straightMindmapPath,
   wrapMindmapLabel,
 } from './mindmap'
 import { MERMAID_MINDMAP_EXAMPLE } from '@/lib/mermaidTemplates'
 import type { FlowEdgeData, FlowNodeData } from './store'
 import type { Edge, Node } from '@xyflow/react'
+
+describe('straightMindmapPath', () => {
+  it('draws a straight line between circle perimeters', () => {
+    const r = straightMindmapPath(
+      { x: 0, y: 0, width: 100, height: 100 },
+      { x: 200, y: 0, width: 100, height: 100 },
+    )
+    expect(r.path).toMatch(/^M/)
+    expect(r.path).toContain('L')
+    // Midpoint roughly between nodes
+    expect(r.labelX).toBeGreaterThan(50)
+    expect(r.labelX).toBeLessThan(250)
+  })
+
+  it('makeMindmapEdge uses mindmapEdge type', () => {
+    const e = makeMindmapEdge('a', 'b')
+    expect(e.type).toBe('mindmapEdge')
+    expect(e.sourceHandle).toBe('center')
+  })
+})
 
 describe('mindmap parse/serialize', () => {
   it('parses node shapes and optional ids', () => {
@@ -188,6 +210,16 @@ describe('mindmap parse/serialize', () => {
     expect(laid[0]!.position.x).not.toBe(laid[1]!.position.x)
   })
 
+  const nodeCenter = (n: Node<FlowNodeData>) => {
+    const w =
+      (typeof n.style?.width === 'number' ? n.style.width : undefined) ??
+      (typeof n.width === 'number' ? n.width : 100)
+    const h =
+      (typeof n.style?.height === 'number' ? n.style.height : undefined) ??
+      (typeof n.height === 'number' ? n.height : 100)
+    return { x: n.position.x + w / 2, y: n.position.y + h / 2 }
+  }
+
   it('places N root children evenly around center (not a 4-grid)', () => {
     // root + 3 children like Origins / Research / Tools
     const nodes: Node<FlowNodeData>[] = [
@@ -202,17 +234,15 @@ describe('mindmap parse/serialize', () => {
       makeMindmapEdge('root', 'c3'),
     ]
     const laid = applyMindmapTreeLayout(nodes, edges, 'TD')
-    const byId = Object.fromEntries(laid.map((n) => [n.id, n.position]))
-    const root = byId.root!
-    const kids = [byId.c1!, byId.c2!, byId.c3!]
+    const byId = Object.fromEntries(laid.map((n) => [n.id, n]))
+    const root = nodeCenter(byId.root!)
+    const kids = [byId.c1!, byId.c2!, byId.c3!].map(nodeCenter)
 
-    // All children same ring distance from root
-    const dists = kids.map((p) =>
-      Math.hypot(p.x - root.x, p.y - root.y),
-    )
+    // All children same ring distance from root (centers)
+    const dists = kids.map((p) => Math.hypot(p.x - root.x, p.y - root.y))
     const mean = dists.reduce((a, b) => a + b, 0) / dists.length
     for (const d of dists) {
-      expect(Math.abs(d - mean)).toBeLessThan(2)
+      expect(Math.abs(d - mean)).toBeLessThan(3)
     }
 
     // Exact 120° gaps for 3 equal slices
@@ -228,8 +258,8 @@ describe('mindmap parse/serialize', () => {
       gaps.push(g)
     }
     for (const g of gaps) {
-      // allow tiny error from integer position rounding
-      expect(g).toBeCloseTo((Math.PI * 2) / 3, 2)
+      // allow tiny error from integer position + auto-size rounding
+      expect(g).toBeCloseTo((Math.PI * 2) / 3, 1)
     }
   })
 
@@ -244,18 +274,29 @@ describe('mindmap parse/serialize', () => {
     ]
     const edges = [1, 2, 3, 4, 5].map((i) => makeMindmapEdge('root', `c${i}`))
     const laid = applyMindmapTreeLayout(nodes, edges, 'TD')
-    const root = laid.find((n) => n.id === 'root')!
+    const root = nodeCenter(laid.find((n) => n.id === 'root')!)
     const angles = laid
       .filter((n) => n.id !== 'root')
-      .map((n) =>
-        Math.atan2(n.position.y - root.position.y, n.position.x - root.position.x),
-      )
+      .map((n) => {
+        const c = nodeCenter(n)
+        return Math.atan2(c.y - root.y, c.x - root.x)
+      })
       .sort((a, b) => a - b)
     for (let i = 0; i < angles.length; i++) {
       let g = angles[(i + 1) % angles.length]! - angles[i]!
       if (g < 0) g += Math.PI * 2
-      expect(g).toBeCloseTo((Math.PI * 2) / 5, 2)
+      expect(g).toBeCloseTo((Math.PI * 2) / 5, 1)
     }
+  })
+
+  it('auto-sizes topics so long labels fit', () => {
+    const small = measureMindmapNodeSize('Hi', { isHub: false, shape: 'circle' })
+    const big = measureMindmapNodeSize(
+      'Popularisation through the Enlightenment',
+      { isHub: false, shape: 'circle' },
+    )
+    expect(big.width).toBeGreaterThan(small.width)
+    expect(big.width).toBeGreaterThanOrEqual(118)
   })
 
   it('places 2 children of a branch in that branch sector', () => {

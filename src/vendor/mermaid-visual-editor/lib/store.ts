@@ -25,6 +25,7 @@ import {
   asMindmapEdges,
   asMindmapNodes,
   makeMindmapEdge,
+  measureMindmapNodeSize,
   mindmapDescendantsOf,
   mindmapParentOf,
   mindmapPreviousSibling,
@@ -596,40 +597,61 @@ export const useFlowStore = create<FlowState>((set, get) => {
       }),
 
     onConnect: withHistory((connection) => {
-      // Mind map edges are undirected parent→child lines (no arrow heads)
-      const isMm = get().diagramKind === "mindmap";
       // Absolute: never reassign connection.source / connection.target
       const sourceId = connection.source;
       const targetId = connection.target;
       if (!sourceId || !targetId) return;
 
-      const edgeData: FlowEdgeData = isMm
-        ? { edgeStyle: "solid", startMarker: "none", endMarker: "none", arrowType: "none" }
-        : {
-            edgeStyle: "solid",
-            startMarker: "none",
-            endMarker: "arrow",
-            arrowType: "arrow",
-            // User dragged this wire — pin to the ports they used
-            manualConnect: true,
-          };
-      const markers = isMm ? {} : computeMarkersFromData(edgeData);
+      const isMm = get().diagramKind === "mindmap";
+
+      // Mind map: straight radial spokes (center handles) — not orthogonal pipes
+      if (isMm) {
+        const edgeData: FlowEdgeData = {
+          edgeStyle: "solid",
+          startMarker: "none",
+          endMarker: "none",
+          arrowType: "none",
+        };
+        set({
+          edges: addEdge(
+            {
+              source: sourceId,
+              target: targetId,
+              sourceHandle: "center",
+              targetHandle: "center-target",
+              type: "mindmapEdge",
+              data: edgeData,
+              reconnectable: false,
+            } as Connection,
+            get().edges,
+          ) as Edge<FlowEdgeData>[],
+        });
+        return;
+      }
+
+      const edgeData: FlowEdgeData = {
+        edgeStyle: "solid",
+        startMarker: "none",
+        endMarker: "arrow",
+        arrowType: "arrow",
+        // User dragged this wire — pin to the ports they used
+        manualConnect: true,
+      };
+      const markers = computeMarkersFromData(edgeData);
 
       // Prefer the exact handles RF reports from the drag
-      let sourceHandle = isMm
-        ? (connection.sourceHandle ?? "center")
-        : (normalizePortHandleId(connection.sourceHandle) ??
-          connection.sourceHandle ??
-          null);
-      let targetHandle = isMm
-        ? (connection.targetHandle ?? "center-target")
-        : (normalizePortHandleId(connection.targetHandle) ??
-          connection.targetHandle ??
-          null);
+      let sourceHandle =
+        normalizePortHandleId(connection.sourceHandle) ??
+        connection.sourceHandle ??
+        null;
+      let targetHandle =
+        normalizePortHandleId(connection.targetHandle) ??
+        connection.targetHandle ??
+        null;
 
       // Only if a handle id is missing: fill a port on THAT connected node
       // facing its partner — never pick a different node.
-      if (!isMm) {
+      {
         const nodes = get().nodes as Node<FlowNodeData>[];
         const src = nodes.find((n) => n.id === sourceId);
         const tgt = nodes.find((n) => n.id === targetId);
@@ -646,10 +668,10 @@ export const useFlowStore = create<FlowState>((set, get) => {
             target: targetId,
             sourceHandle,
             targetHandle,
-            type: isMm ? "mindmapEdge" : "flowEdge",
+            type: "flowEdge",
             ...markers,
             data: edgeData,
-            reconnectable: !isMm,
+            reconnectable: true,
           } as Connection,
           get().edges,
         ) as Edge<FlowEdgeData>[],
@@ -657,8 +679,8 @@ export const useFlowStore = create<FlowState>((set, get) => {
     }),
 
     onReconnect: withHistory((oldEdge, newConnection) => {
-      const isMm = get().diagramKind === "mindmap";
-      if (isMm) return;
+      // Mindmap spokes are not re-pluggable (straight radial geometry)
+      if (get().diagramKind === "mindmap") return;
       // Absolute: use the new connection's source/target only (what user re-plugged)
       const sourceId = newConnection.source ?? oldEdge.source;
       const targetId = newConnection.target ?? oldEdge.target;
@@ -802,15 +824,26 @@ export const useFlowStore = create<FlowState>((set, get) => {
         height?: number;
       }) => {
         const isMm = get().diagramKind === "mindmap";
-        if (isMm) return null;
         if (!opts.fromNodeId || !get().nodes.some((n) => n.id === opts.fromNodeId)) {
           return null;
         }
 
         const id = `node_${nodeCounter++}`;
-        const w = opts.width && opts.width > 8 ? opts.width : 140;
-        const h = opts.height && opts.height > 8 ? opts.height : 48;
-        const shape = opts.shape ?? "rectangle";
+        const shape = opts.shape ?? (isMm ? "circle" : "rectangle");
+        const mmSize = isMm
+          ? measureMindmapNodeSize("New topic", {
+              isHub: false,
+              shape: shape === "circle" ? "circle" : shape,
+            })
+          : null;
+        const w =
+          opts.width && opts.width > 8
+            ? opts.width
+            : (mmSize?.width ?? 140);
+        const h =
+          opts.height && opts.height > 8
+            ? opts.height
+            : (mmSize?.height ?? 48);
         // Center the new shape on the drop point
         const position = {
           x: opts.position.x - w / 2,
@@ -824,7 +857,7 @@ export const useFlowStore = create<FlowState>((set, get) => {
           height: h,
           style: { width: w, height: h },
           data: {
-            label: "Node",
+            label: isMm ? "New topic" : "Node",
             shape,
             portCount: 4,
             portOnPerimeter: true,
@@ -833,6 +866,36 @@ export const useFlowStore = create<FlowState>((set, get) => {
           },
           selected: true,
         };
+
+        if (isMm) {
+          // Straight mindmap spoke to new topic
+          set({
+            nodes: [
+              ...get().nodes.map((n) =>
+                n.selected ? { ...n, selected: false } : n,
+              ),
+              newNode,
+            ],
+            edges: addEdge(
+              {
+                source: opts.fromNodeId,
+                target: id,
+                sourceHandle: "center",
+                targetHandle: "center-target",
+                type: "mindmapEdge",
+                data: {
+                  edgeStyle: "solid",
+                  startMarker: "none",
+                  endMarker: "none",
+                  arrowType: "none",
+                },
+                reconnectable: false,
+              } as Connection,
+              get().edges,
+            ) as Edge<FlowEdgeData>[],
+          });
+          return id;
+        }
 
         const edgeData: FlowEdgeData = {
           edgeStyle: "solid",
@@ -886,22 +949,48 @@ export const useFlowStore = create<FlowState>((set, get) => {
     ),
 
     updateNodeLabel: withHistory((id, label) => {
+      const isMm = get().diagramKind === "mindmap";
+      const edges = get().edges;
       set({
-        nodes: get().nodes.map((n) =>
-          n.id === id ? { ...n, data: { ...n.data, label } } : n,
-        ),
+        nodes: get().nodes.map((n) => {
+          if (n.id !== id) return n;
+          if (!isMm) return { ...n, data: { ...n.data, label } };
+          // Auto-grow topic so the new label fits
+          const isHub = !edges.some((e) => e.target === id);
+          const fitted = measureMindmapNodeSize(label, {
+            isHub,
+            shape: n.data?.shape,
+          });
+          const oldW =
+            (typeof n.style?.width === "number" ? n.style.width : undefined) ??
+            (typeof n.width === "number" ? n.width : fitted.width);
+          const oldH =
+            (typeof n.style?.height === "number" ? n.style.height : undefined) ??
+            (typeof n.height === "number" ? n.height : fitted.height);
+          const cx = n.position.x + oldW / 2;
+          const cy = n.position.y + oldH / 2;
+          // Grow to fit; never shrink on edit (avoids jumping when shortening text)
+          const width = Math.max(fitted.width, oldW);
+          const height = Math.max(fitted.height, oldH);
+          return {
+            ...n,
+            position: { x: cx - width / 2, y: cy - height / 2 },
+            width,
+            height,
+            style: { ...n.style, width, height },
+            data: { ...n.data, label },
+          };
+        }),
       });
     }),
 
     updateNodeShape: withHistory((id, shape) => {
-      const isMm = get().diagramKind === "mindmap";
       set({
         nodes: get().nodes.map((n) =>
           n.id === id
             ? {
                 ...n,
-                // Always match diagram kind so flowchart never stays on mindmapNode
-                type: isMm ? "mindmapNode" : "flowNode",
+                type: "flowNode",
                 data: { ...n.data, shape },
               }
             : n,
@@ -926,9 +1015,7 @@ export const useFlowStore = create<FlowState>((set, get) => {
             ? {
                 ...n,
                 selected: true,
-                // Keep mindmap circular node type when styling
-                type:
-                  get().diagramKind === "mindmap" ? "mindmapNode" : n.type,
+                type: "flowNode",
                 data: { ...n.data, ...style },
               }
             : n,
@@ -951,7 +1038,7 @@ export const useFlowStore = create<FlowState>((set, get) => {
             ? {
                 ...n,
                 selected: true,
-                type: isMm ? "mindmapNode" : "flowNode",
+                type: "flowNode",
                 data: { ...n.data, shape: safeShape },
               }
             : n,
@@ -1075,13 +1162,26 @@ export const useFlowStore = create<FlowState>((set, get) => {
             y: parentNode.position.y + selected.length * 40,
           }
         : { x: 150, y: 100 };
+      const leafSize = measureMindmapNodeSize("New topic", {
+        isHub: false,
+        shape: "circle",
+      });
       const newNode: Node<FlowNodeData> = {
         id,
-        type: "mindmapNode",
+        type: "flowNode",
         position: offset,
+        width: leafSize.width,
+        height: leafSize.height,
         selected: true,
-        data: { label: "New topic", shape: "circle" },
-        style: { width: 96, height: 96 },
+        data: {
+          label: "New topic",
+          shape: "circle",
+          portCount: 4,
+          portOnPerimeter: true,
+          portRadius: 1,
+          portRotation: 0,
+        },
+        style: { width: leafSize.width, height: leafSize.height },
       };
       const nextNodes: Node<FlowNodeData>[] = [
         ...nodes.map((n) => ({ ...n, selected: false as const })),
@@ -1100,13 +1200,26 @@ export const useFlowStore = create<FlowState>((set, get) => {
       if (!refId) {
         // No selection → add a new root
         const id = `mm_${nodeCounter++}`;
+        const hubSize = measureMindmapNodeSize("New topic", {
+          isHub: true,
+          shape: "circle",
+        });
         const rootNode: Node<FlowNodeData> = {
           id,
-          type: "mindmapNode",
+          type: "flowNode",
           position: { x: 40, y: 40 + nodes.length * 88 },
+          width: hubSize.width,
+          height: hubSize.height,
           selected: true,
-          data: { label: "New topic", shape: "circle" },
-          style: { width: 120, height: 120 },
+          data: {
+            label: "New topic",
+            shape: "circle",
+            portCount: 4,
+            portOnPerimeter: true,
+            portRadius: 1,
+            portRotation: 0,
+          },
+          style: { width: hubSize.width, height: hubSize.height },
         };
         set({
           nodes: [
@@ -1119,16 +1232,29 @@ export const useFlowStore = create<FlowState>((set, get) => {
       const parent = mindmapParentOf(refId, edges);
       const ref = nodes.find((n) => n.id === refId);
       const id = `mm_${nodeCounter++}`;
+      const leafSize = measureMindmapNodeSize("New topic", {
+        isHub: false,
+        shape: "circle",
+      });
       const newNode: Node<FlowNodeData> = {
         id,
-        type: "mindmapNode",
+        type: "flowNode",
         position: {
           x: (ref?.position.x ?? 40) + (parent ? 0 : 40),
           y: (ref?.position.y ?? 40) + 88,
         },
+        width: leafSize.width,
+        height: leafSize.height,
         selected: true,
-        data: { label: "New topic", shape: "circle" },
-        style: { width: 96, height: 96 },
+        data: {
+          label: "New topic",
+          shape: "circle",
+          portCount: 4,
+          portOnPerimeter: true,
+          portRadius: 1,
+          portRotation: 0,
+        },
+        style: { width: leafSize.width, height: leafSize.height },
       };
       const nextNodes: Node<FlowNodeData>[] = [
         ...nodes.map((n) => ({ ...n, selected: false as const })),
@@ -1483,7 +1609,8 @@ export const useFlowStore = create<FlowState>((set, get) => {
               type: "flowEdge",
               reconnectable: true,
             })) as Edge<FlowEdgeData>[]);
-      // processFlow restore: never re-pick ports (would change pipe geometry)
+      // processFlow restore: never re-pick ports (would change pipe geometry).
+      // Mindmap uses center handles + straight spokes — never face-port rewrite.
       if (kind !== "mindmap" && settings.skipHandleReconcile !== true) {
         stampedEdges = reconcileEdgeHandles(
           stampedNodes as Node<FlowNodeData>[],

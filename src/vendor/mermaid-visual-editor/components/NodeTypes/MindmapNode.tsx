@@ -328,20 +328,7 @@ export function MindmapNode({ id, data, selected, width, height }: NodeProps) {
         }}
       />
 
-      {nodeData.icon && (
-        <span
-          title={nodeData.icon}
-          className="absolute -top-1 left-1/2 z-20 -translate-x-1/2 truncate rounded px-1 text-[8px] font-medium"
-          style={{
-            background: 'var(--neu-surface, #1e2028)',
-            color: 'var(--neu-icon-active, #818cf8)',
-            border: '1px solid var(--neu-border, #3f3f46)',
-            maxWidth: Math.max(40, w - 8),
-          }}
-        >
-          ★ {nodeData.icon.replace(/^fa\s+fa-/, '').slice(0, 8)}
-        </span>
-      )}
+      {/* ::icon kept on data for Mermaid export / Object Settings — not painted on shape */}
 
       <div className="relative z-10 flex max-h-[85%] max-w-[85%] items-center justify-center px-1">
         {editing ? (

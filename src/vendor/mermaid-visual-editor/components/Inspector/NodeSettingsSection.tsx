@@ -589,6 +589,7 @@ export function NodeSettingsSection() {
   const data = first ? (first.data as FlowNodeData) : null
   const hasEdgeSel = selectedEdges.length > 0
 
+  // Mind map uses straight radial spokes — no pipe ports / bend points
   if (isMindmap) {
     return (
       <div
@@ -600,8 +601,9 @@ export function NodeSettingsSection() {
           padding: '8px 0',
         }}
       >
-        Connection ports apply to flowchart shapes. Mind map topics use the
-        center handle — edit hierarchy under Object Settings.
+        Mind map links are straight radial spokes. Use Object Settings for
+        hierarchy (parent/children) and link color. Auto Layout rebuilds the
+        radial tree.
       </div>
     )
   }

@@ -181,6 +181,8 @@ export function MainCanvas() {
   }, [])
 
   const [isPanning, setIsPanning] = useState(false)
+  /** Shift held → temporary grab cursor while Select tool is active */
+  const [shiftHeld, setShiftHeld] = useState(false)
   const panRef = useRef<{
     pointerId: number
     startX: number
@@ -304,8 +306,10 @@ export function MainCanvas() {
     const vp = viewportRef.current
     if (!vp) return
 
-    // —— Pan tool: drag empty board to scroll ——
-    if (canvasTool === 'pan') {
+    // —— Pan tool, or temporary pan: Shift + left-drag on empty board ——
+    // (Shift+click multi-select on cards is unchanged in CanvasItemView.)
+    const temporaryPan = canvasTool === 'select' && e.shiftKey
+    if (canvasTool === 'pan' || temporaryPan) {
       panRef.current = {
         pointerId: e.pointerId,
         startX: e.clientX,
@@ -321,13 +325,13 @@ export function MainCanvas() {
       return
     }
 
-    // —— Select tool: marquee on empty board ——
+    // —— Select tool: marquee on empty board (Ctrl/Meta = additive) ——
     const { x, y } = clientToCanvas(e.clientX, e.clientY)
     marqueeRef.current = {
       pointerId: e.pointerId,
       x0: x,
       y0: y,
-      additive: e.shiftKey,
+      additive: e.ctrlKey || e.metaKey,
       didMove: false,
     }
     setMarquee({ x0: x, y0: y, x1: x, y1: y })
@@ -584,6 +588,25 @@ export function MainCanvas() {
     zoomFitItem(focusCanvasItemRequest.id)
   }, [focusCanvasItemRequest, zoomFitItem])
 
+  // Track Shift for temporary pan cursor (Select tool + empty board drag)
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') setShiftHeld(true)
+    }
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') setShiftHeld(false)
+    }
+    const onBlur = () => setShiftHeld(false)
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup', onKeyUp)
+    window.addEventListener('blur', onBlur)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup', onKeyUp)
+      window.removeEventListener('blur', onBlur)
+    }
+  }, [])
+
   /**
    * Fit the bounding box of placed cards. If none, fall back to print page
    * (when frame is on) or the free workspace.
@@ -688,19 +711,22 @@ export function MainCanvas() {
     gridExtent,
   })
 
-  const cursorClass =
-    canvasTool === 'pan'
-      ? isPanning
-        ? 'cursor-grabbing select-none'
-        : 'cursor-grab'
-      : marquee
-        ? 'cursor-crosshair select-none'
-        : 'cursor-default'
+  // Pan tool always grabs; Select + Shift is temporary pan (empty board)
+  const panCursor =
+    canvasTool === 'pan' || (canvasTool === 'select' && shiftHeld)
+  const cursorClass = panCursor
+    ? isPanning
+      ? 'cursor-grabbing select-none'
+      : 'cursor-grab'
+    : marquee
+      ? 'cursor-crosshair select-none'
+      : 'cursor-default'
 
   return (
     <div className="relative h-full w-full">
       <div
         ref={setViewportRef}
+        data-main-canvas-viewport
         className={`relative h-full w-full overflow-auto ${cursorClass} ${
           isOver ? 'ring-2 ring-inset ring-indigo-500/40' : ''
         }`}
@@ -949,14 +975,14 @@ export function MainCanvas() {
         className="flex items-center gap-0.5 rounded-lg border border-zinc-700/80 bg-zinc-950/90 p-1 shadow-lg backdrop-blur"
       >
         <ToolBtn
-          title="Select (V) — click cards, drag on empty canvas to marquee-select"
+          title="Select (V) — click cards, drag empty to marquee · Shift+drag empty to pan · Ctrl+drag marquee adds"
           active={canvasTool === 'select'}
           onClick={() => setCanvasTool('select')}
         >
           <MousePointer2 className="h-3.5 w-3.5" />
         </ToolBtn>
         <ToolBtn
-          title="Pan (H) — drag to move the viewport"
+          title="Pan (H) — drag to move the viewport (or hold Shift + left-drag in Select)"
           active={canvasTool === 'pan'}
           onClick={() => setCanvasTool('pan')}
         >

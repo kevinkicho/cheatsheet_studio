@@ -73,7 +73,7 @@ Vector: [docs/vector-graphics.md](./docs/vector-graphics.md)
 ## Features (current functionality)
 
 ### Canvas & tools
-- Freeform board with **select (V)** and **pan (H)** tools  
+- Freeform board with **select (V)** and **pan (H)** tools; **Shift + left-drag** on empty board temporarily pans (stay in Select)  
 - Drag from library, marquee multi-select, multi-move / multi-resize  
 - **Free-transform** on selected cards: 8 handles (corners + edges); **Keep aspect ratio** default ON (Properties)  
 - Zoom (in/out/reset), **fit print layout**, **fit content**, focus selection  
@@ -117,15 +117,15 @@ Vector: [docs/vector-graphics.md](./docs/vector-graphics.md)
 
 ### Process charts (Mermaid + free-form flow)
 - Right sidebar **Process** tool: **dark** interactive canvas (vendored [saketkattu/mermaid-visual-editor](https://github.com/saketkattu/mermaid-visual-editor), MIT)  
-- **Diagram types:** **Flowchart** and **Mind map** only — both use the interactive React Flow editor (**never** a static Mermaid preview pane)  
-- **Flowchart pipes:** orthogonal smooth-step “pipe” connections; port plugs stay locked; reverse multi (e.g. **No**) is a same-side U-turn that clears node boxes  
-- **CAD-style pipes:** snap guides to node edges/centers/ports/bends; drag **shaft midpoints** to slide orthogonal runs  
-- **Edge labels (Yes/No):** default on the **longest shaft midpoint** (not a short stub); **drag** to reposition; double-click to edit text  
-- **Editor → canvas fidelity:** **Add to canvas** / **Update** / **Done** bake a `processFlow` snapshot (nodes, ports, live pipe paths + label positions). Cards and print export paint that snapshot so the board matches the editor  
-- **Edit mode:** **Add to canvas** only places the card (no auto-edit). Open the diagram with the card’s bottom-right **Edit** badge; **Done** saves and exits. Layers click **zoom-fits** the card  
-- Mermaid source is still saved for re-open / library; **mind maps** still paint via Mermaid SVG on cards. View / copy Mermaid from the Process editor **Inspector → Chart settings** (not Item properties)  
-- Toolbar chrome: **example template**, **Auto Layout** (dagre ranks), **Organize Connections** (re-route pipes, keep label offsets); Shift+drag pan; drop a link on empty → new rectangle  
-- **Delete** in the process editor removes flowchart nodes/edges only (does not delete the canvas card while editing)  
+- **Diagram types:** **Flowchart** and **Mind map** — shared React Flow host (never a static Mermaid preview pane)  
+- **Flowchart pipes:** orthogonal smooth-step connections; port plugs; CAD snap; shaft midpoints; Yes/No labels (longest-shaft mid + drag); reverse multi U-turns; reconnect  
+- **Mind maps:** **straight radial spokes** under topic fills; larger auto-sized topics (text fit); tighter ring spacing; radial **Auto Layout**; Tab/Enter hierarchy; promote/demote; Mermaid icons kept in data (not painted as chips on shapes)  
+- **Editor → canvas fidelity:** **Add to canvas** / **Update** / **Done** bake a `processFlow` snapshot for **both** kinds. Cards and print export paint that snapshot so the board matches the editor (not a Mermaid re-layout)  
+- **Add placement:** new process/equation/image cards land in the **center of the visible main-canvas view** (not a fixed top-left cascade)  
+- **Edit mode:** **Add to canvas** only places the card (no auto-edit). Open with the card’s bottom-right **Edit** badge; **Done** saves and exits. Layers click **zoom-fits** the card  
+- Mermaid source is still saved for re-open / library. View / copy Mermaid from Process **Inspector → Chart settings** (not left Item properties)  
+- Toolbar: **example template**, **Auto Layout**, **Organize Connections**; Shift+drag pan in the Process editor  
+- **Delete** in the process editor removes nodes/edges only (not the canvas card while editing)  
 - Cloud library (signed in): save / load / update with `mermaidSource` + `processFlow`  
 - See [docs/process-charts.md](./docs/process-charts.md)  
 

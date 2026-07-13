@@ -2,6 +2,7 @@ import type { CSSProperties, ReactNode } from 'react'
 import {
   Handle,
   NodeResizer,
+  Position,
   useUpdateNodeInternals,
   type NodeProps,
 } from '@xyflow/react'
@@ -12,6 +13,7 @@ import {
   getPortLayout,
   type PortPlacement,
 } from '../../lib/portLayout'
+import { wrapMindmapLabelLines } from '../../lib/mindmap'
 
 // ─── SVG shape paths (viewBox 0 0 200 100, preserveAspectRatio="none") ────────
 // All points are in the 200×100 coordinate space so they stretch with the node.
@@ -197,9 +199,12 @@ const PORT_SIZE_SEL = 10
 function NodeHandles({
   selected,
   ports,
+  mindmapCenter,
 }: {
   selected: boolean
   ports: PortPlacement[]
+  /** Mind map: center dual handles for straight radial spokes */
+  mindmapCenter?: boolean
 }) {
   // Ports must stay hit-testable when not selected so you can drop a wire
   // onto another node without selecting it first. Only the chrome is hidden.
@@ -207,6 +212,48 @@ function NodeHandles({
   // (not a different face via auto snap).
   const size = selected ? PORT_SIZE_SEL : 16
   const half = size / 2
+  if (mindmapCenter) {
+    // Large center hit targets — MindmapEdge draws from geometric centers
+    const hit = selected ? 28 : 40
+    const centerStyle: CSSProperties = {
+      left: '50%',
+      top: '50%',
+      transform: 'translate(-50%, -50%)',
+      width: hit,
+      height: hit,
+      minWidth: hit,
+      minHeight: hit,
+      borderRadius: '50%',
+      background: selected ? 'rgba(56, 189, 248, 0.35)' : 'transparent',
+      border: selected ? '2px solid #38bdf8' : '2px solid transparent',
+      opacity: selected ? 1 : 0.01,
+      zIndex: 5,
+      pointerEvents: 'auto',
+      cursor: 'crosshair',
+    }
+    return (
+      <>
+        <Handle
+          id="center"
+          type="source"
+          position={Position.Top}
+          className="!border-0"
+          isConnectable
+          title="Connect"
+          style={centerStyle}
+        />
+        <Handle
+          id="center-target"
+          type="target"
+          position={Position.Top}
+          className="!border-0"
+          isConnectable
+          title="Connect"
+          style={{ ...centerStyle, zIndex: 4 }}
+        />
+      </>
+    )
+  }
   return (
     <>
       {ports.map((p) => (
@@ -281,11 +328,13 @@ function NodeLabel({
   }
   return (
     <span
-      className="select-none text-center font-medium leading-snug break-words"
+      className="select-none text-center font-medium leading-snug break-words whitespace-pre-wrap px-1"
       style={{
         color: color || 'var(--node-text, #f4f4f5)',
         fontFamily: 'var(--node-font, trebuchet ms, verdana, arial, sans-serif)',
-        fontSize: 'var(--node-font-size, 16px)',
+        // Inherit mindmap/flowchart size from the node shell
+        fontSize: 'inherit',
+        maxWidth: '100%',
       }}
     >
       {value}
@@ -293,23 +342,12 @@ function NodeLabel({
   )
 }
 
-function IconBadge({ icon }: { icon?: string }) {
-  if (!icon) return null
-  // Compact text badge — FA fonts may not load; still shows which icon is set
-  const short = icon.replace(/^fa\s+fa-/, '').slice(0, 10)
-  return (
-    <span
-      title={icon}
-      className="absolute left-1 top-1 z-20 max-w-[4.5rem] truncate rounded px-1 text-[8px] font-medium leading-4"
-      style={{
-        background: 'var(--neu-surface, #1e2028)',
-        color: 'var(--neu-icon-active, #818cf8)',
-        border: '1px solid var(--neu-border, #3f3f46)',
-      }}
-    >
-      ★ {short}
-    </span>
-  )
+/**
+ * Mermaid mindmap `::icon(fa fa-*)` is kept on node data for serialize / Object
+ * Settings only — do not paint a floating chip on the shape (reads as junk UI).
+ */
+function IconBadge(_props: { icon?: string }) {
+  return null
 }
 
 // ─── Main FlowNode component ──────────────────────────────────────────────────
@@ -322,7 +360,12 @@ export function FlowNode({ id, data, selected }: NodeProps) {
   const pushHistory = useFlowStore((s) => s.pushHistory)
   const look = useFlowStore((s) => s.look)
   const handDrawn = look === 'handDrawn'
+  const isMindmap = useFlowStore((s) => s.diagramKind === 'mindmap')
   const updateNodeInternals = useUpdateNodeInternals()
+  // Mind maps use a larger type scale so topics read clearly at a glance
+  const fontSize = isMindmap
+    ? 'var(--node-font-size-mindmap, 17px)'
+    : 'var(--node-font-size, 16px)'
 
   const commitLabel = useCallback(() => {
     const trimmed = draft.trim() || 'Node'
@@ -398,8 +441,18 @@ export function FlowNode({ id, data, selected }: NodeProps) {
     nodeData.portOnPerimeter,
   ])
 
+  // Mindmap: same line breaks as auto-size / card SVG so text stays inside
+  const displayLabel = isMindmap
+    ? wrapMindmapLabelLines(
+        nodeData.label,
+        (typeof nodeData.label === 'string' && nodeData.label.length > 18
+          ? 16
+          : 13),
+      ).join('\n')
+    : nodeData.label
+
   const labelProps: LabelProps = {
-    value: nodeData.label,
+    value: displayLabel,
     editing,
     draft,
     setDraft,
@@ -432,7 +485,11 @@ export function FlowNode({ id, data, selected }: NodeProps) {
         >
           <NodeLabel {...labelProps} color={textColor} />
         </div>
-        <NodeHandles selected={!!selected} ports={ports} />
+        <NodeHandles
+          selected={!!selected}
+          ports={ports}
+          mindmapCenter={isMindmap}
+        />
       </div>
     )
   }
@@ -455,6 +512,9 @@ export function FlowNode({ id, data, selected }: NodeProps) {
           minHeight: 0,
           boxShadow: selectRing,
           borderRadius: 4,
+          fontSize,
+          fontFamily:
+            'var(--node-font, trebuchet ms, verdana, arial, sans-serif)',
         }}
         onDoubleClick={handleDoubleClick}
       >
@@ -478,7 +538,11 @@ export function FlowNode({ id, data, selected }: NodeProps) {
         >
           <NodeLabel {...labelProps} />
         </div>
-        <NodeHandles selected={!!selected} ports={ports} />
+        <NodeHandles
+          selected={!!selected}
+          ports={ports}
+          mindmapCenter={isMindmap}
+        />
       </div>
     )
   }
@@ -491,7 +555,7 @@ export function FlowNode({ id, data, selected }: NodeProps) {
     fontFamily: handDrawn
       ? '"Segoe Print", "Comic Sans MS", "Chalkboard SE", cursive'
       : 'var(--node-font, trebuchet ms, verdana, arial, sans-serif)',
-    fontSize: 'var(--node-font-size, 16px)',
+    fontSize,
   }
 
   let extraStyle: React.CSSProperties = {}
@@ -578,7 +642,11 @@ export function FlowNode({ id, data, selected }: NodeProps) {
         isVisible={!!selected}
         onResizeEnd={() => pushHistory()}
       />
-      <NodeHandles selected={!!selected} ports={ports} />
+      <NodeHandles
+        selected={!!selected}
+        ports={ports}
+        mindmapCenter={isMindmap}
+      />
       <NodeLabel {...labelProps} />
     </div>
   )

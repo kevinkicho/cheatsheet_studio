@@ -37,7 +37,10 @@ import {
   newCardBase,
   withBorderStyle,
 } from '@/lib/cardDefaults'
-import { estimateLibraryCardSize } from '@/lib/canvasDrop'
+import {
+  estimateLibraryCardSize,
+  placeCardInVisibleViewport,
+} from '@/lib/canvasDrop'
 
 /** Padding around the free board (print frame off). */
 const FREEFORM_PAD = 200
@@ -886,13 +889,19 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   addCustomEquation: (latex, title = 'Custom equation') => {
     const id = createId('item')
     const z = get().maxZ + 1
+    const width = 300
+    const height = 120
+    const pos = placeCardInVisibleViewport(
+      { width, height },
+      get().items.length,
+    )
     const item = newCardBase('custom-equation', {
       id,
       title,
-      x: 80 + (get().items.length % 5) * 24,
-      y: 80 + (get().items.length % 5) * 24,
-      width: 300,
-      height: 120,
+      x: pos.x,
+      y: pos.y,
+      width,
+      height,
       zIndex: z,
       latex,
     })
@@ -908,13 +917,19 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   addCustomImage: (imageUrl, title = 'Custom image', imagePath) => {
     const id = createId('item')
     const z = get().maxZ + 1
+    const width = 260
+    const height = 200
+    const pos = placeCardInVisibleViewport(
+      { width, height },
+      get().items.length,
+    )
     const item = newCardBase('custom-image', {
       id,
       title,
-      x: 100 + (get().items.length % 5) * 24,
-      y: 100 + (get().items.length % 5) * 24,
-      width: 260,
-      height: 200,
+      x: pos.x,
+      y: pos.y,
+      width,
+      height,
       zIndex: z,
       imageUrl,
       imagePath,
@@ -932,13 +947,17 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     const id = createId('item')
     const z = get().maxZ + 1
     const n = get().items.length
+    const width = opts?.width ?? 420
+    const height = opts?.height ?? 320
+    // Center in the currently visible main-canvas view (not fixed top-left)
+    const pos = placeCardInVisibleViewport({ width, height }, n)
     const item = newCardBase('process-chart', {
       id,
       title: opts?.title?.trim() || 'Process chart',
-      x: 90 + (n % 5) * 28,
-      y: 90 + (n % 5) * 28,
-      width: opts?.width ?? 420,
-      height: opts?.height ?? 320,
+      x: pos.x,
+      y: pos.y,
+      width,
+      height,
       zIndex: z,
       mermaidSource,
       processFlow: opts?.processFlow,

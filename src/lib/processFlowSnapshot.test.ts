@@ -52,6 +52,62 @@ describe('processFlowSnapshot', () => {
     expect(snap!.width).toBeGreaterThan(40)
   })
 
+  it('captures mindmap graphs with diagramKind and paints SVG', () => {
+    const mmNodes = [
+      {
+        id: 'root',
+        type: 'flowNode',
+        position: { x: 200, y: 200 },
+        width: 120,
+        height: 120,
+        data: {
+          label: 'Topic',
+          shape: 'circle',
+          portCount: 4,
+          portOnPerimeter: true,
+        },
+      },
+      {
+        id: 'child',
+        type: 'flowNode',
+        position: { x: 360, y: 80 },
+        width: 96,
+        height: 96,
+        data: {
+          label: 'Idea',
+          shape: 'circle',
+          portCount: 4,
+          portOnPerimeter: true,
+        },
+      },
+    ] as Node<FlowNodeData>[]
+    const mmEdges = [
+      {
+        id: 'e_root_child',
+        source: 'root',
+        target: 'child',
+        type: 'flowEdge',
+        data: { edgeStyle: 'solid', endMarker: 'none' },
+      },
+    ] as Edge<FlowEdgeData>[]
+    const snap = captureProcessFlow(mmNodes, mmEdges, {
+      direction: 'TD',
+      diagramKind: 'mindmap',
+    })
+    expect(snap).not.toBeNull()
+    expect(snap!.diagramKind).toBe('mindmap')
+    expect(snap!.nodes).toHaveLength(2)
+    const svg = processFlowToSvg(snap!)
+    expect(svg).toContain('Topic')
+    expect(svg).toContain('Idea')
+    const rf = processFlowToRf(snap!)
+    expect(rf.nodes.every((n) => n.type === 'flowNode')).toBe(true)
+    expect(rf.edges.every((e) => e.type === 'mindmapEdge')).toBe(true)
+    // Fallback straight path when live paint is missing
+    expect(snap!.edges[0]!.path).toMatch(/^M/)
+    expect(snap!.edges[0]!.path).toContain('L')
+  })
+
   it('renders SVG with edges and labels', () => {
     const snap = captureProcessFlow(nodes, edges)!
     const svg = processFlowToSvg(snap)

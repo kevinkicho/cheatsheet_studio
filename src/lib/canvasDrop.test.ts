@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   clientPointToCanvasDrop,
   estimateLibraryCardSize,
+  placeCardInVisibleViewport,
   previewRectToCanvasDrop,
 } from '@/lib/canvasDrop'
 import type { LibraryItem } from '@/types'
@@ -73,5 +74,16 @@ describe('clientPointToCanvasDrop (legacy)', () => {
       'top-left',
     )
     expect(p).toEqual({ x: 300, y: 150 })
+  })
+})
+
+describe('placeCardInVisibleViewport', () => {
+  it('falls back to corner cascade when canvas DOM is missing', () => {
+    const p0 = placeCardInVisibleViewport({ width: 420, height: 320 }, 0)
+    const p1 = placeCardInVisibleViewport({ width: 420, height: 320 }, 1)
+    expect(p0.x).toBeGreaterThanOrEqual(0)
+    expect(p0.y).toBeGreaterThanOrEqual(0)
+    // Cascade shifts subsequent items
+    expect(p1.x).not.toBe(p0.x)
   })
 })

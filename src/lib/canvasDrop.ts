@@ -168,3 +168,80 @@ export function clientPointToCanvasDrop(
     y: Math.max(0, Math.round(y)),
   }
 }
+
+/**
+ * Place a card at the center of the currently visible main-canvas viewport
+ * (what the user is looking at), not a fixed top-left cascade.
+ *
+ * Falls back to a small corner stack if the canvas DOM is not mounted.
+ */
+export function placeCardInVisibleViewport(
+  card: { width: number; height: number },
+  cascadeIndex = 0,
+): { x: number; y: number } {
+  if (typeof document === 'undefined') {
+    return {
+      x: 90 + (cascadeIndex % 5) * 28,
+      y: 90 + (cascadeIndex % 5) * 28,
+    }
+  }
+
+  const surface = document.getElementById('main-canvas-surface')
+  const vp =
+    (document.querySelector(
+      '[data-main-canvas-viewport]',
+    ) as HTMLElement | null) ??
+    (() => {
+      let el: HTMLElement | null = surface?.parentElement ?? null
+      while (el) {
+        const { overflow, overflowX, overflowY } = getComputedStyle(el)
+        if (
+          /auto|scroll/.test(overflow) ||
+          /auto|scroll/.test(overflowX) ||
+          /auto|scroll/.test(overflowY)
+        ) {
+          return el
+        }
+        el = el.parentElement
+      }
+      return null
+    })()
+
+  if (!surface) {
+    return {
+      x: 90 + (cascadeIndex % 5) * 28,
+      y: 90 + (cascadeIndex % 5) * 28,
+    }
+  }
+
+  const zoomRaw = Number(surface.dataset.zoom)
+  const zoom = Number.isFinite(zoomRaw) && zoomRaw > 0.01 ? zoomRaw : 1
+  const surfaceRect = surface.getBoundingClientRect()
+
+  // Center of the visible viewport in client (screen) coords
+  let clientX: number
+  let clientY: number
+  if (vp) {
+    const r = vp.getBoundingClientRect()
+    clientX = r.left + r.width / 2
+    clientY = r.top + r.height / 2
+  } else {
+    clientX = surfaceRect.left + surfaceRect.width / 2
+    clientY = surfaceRect.top + surfaceRect.height / 2
+  }
+
+  const base = clientPointToCanvasDrop(
+    clientX,
+    clientY,
+    { left: surfaceRect.left, top: surfaceRect.top },
+    zoom,
+    card,
+    'center',
+  )
+  // Slight cascade so repeated adds don't perfectly stack
+  const step = (cascadeIndex % 6) * 20
+  return {
+    x: Math.max(0, base.x + step),
+    y: Math.max(0, base.y + step),
+  }
+}

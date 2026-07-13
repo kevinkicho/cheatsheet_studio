@@ -373,10 +373,9 @@ export function CreateProcessChartPanel() {
     setSource(src)
     const k = detectMermaidKind(src)
     const dir = detectFlowDirection(src) ?? direction
-    const captured =
-      k === 'mindmap' ? null : getVisualEditorProcessFlow()
+    const captured = getVisualEditorProcessFlow()
     const processFlow = captured ? structuredClone(captured) : undefined
-    if (k !== 'mindmap' && !processFlow) {
+    if (!processFlow) {
       flash('Could not capture diagram — add nodes in the editor first')
       return
     }
@@ -406,10 +405,9 @@ export function CreateProcessChartPanel() {
     setSource(src)
     const k = detectMermaidKind(src)
     const dir = detectFlowDirection(src) ?? direction
-    const captured =
-      k === 'mindmap' ? null : getVisualEditorProcessFlow()
+    const captured = getVisualEditorProcessFlow()
     const processFlow = captured ? structuredClone(captured) : undefined
-    if (k !== 'mindmap' && !processFlow) {
+    if (!processFlow) {
       flash('Could not capture diagram — add nodes in the editor first')
       return
     }
@@ -438,8 +436,8 @@ export function CreateProcessChartPanel() {
     clearLibError()
     const k = detectMermaidKind(src)
     // Capture free-form layout so reload restores positions, not only mermaid text
-    const processFlow =
-      k === 'mindmap' ? null : getVisualEditorProcessFlow() ?? null
+    // (mind maps use the same processFlow snapshot as flowcharts)
+    const processFlow = getVisualEditorProcessFlow() ?? null
     const payload = {
       title:
         title.trim() ||

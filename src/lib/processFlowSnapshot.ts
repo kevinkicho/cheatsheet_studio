@@ -25,6 +25,11 @@ import {
   samplePathPoints,
 } from '@/vendor/mermaid-visual-editor/lib/edgePath'
 import { getLiveEdgePaint } from '@/vendor/mermaid-visual-editor/lib/liveEdgePaint'
+import {
+  MINDMAP_FONT_SIZE,
+  straightMindmapPath,
+  wrapMindmapLabelLines,
+} from '@/vendor/mermaid-visual-editor/lib/mindmap'
 
 export const PROCESS_FLOW_VERSION = 1 as const
 
@@ -72,6 +77,11 @@ export type ProcessFlowSnapshot = {
   curveStyle: CurveStyle
   /** Match editor multi-edge U-turn spacing */
   multiEdgeSpacing?: number
+  /**
+   * Which Process chip produced this snapshot. Optional for older cards;
+   * mind maps and flowcharts both paint via ProcessFlowView.
+   */
+  diagramKind?: 'flowchart' | 'mindmap'
   nodes: ProcessFlowNodeSnap[]
   edges: ProcessFlowEdgeSnap[]
   /** Content bounding box (for viewBox) */
@@ -117,6 +127,7 @@ export function captureProcessFlow(
     direction?: Direction
     curveStyle?: CurveStyle
     multiEdgeSpacing?: number
+    diagramKind?: 'flowchart' | 'mindmap'
   } = {},
 ): ProcessFlowSnapshot | null {
   const plain = nodes.filter((n) => !n.data?.isSubgraph)
@@ -209,38 +220,48 @@ export function captureProcessFlow(
       labelX = live.labelX - ox
       labelY = live.labelY - oy
     } else if (sn && tn) {
-      const siblingIndex = siblingIndexForEdge(
-        e.id,
-        e.source,
-        e.target,
-        edgeRefs,
-        centers,
-      )
-      const pairCount = edgeRefs.filter(
-        (x) =>
-          (x.source === e.source && x.target === e.target) ||
-          (x.source === e.target && x.target === e.source),
-      ).length
-      const manual = e.data?.manualConnect === true
-      const routed = buildEdgePath({
-        source: nodeBoxFromRf(sn.x, sn.y, sn.width, sn.height, sn.shape),
-        target: nodeBoxFromRf(tn.x, tn.y, tn.width, tn.height, tn.shape),
-        waypoints: shiftedWps.length > 0 ? shiftedWps : undefined,
-        siblingIndex,
-        siblingSpacing: opts.multiEdgeSpacing ?? 14,
-        curveStyle: opts.curveStyle ?? 'basis',
-        isMultiEdge: pairCount > 1,
-        manualConnect: manual,
-        sourceHandle: e.sourceHandle ?? null,
-        targetHandle: e.targetHandle ?? null,
-        sourceData: srcNode?.data,
-        targetData: tgtNode?.data,
-      })
-      path = routed.path
-      const offX = Number(e.data?.labelOffsetX) || 0
-      const offY = Number(e.data?.labelOffsetY) || 0
-      labelX = routed.labelX + offX
-      labelY = routed.labelY + offY
+      const isMindmapEdge =
+        opts.diagramKind === 'mindmap' || e.type === 'mindmapEdge'
+      if (isMindmapEdge) {
+        // Straight radial spoke (same as MindmapEdge editor)
+        const routed = straightMindmapPath(sn, tn)
+        path = routed.path
+        labelX = routed.labelX
+        labelY = routed.labelY
+      } else {
+        const siblingIndex = siblingIndexForEdge(
+          e.id,
+          e.source,
+          e.target,
+          edgeRefs,
+          centers,
+        )
+        const pairCount = edgeRefs.filter(
+          (x) =>
+            (x.source === e.source && x.target === e.target) ||
+            (x.source === e.target && x.target === e.source),
+        ).length
+        const manual = e.data?.manualConnect === true
+        const routed = buildEdgePath({
+          source: nodeBoxFromRf(sn.x, sn.y, sn.width, sn.height, sn.shape),
+          target: nodeBoxFromRf(tn.x, tn.y, tn.width, tn.height, tn.shape),
+          waypoints: shiftedWps.length > 0 ? shiftedWps : undefined,
+          siblingIndex,
+          siblingSpacing: opts.multiEdgeSpacing ?? 14,
+          curveStyle: opts.curveStyle ?? 'basis',
+          isMultiEdge: pairCount > 1,
+          manualConnect: manual,
+          sourceHandle: e.sourceHandle ?? null,
+          targetHandle: e.targetHandle ?? null,
+          sourceData: srcNode?.data,
+          targetData: tgtNode?.data,
+        })
+        path = routed.path
+        const offX = Number(e.data?.labelOffsetX) || 0
+        const offY = Number(e.data?.labelOffsetY) || 0
+        labelX = routed.labelX + offX
+        labelY = routed.labelY + offY
+      }
     }
 
     return {
@@ -322,6 +343,7 @@ export function captureProcessFlow(
     direction: opts.direction ?? 'TD',
     curveStyle: opts.curveStyle ?? 'basis',
     multiEdgeSpacing: opts.multiEdgeSpacing ?? 14,
+    diagramKind: opts.diagramKind,
     nodes: finalNodes,
     edges: finalEdges,
     width: Math.ceil(contentMaxX - contentMinX + shiftX),
@@ -389,12 +411,31 @@ export function processFlowToRf(snap: ProcessFlowSnapshot): {
     },
   }))
 
+  const isMm = snap.diagramKind === 'mindmap'
   const edges: Edge<FlowEdgeData>[] = snap.edges.map((e) => {
     const { start, end } = resolveEdgeMarkers({
       startMarker: e.startMarker,
-      endMarker: e.endMarker ?? 'arrow',
+      endMarker: e.endMarker ?? (isMm ? 'none' : 'arrow'),
       edgeStyle: e.edgeStyle,
     })
+    if (isMm) {
+      return {
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        sourceHandle: 'center',
+        targetHandle: 'center-target',
+        type: 'mindmapEdge',
+        label: e.label,
+        reconnectable: false,
+        data: {
+          edgeStyle: e.edgeStyle ?? 'solid',
+          startMarker: 'none',
+          endMarker: 'none',
+          strokeColor: e.strokeColor,
+        },
+      }
+    }
     return {
       id: e.id,
       source: e.source,
@@ -458,6 +499,52 @@ function shapePath(
         d: `M${x + inset},${y} L${x + w - inset},${y} L${x + w},${cy} L${x + w - inset},${y + h} L${x + inset},${y + h} L${x},${cy} Z`,
       }
     }
+    case 'bang':
+    case 'asymmetric': {
+      // Star-ish explode (matches mindmap bang underlay proportions)
+      const pts = [
+        [0.5, 0.02],
+        [0.58, 0.22],
+        [0.8, 0.12],
+        [0.7, 0.32],
+        [0.98, 0.4],
+        [0.72, 0.5],
+        [0.95, 0.7],
+        [0.68, 0.65],
+        [0.75, 0.95],
+        [0.5, 0.78],
+        [0.25, 0.95],
+        [0.32, 0.65],
+        [0.05, 0.7],
+        [0.28, 0.5],
+        [0.02, 0.4],
+        [0.3, 0.32],
+        [0.2, 0.12],
+        [0.42, 0.22],
+      ]
+      const d = pts
+        .map(
+          ([px, py], i) =>
+            `${i === 0 ? 'M' : 'L'}${x + px! * w},${y + py! * h}`,
+        )
+        .join(' ')
+      return { d: `${d} Z` }
+    }
+    case 'cloud': {
+      // Soft cloud silhouette (card-side approximation of Mermaid cloud)
+      const r = Math.min(w, h) * 0.18
+      return {
+        d:
+          `M${x + r},${y + h * 0.55}` +
+          ` a${r},${r} 0 0 1 ${r * 0.9},${-r * 1.1}` +
+          ` a${r * 1.2},${r * 1.2} 0 0 1 ${w * 0.35},${-r * 0.4}` +
+          ` a${r * 1.1},${r * 1.1} 0 0 1 ${w * 0.28},${r * 0.9}` +
+          ` a${r * 0.9},${r * 0.9} 0 0 1 ${-r * 0.2},${h * 0.35}` +
+          ` a${r * 1.1},${r * 0.9} 0 0 1 ${-w * 0.35},${r * 0.15}` +
+          ` a${r},${r} 0 0 1 ${-w * 0.28},${-r * 0.2}` +
+          ` a${r * 0.85},${r * 0.85} 0 0 1 ${-r * 0.3},${-h * 0.25} Z`,
+      }
+    }
     default:
       return { rect: true, rx: 5 }
   }
@@ -505,35 +592,42 @@ export function processFlowToSvg(
     let labelX = e.labelX
     let labelY = e.labelY
     if (!path) {
-      const siblingIndex = siblingIndexForEdge(
-        e.id,
-        e.source,
-        e.target,
-        allEdges,
-        nodeCenters,
-      )
-      const pairCount = allEdges.filter(
-        (x) =>
-          (x.source === e.source && x.target === e.target) ||
-          (x.source === e.target && x.target === e.source),
-      ).length
-      const spacing =
-        opts?.multiEdgeSpacing ?? snap.multiEdgeSpacing ?? 14
-      const routed = buildEdgePath({
-        source: nodeBoxFromRf(sn.x, sn.y, sn.width, sn.height, sn.shape),
-        target: nodeBoxFromRf(tn.x, tn.y, tn.width, tn.height, tn.shape),
-        waypoints: e.waypoints,
-        siblingIndex,
-        siblingSpacing: spacing,
-        curveStyle: snap.curveStyle ?? 'basis',
-        isMultiEdge: pairCount > 1,
-        manualConnect: e.manualConnect === true,
-        sourceHandle: e.sourceHandle ?? null,
-        targetHandle: e.targetHandle ?? null,
-      })
-      path = routed.path
-      labelX = routed.labelX
-      labelY = routed.labelY
+      if (snap.diagramKind === 'mindmap') {
+        const routed = straightMindmapPath(sn, tn)
+        path = routed.path
+        labelX = routed.labelX
+        labelY = routed.labelY
+      } else {
+        const siblingIndex = siblingIndexForEdge(
+          e.id,
+          e.source,
+          e.target,
+          allEdges,
+          nodeCenters,
+        )
+        const pairCount = allEdges.filter(
+          (x) =>
+            (x.source === e.source && x.target === e.target) ||
+            (x.source === e.target && x.target === e.source),
+        ).length
+        const spacing =
+          opts?.multiEdgeSpacing ?? snap.multiEdgeSpacing ?? 14
+        const routed = buildEdgePath({
+          source: nodeBoxFromRf(sn.x, sn.y, sn.width, sn.height, sn.shape),
+          target: nodeBoxFromRf(tn.x, tn.y, tn.width, tn.height, tn.shape),
+          waypoints: e.waypoints,
+          siblingIndex,
+          siblingSpacing: spacing,
+          curveStyle: snap.curveStyle ?? 'basis',
+          isMultiEdge: pairCount > 1,
+          manualConnect: e.manualConnect === true,
+          sourceHandle: e.sourceHandle ?? null,
+          targetHandle: e.targetHandle ?? null,
+        })
+        path = routed.path
+        labelX = routed.labelX
+        labelY = routed.labelY
+      }
     }
 
     const stroke = e.strokeColor || STUDIO.edge
@@ -562,6 +656,8 @@ export function processFlowToSvg(
       )
     }
 
+    // Mindmap spokes: slightly thicker so they match the interactive editor
+    if (snap.diagramKind === 'mindmap') sw = Math.max(sw, 2.25)
     const markerAttr = mid ? ` marker-end="url(#${mid})"` : ''
     edgeEls.push(
       `<path d="${path}" fill="none" stroke="${stroke}" stroke-width="${sw}"${dash}${markerAttr}/>`,
@@ -578,6 +674,8 @@ export function processFlowToSvg(
     void start
   }
 
+  const isMm = snap.diagramKind === 'mindmap'
+  const nodeFont = isMm ? MINDMAP_FONT_SIZE : 14
   const nodeEls: string[] = []
   for (const n of snap.nodes) {
     const fill = n.fillColor || STUDIO.fill
@@ -595,9 +693,17 @@ export function processFlowToSvg(
     }
     const cx = n.x + n.width / 2
     const cy = n.y + n.height / 2
-    nodeEls.push(
-      `<text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central" fill="${text}" font-family="trebuchet ms,verdana,arial,sans-serif" font-size="14" font-weight="500">${esc(n.label)}</text>`,
-    )
+    // Multi-line label (same wrap heuristic as editor auto-size)
+    const lines = isMm
+      ? wrapMindmapLabelLines(n.label, n.width > 140 ? 16 : 13)
+      : [n.label]
+    const lineH = nodeFont * 1.25
+    const startY = cy - ((lines.length - 1) * lineH) / 2
+    lines.forEach((line, i) => {
+      nodeEls.push(
+        `<text x="${cx}" y="${startY + i * lineH}" text-anchor="middle" dominant-baseline="central" fill="${text}" font-family="trebuchet ms,verdana,arial,sans-serif" font-size="${nodeFont}" font-weight="500">${esc(line)}</text>`,
+      )
+    })
   }
 
   const w = Math.max(40, snap.width)

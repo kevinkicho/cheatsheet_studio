@@ -293,6 +293,109 @@ export function mindmapPreviousSibling(
   return i > 0 ? kids[i - 1]! : null
 }
 
+// ─── Topic size / spacing (larger nodes, shorter spokes) ───────────────────
+
+/** Font size used in editor FlowNode + processFlow SVG for mind maps. */
+export const MINDMAP_FONT_SIZE = 17
+/** Center-to-center distance between parent and child rings (shorter = tighter). */
+export const MINDMAP_LEVEL_GAP = 158
+export const MINDMAP_HUB_MIN = 148
+export const MINDMAP_LEAF_MIN = 118
+
+/** Word-wrap label for sizing / SVG paint. */
+export function wrapMindmapLabelLines(
+  label: string,
+  maxCharsPerLine = 14,
+): string[] {
+  const raw = (label || 'Topic').trim().replace(/\s+/g, ' ')
+  if (!raw) return ['Topic']
+  if (raw.length <= maxCharsPerLine) return [raw]
+  const words = raw.split(' ')
+  const lines: string[] = []
+  let cur = ''
+  for (const w of words) {
+    const next = cur ? `${cur} ${w}` : w
+    if (next.length <= maxCharsPerLine) {
+      cur = next
+    } else {
+      if (cur) lines.push(cur)
+      // Hard-break very long tokens
+      if (w.length > maxCharsPerLine) {
+        for (let i = 0; i < w.length; i += maxCharsPerLine) {
+          lines.push(w.slice(i, i + maxCharsPerLine))
+        }
+        cur = ''
+      } else {
+        cur = w
+      }
+    }
+  }
+  if (cur) lines.push(cur)
+  return lines.length ? lines : [raw]
+}
+
+/**
+ * Auto-size a mindmap topic so its label fits inside the shape.
+ * Circles / bang / hex stay square; rounded/rect/cloud can be wider.
+ */
+export function measureMindmapNodeSize(
+  label: string,
+  opts?: { isHub?: boolean; shape?: NodeShape },
+): { width: number; height: number } {
+  const isHub = opts?.isHub === true
+  const shape = (opts?.shape || 'circle') as NodeShape
+  const min = isHub ? MINDMAP_HUB_MIN : MINDMAP_LEAF_MIN
+  const fontSize = MINDMAP_FONT_SIZE
+  const padX = 32
+  const padY = 28
+  const maxChars = isHub ? 16 : 13
+  const lines = wrapMindmapLabelLines(label, maxChars)
+
+  let textW = 0
+  let textH = lines.length * fontSize * 1.28
+
+  if (typeof document !== 'undefined') {
+    try {
+      const canvas =
+        (measureMindmapNodeSize as unknown as { _c?: HTMLCanvasElement })._c ??
+        document.createElement('canvas')
+      ;(measureMindmapNodeSize as unknown as { _c?: HTMLCanvasElement })._c =
+        canvas
+      const ctx = canvas.getContext('2d')
+      if (ctx) {
+        ctx.font = `500 ${fontSize}px "trebuchet ms", verdana, arial, sans-serif`
+        for (const line of lines) {
+          textW = Math.max(textW, ctx.measureText(line).width)
+        }
+      }
+    } catch {
+      /* fall through to heuristic */
+    }
+  }
+  if (textW < 1) {
+    const maxLen = Math.max(...lines.map((l) => l.length), 1)
+    textW = maxLen * fontSize * 0.58
+  }
+
+  let w = Math.ceil(textW + padX)
+  let h = Math.ceil(textH + padY)
+  const square =
+    shape === 'circle' ||
+    shape === 'double-circle' ||
+    shape === 'bang' ||
+    shape === 'hexagon'
+  if (square) {
+    const s = Math.max(min, w, h)
+    // Slight extra so circular clip doesn't crop glyphs
+    const out = Math.ceil(s * 1.02)
+    return { width: out, height: out }
+  }
+  return {
+    width: Math.max(min, w),
+    height: Math.max(Math.round(min * 0.72), h),
+  }
+}
+
 /**
  * Radial mindmap layout — equal pie slices by **child count** at every level.
  *
@@ -314,9 +417,9 @@ export function applyMindmapTreeLayout(
   const positions = new Map<string, { x: number; y: number }>()
   const roots = mindmapRoots(nodes, edges)
 
-  /** Distance between parent ring and child ring (px). */
-  const LEVEL_GAP = 200
-  const PAD = 100
+  /** Distance between parent ring and child ring (px) — shorter spokes. */
+  const LEVEL_GAP = MINDMAP_LEVEL_GAP
+  const PAD = 80
 
   const heading0: Record<Direction, number> = {
     TD: -Math.PI / 2,
@@ -416,29 +519,71 @@ export function applyMindmapTreeLayout(
   return nodes.map((n) => {
     const p = positions.get(n.id)
     const isHub = !hasParent.has(n.id)
-    const size = isHub ? 120 : 96
-    const keepW =
-      typeof n.style?.width === 'number' ? n.style.width : size
-    const keepH =
-      typeof n.style?.height === 'number' ? n.style.height : size
+    const shape = (n.data.shape || 'circle') as NodeShape
+    const fitted = measureMindmapNodeSize(String(n.data.label ?? 'Topic'), {
+      isHub,
+      shape,
+    })
     const base = {
       ...n,
-      type: 'mindmapNode' as const,
+      // Same node component as flowchart (ports, resize, shapes, snap)
+      type: 'flowNode' as const,
+      width: fitted.width,
+      height: fitted.height,
       data: {
         ...n.data,
-        shape: (n.data.shape || 'circle') as NodeShape,
+        shape,
+        portCount: n.data.portCount ?? 4,
+        portOnPerimeter: n.data.portOnPerimeter ?? true,
+        portRadius: n.data.portRadius ?? 1,
+        portRotation: n.data.portRotation ?? 0,
       },
-      style: { ...n.style, width: keepW, height: keepH },
+      style: { ...n.style, width: fitted.width, height: fitted.height },
     }
     if (!p) return base
+    // Place by center so size changes stay on the radial grid
     return {
       ...base,
-      // New object so React Flow always sees a position change
-      position: { x: Math.round(p.x + dx), y: Math.round(p.y + dy) },
+      position: {
+        x: Math.round(p.x + dx - fitted.width / 2),
+        y: Math.round(p.y + dy - fitted.height / 2),
+      },
     }
   })
 }
 
+/**
+ * Straight radial spoke between two topics (line of centers, clipped to
+ * node radius). Used for hierarchy + user links in mindmap mode — not pipes.
+ */
+export function straightMindmapPath(
+  source: { x: number; y: number; width: number; height: number },
+  target: { x: number; y: number; width: number; height: number },
+): { path: string; labelX: number; labelY: number } {
+  const scx = source.x + source.width / 2
+  const scy = source.y + source.height / 2
+  const tcx = target.x + target.width / 2
+  const tcy = target.y + target.height / 2
+  const sr = Math.max(4, Math.min(source.width, source.height) / 2 - 1)
+  const tr = Math.max(4, Math.min(target.width, target.height) / 2 - 1)
+  const dx = tcx - scx
+  const dy = tcy - scy
+  const len = Math.hypot(dx, dy) || 1
+  const ux = dx / len
+  const uy = dy / len
+  const x1 = scx + ux * sr
+  const y1 = scy + uy * sr
+  const x2 = tcx - ux * tr
+  const y2 = tcy - uy * tr
+  const r = (n: number) => Math.round(n * 10) / 10
+  return {
+    path: `M${r(x1)},${r(y1)} L${r(x2)},${r(y2)}`,
+    labelX: r((x1 + x2) / 2),
+    labelY: r((y1 + y2) / 2),
+  }
+}
+
+/** Hierarchy edge — straight radial line (mindmap look, not flowchart pipes). */
 export function makeMindmapEdge(
   parentId: string,
   childId: string,
@@ -448,13 +593,21 @@ export function makeMindmapEdge(
     source: parentId,
     target: childId,
     type: 'mindmapEdge',
+    reconnectable: false,
     sourceHandle: 'center',
     targetHandle: 'center-target',
-    data: { edgeStyle: 'solid', arrowType: 'none' },
+    data: {
+      edgeStyle: 'solid',
+      startMarker: 'none',
+      endMarker: 'none',
+      arrowType: 'none',
+    },
   }
 }
 
-/** Stamp RF nodes as circular mindmap nodes (size by hub vs leaf). */
+/**
+ * Stamp RF nodes for mindmap mode: FlowNode + auto-fit size from label.
+ */
 export function asMindmapNodes(
   nodes: Node<FlowNodeData>[],
   edges: Edge<FlowEdgeData>[],
@@ -462,40 +615,78 @@ export function asMindmapNodes(
   const hasParent = new Set(edges.map((e) => e.target))
   return nodes.map((n) => {
     const isHub = !hasParent.has(n.id)
-    const size = isHub ? 120 : 96
+    const shape = (n.data.shape || 'circle') as NodeShape
+    const fitted = measureMindmapNodeSize(String(n.data.label ?? 'Topic'), {
+      isHub,
+      shape,
+    })
+    // If user already resized larger than fit, keep the larger box
+    const prevW =
+      typeof n.style?.width === 'number'
+        ? n.style.width
+        : typeof n.width === 'number'
+          ? n.width
+          : 0
+    const prevH =
+      typeof n.style?.height === 'number'
+        ? n.style.height
+        : typeof n.height === 'number'
+          ? n.height
+          : 0
+    const width = Math.max(fitted.width, prevW)
+    const height = Math.max(fitted.height, prevH)
     return {
       ...n,
-      type: 'mindmapNode',
+      type: 'flowNode',
+      width,
+      height,
       data: {
         ...n.data,
-        shape: n.data.shape || 'circle',
+        shape,
+        portCount: n.data.portCount ?? 4,
+        portOnPerimeter: n.data.portOnPerimeter ?? true,
+        portRadius: n.data.portRadius ?? 1,
+        portRotation: n.data.portRotation ?? 0,
       },
       style: {
         ...n.style,
-        // Keep user-resized size if present
-        width:
-          typeof n.style?.width === 'number' ? n.style.width : size,
-        height:
-          typeof n.style?.height === 'number' ? n.style.height : size,
+        width,
+        height,
       },
     }
   })
 }
 
+/** Stamp all links as straight mindmap spokes (clear pipe waypoints). */
 export function asMindmapEdges(
   edges: Edge<FlowEdgeData>[],
 ): Edge<FlowEdgeData>[] {
-  return edges.map((e) => ({
-    ...e,
-    type: 'mindmapEdge',
-    sourceHandle: 'center',
-    targetHandle: 'center-target',
-    data: {
-      ...(e.data ?? {}),
-      arrowType: 'none' as const,
-      edgeStyle: e.data?.edgeStyle ?? 'solid',
-    },
-  }))
+  return edges.map((e) => {
+    const {
+      waypoints: _w,
+      manualConnect: _m,
+      mermaidPath: _p,
+      mermaidLabelX: _x,
+      mermaidLabelY: _y,
+      labelOffsetX: _lox,
+      labelOffsetY: _loy,
+      ...restData
+    } = (e.data ?? {}) as FlowEdgeData & Record<string, unknown>
+    return {
+      ...e,
+      type: 'mindmapEdge',
+      reconnectable: false,
+      sourceHandle: 'center',
+      targetHandle: 'center-target',
+      data: {
+        ...restData,
+        edgeStyle: e.data?.edgeStyle ?? 'solid',
+        startMarker: 'none',
+        endMarker: 'none',
+        arrowType: 'none',
+      },
+    }
+  })
 }
 
 // ─── Parse / serialize ───────────────────────────────────────────────────────
@@ -565,20 +756,35 @@ export function parseMermaidMindmap(source: string): MindmapParseResult {
     const parent = stack.length > 0 ? stack[stack.length - 1]! : null
     const st =
       styles.get(id) ?? (parsed.idHint ? styles.get(parsed.idHint) : undefined)
+    const shape =
+      parsed.shape === 'rectangle'
+        ? 'circle'
+        : ((parsed.shape || 'circle') as NodeShape)
+    // Roots get hub min size; children sized from label (layout refines)
+    const fitted = measureMindmapNodeSize(parsed.label, {
+      isHub: !parent,
+      shape,
+    })
 
     nodes.push({
       id,
-      type: 'mindmapNode',
+      type: 'flowNode',
       position: { x: 40 + depth * 200, y: 40 + sib * 88 },
+      width: fitted.width,
+      height: fitted.height,
       data: {
         label: parsed.label,
-        // Radial mindmap UI uses circles; Mermaid shape still serialized from data
-        shape: parsed.shape === 'rectangle' ? 'circle' : parsed.shape || 'circle',
+        // Default circle topics; Mermaid shape still serialized from data
+        shape,
+        portCount: 4,
+        portOnPerimeter: true,
+        portRadius: 1,
+        portRotation: 0,
         ...(st?.fill ? { fillColor: st.fill } : {}),
         ...(st?.stroke ? { strokeColor: st.stroke } : {}),
         ...(st?.color ? { textColor: st.color } : {}),
       },
-      style: { width: 96, height: 96 },
+      style: { width: fitted.width, height: fitted.height },
     })
     lastNodeId = id
 

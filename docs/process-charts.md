@@ -19,24 +19,25 @@ tool and placed as canvas cards.
    the editor *is* the preview). Toolbar: **Inspector**, **Select (V)**,
    **Pan (H or Shift+drag)**, shapes, **example template**, **Auto Layout**,
    **Organize Connections**, **zoom fit**, diagram **Reset**.
-4. Drag **port → port** to connect. Lines use orthogonal **smooth-step “pipe”**
-   curves. Drop a link on empty canvas → new rectangle + connection.
-5. **Pipe tools:** snap to node edges / centers / ports / bends; select an edge
-   and drag **shaft midpoints** to slide orthogonal runs. **Yes/No** labels sit
-   on the **longest shaft midpoint** by default; drag to move; double-click to
-   edit text.
+4. **Flowchart:** drag **port → port** for orthogonal pipes; drop on empty → new
+   rectangle. **Mind map:** drag between topics for **straight radial spokes**;
+   drop on empty → new circle topic. Tab/Enter hierarchy still works.
+5. **Flowchart pipe tools:** snap, shaft midpoints, Yes/No labels on longest
+   shaft. **Mind map Auto Layout** rebuilds the equal-slice radial tree;
+   Organize re-stamps straight spokes (no pipe bends).
 6. **Cloud library** (signed in): **Save new** / **Update saved** / **Load…**
    stores Mermaid source **and** flowchart `processFlow` snapshots under the
    user’s `flowcharts` collection. Load restores free-form layout when present.
-7. Set a **title**, then **Add to canvas**. This **only places the card** — it
-   does **not** enter edit mode. Use the card’s bottom-right **Edit** badge
-   when you want to change the diagram; **Done** saves and exits. Title and
-   chart **ID** appear in the Process panel while editing.
-8. On the board, process cards use solid panel chrome. **Flowcharts** paint the
-   free-form **`processFlow` snapshot** (same geometry as the interactive
-   editor, including live pipe paths when the editor is open). **Mind maps**
-   still use Mermaid SVG. Both stay vector at card size — see
-   [vector-graphics.md](./vector-graphics.md).
+7. Set a **title**, then **Add to canvas**. The card is placed in the **center
+   of the currently visible main-canvas viewport**. This **only places the
+   card** — it does **not** enter edit mode. Use the card’s bottom-right
+   **Edit** badge when you want to change the diagram; **Done** saves and
+   exits. Title and chart **ID** appear in the Process panel while editing.
+8. On the board, process cards use solid panel chrome. **Flowcharts and mind
+   maps** both paint the free-form **`processFlow` snapshot** (same geometry as
+   the interactive editor, including live pipe paths when the editor is open).
+   Older mind-map cards without a snapshot fall back to Mermaid SVG. Both stay
+   vector at card size — see [vector-graphics.md](./vector-graphics.md).
 9. **Layers:** click a process card row to **zoom-fit** it on the board.
    Mermaid source / **Copy** live in Process **Inspector → Chart settings**
    (not left Item properties).
@@ -59,8 +60,8 @@ edits back into the card.
 
 | Kind | Interactive editor | Card paint |
 |------|--------------------|------------|
-| **Flowchart** | Yes | `processFlow` snapshot → `ProcessFlowView` SVG |
-| **Mind map** | Yes | Mermaid SVG via `MermaidView` |
+| **Flowchart** | FlowNode + FlowEdge orthogonal pipes | `processFlow` → `ProcessFlowView` |
+| **Mind map** | FlowNode + **straight** MindmapEdge spokes (+ tree ops / radial Auto Layout) | `processFlow` → `ProcessFlowView` (legacy cards without snapshot fall back to Mermaid SVG) |
 
 Older sequence / state / class / ER / pie templates are **not** offered in the
 Process panel chips. Existing cards of other kinds remain on the board if present.
@@ -113,8 +114,9 @@ Process panel (React Flow editor)
    endpoints. Routing stays locked when other edges are added.
 3. **Reverse multi-edge (e.g. No)** — same-side U-turn with clearance so pipes
    do not cut through node bodies.
-4. **Add to canvas** — clones snapshot; card SVG uses **baked paths** and a
-   viewBox expanded for U-turn bounds so geometry matches the editor.
+4. **Add to canvas** — clones snapshot (flowchart **and** mind map); card SVG
+   uses **baked paths** and a viewBox expanded for U-turn bounds so geometry
+   matches the editor.
 
 ### Interaction notes
 

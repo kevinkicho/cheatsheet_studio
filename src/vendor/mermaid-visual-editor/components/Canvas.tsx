@@ -173,7 +173,7 @@ function CanvasInner({ onOpenPalette }: CanvasInnerProps) {
       event: globalThis.MouseEvent | globalThis.TouchEvent,
       connectionState: FinalConnectionState,
     ) => {
-      if (isMindmap || drawingShape || panMode) return
+      if (drawingShape || panMode) return
       // Successful connect is handled by onConnect
       if (connectionState.isValid) return
       const fromNode = connectionState.fromNode
@@ -208,7 +208,8 @@ function CanvasInner({ onOpenPalette }: CanvasInnerProps) {
         fromNodeId: fromNode.id,
         fromHandleId: fromHandle?.id ?? null,
         fromHandleType: fromHandle?.type ?? 'source',
-        shape: 'rectangle',
+        // Mindmap drop-on-empty defaults to circle topics
+        shape: isMindmap ? 'circle' : 'rectangle',
       })
     },
     [
@@ -221,15 +222,31 @@ function CanvasInner({ onOpenPalette }: CanvasInnerProps) {
   )
 
   /**
-   * Ports are only for creating / re-plugging connections. Stroke geometry is
-   * Mermaid center→border clip (FlowEdge), independent of handle midpoints.
+   * Flowchart: pipe edges + reconnect. Mindmap: straight radial spokes.
    */
   const wiredEdges = useMemo(() => {
-    if (isMindmap) return edges
+    if (isMindmap) {
+      return edges.map((e) => ({
+        ...e,
+        type: 'mindmapEdge' as const,
+        reconnectable: false,
+        // Force center handles so RF always has endpoints for mindmap spokes
+        sourceHandle: 'center',
+        targetHandle: 'center-target',
+        // Keep under node fills (nodes layer stacks above edges)
+        zIndex: 0,
+        style: {
+          ...(e.style ?? {}),
+          stroke: (e.data as FlowEdgeData | undefined)?.strokeColor || '#a1a1aa',
+        },
+      }))
+    }
     return edges.map((e) => ({
       ...e,
       type: 'flowEdge' as const,
       reconnectable: true,
+      // Below node bodies; elevateEdgesOnSelect lifts when editing plugs
+      zIndex: e.selected ? 1000 : 0,
     }))
   }, [edges, isMindmap])
 
@@ -573,7 +590,7 @@ function CanvasInner({ onOpenPalette }: CanvasInnerProps) {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
-        onConnectEnd={isMindmap ? undefined : handleConnectEnd}
+        onConnectEnd={handleConnectEnd}
         onReconnect={isMindmap ? undefined : handleReconnect}
         onReconnectStart={isMindmap ? undefined : handleReconnectStart}
         onReconnectEnd={isMindmap ? undefined : handleReconnectEnd}
@@ -585,10 +602,10 @@ function CanvasInner({ onOpenPalette }: CanvasInnerProps) {
           type: isMindmap ? 'mindmapEdge' : 'flowEdge',
           reconnectable: !isMindmap,
           interactionWidth: 20,
-          // Keep edges above node ports so re-plug grips receive clicks
-          zIndex: 5,
+          // Under node fills; selected edges elevate for grips
+          zIndex: 0,
         }}
-        // New-connection rubber band uses Mermaid clip + basis (not RF bezier)
+        // Flowchart rubber band; mindmap uses RF default (straight)
         connectionLineComponent={isMindmap ? undefined : MermaidConnectionLine}
         elevateEdgesOnSelect
         onNodeDragStop={handleNodeDragStop}
