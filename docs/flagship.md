@@ -62,9 +62,34 @@ With nothing selected on the canvas:
 1. Open **Auto layout**
 2. Pick **content size** (Extra small → Large), **gap**, **columns**
 3. **Apply auto layout** — deterministic multi-column pack into print margins
-4. Optional **AI organize with Ollama** — local `127.0.0.1:11434`, default model `gemma4:31b-cloud`
+4. Optional **AI organize with Ollama** (Cloud or local)
 
-Ollama must be running (`ollama serve`). Optional env: `VITE_OLLAMA_MODEL`, `VITE_OLLAMA_BASE_URL`, `VITE_OLLAMA_USE_PROXY=true`.
+#### Ollama Cloud (recommended — no CORS)
+
+Chrome cannot call `localhost:11434` from the Vite app origin. We use a **same-origin
+Vite proxy** (`/ollama-proxy`) that forwards to [Ollama Cloud](https://docs.ollama.com/cloud)
+and injects your API key **server-side**.
+
+1. Create a key: https://ollama.com/settings/keys  
+2. Copy `.env.example` → `.env` and set:
+
+```env
+OLLAMA_API_KEY=your_ollama_api_key_here
+OLLAMA_MODE=cloud
+VITE_OLLAMA_MODEL=gemma4:31b
+```
+
+3. **Restart** `npm run dev` (proxy reads env at startup)  
+4. Auto layout → **AI organize with Ollama**
+
+| Variable | Where | Purpose |
+|----------|--------|---------|
+| `OLLAMA_API_KEY` | `.env` only (no `VITE_`) | Bearer token for https://ollama.com |
+| `OLLAMA_MODE` | `.env` | `cloud` or `local` |
+| `OLLAMA_HOST` | `.env` | Optional proxy target override |
+| `VITE_OLLAMA_MODEL` | `.env` | Model id (Cloud: `gemma4:31b`) |
+
+Do **not** put the key in `VITE_OLLAMA_API_KEY` — that would embed it in the client bundle.
 
 ## Publish SDK
 

@@ -11,10 +11,10 @@ import {
   DENSITY_PRESETS,
 } from '@/lib/autoOrganize'
 import {
-  DEFAULT_OLLAMA_BASE,
   DEFAULT_OLLAMA_MODEL,
   ollamaChat,
   parseJsonFromModel,
+  resolveOllamaBaseUrl,
 } from '@/lib/ollamaClient'
 
 export type AiLayoutPlacement = {
@@ -217,7 +217,7 @@ export async function suggestCheatsheetLayoutWithOllama(
   }
 
   const { content, model } = await ollamaChat({
-    baseUrl: opts.baseUrl ?? DEFAULT_OLLAMA_BASE,
+    baseUrl: opts.baseUrl ?? resolveOllamaBaseUrl(),
     model: opts.model ?? DEFAULT_OLLAMA_MODEL,
     temperature: 0.25,
     json: true,

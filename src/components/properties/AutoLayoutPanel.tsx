@@ -6,9 +6,11 @@ import {
   type ContentDensity,
 } from '@/lib/autoOrganize'
 import {
-  DEFAULT_OLLAMA_BASE,
   DEFAULT_OLLAMA_MODEL,
   ollamaPing,
+  resolveOllamaBackend,
+  resolveOllamaBaseUrl,
+  type OllamaBackend,
 } from '@/lib/ollamaClient'
 import { suggestCheatsheetLayoutWithOllama } from '@/lib/ollamaLayout'
 import { useCanvasStore } from '@/stores/canvasStore'
@@ -16,7 +18,8 @@ import { useCanvasStore } from '@/stores/canvasStore'
 const DENSITIES = Object.keys(DENSITY_PRESETS) as ContentDensity[]
 
 /**
- * Sheet-level cheatsheet packing controls + optional local Ollama AI assist.
+ * Sheet-level cheatsheet packing controls + Ollama AI assist
+ * (Cloud via Vite proxy + OLLAMA_API_KEY, or local :11434).
  */
 export function AutoLayoutPanel() {
   const items = useCanvasStore((s) => s.items)
@@ -33,17 +36,27 @@ export function AutoLayoutPanel() {
   )
   const [ollamaOk, setOllamaOk] = useState<boolean | null>(null)
   const [ollamaModels, setOllamaModels] = useState<string[]>([])
+  const [backend, setBackend] = useState<OllamaBackend>(resolveOllamaBackend())
+  const [baseUrl, setBaseUrl] = useState(resolveOllamaBaseUrl())
   const [model, setModel] = useState(DEFAULT_OLLAMA_MODEL)
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const refreshOllama = useCallback(async () => {
-    const ping = await ollamaPing(DEFAULT_OLLAMA_BASE)
+    const ping = await ollamaPing()
     setOllamaOk(ping.ok)
     setOllamaModels(ping.models)
+    setBackend(ping.backend)
+    setBaseUrl(ping.baseUrl)
     if (ping.ok && ping.models.includes(DEFAULT_OLLAMA_MODEL)) {
       setModel(DEFAULT_OLLAMA_MODEL)
+    } else if (ping.ok && ping.models.some((m) => m.includes('gemma4'))) {
+      const g =
+        ping.models.find((m) => m === 'gemma4:31b') ||
+        ping.models.find((m) => m.includes('gemma4:31b')) ||
+        ping.models.find((m) => m.includes('gemma4'))
+      if (g) setModel(g)
     } else if (ping.ok && ping.models.length > 0) {
       setModel(ping.models[0]!)
     }
@@ -236,7 +249,7 @@ export function AutoLayoutPanel() {
       <div className="border-t border-zinc-800 pt-3">
         <div className="mb-1.5 flex items-center justify-between gap-2">
           <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
-            AI layout (Ollama)
+            AI layout (Ollama Cloud)
           </p>
           <button
             type="button"
@@ -247,10 +260,20 @@ export function AutoLayoutPanel() {
           </button>
         </div>
         <p className="mb-2 text-[9px] leading-snug text-zinc-600">
-          Local{' '}
-          <code className="text-zinc-500">127.0.0.1:11434</code> · default{' '}
-          <code className="text-zinc-500">gemma4:31b-cloud</code>. Suggests
-          density / columns / placements for a tight midterm sheet.
+          Browser → <code className="text-zinc-500">/ollama-proxy</code> (no
+          CORS) → Cloud or local. Put{' '}
+          <code className="text-zinc-500">OLLAMA_API_KEY</code> in{' '}
+          <code className="text-zinc-500">.env</code> (not VITE_*) and restart
+          Vite. Create key:{' '}
+          <a
+            className="text-indigo-400/90 hover:underline"
+            href="https://ollama.com/settings/keys"
+            target="_blank"
+            rel="noreferrer"
+          >
+            ollama.com/settings/keys
+          </a>
+          .
         </p>
         <p
           className={`mb-1.5 text-[10px] ${
@@ -262,9 +285,9 @@ export function AutoLayoutPanel() {
           }`}
         >
           {ollamaOk === true
-            ? `Ollama online · ${ollamaModels.length} model(s)`
+            ? `Online · ${backend} · ${baseUrl} · ${ollamaModels.length} model(s)`
             : ollamaOk === false
-              ? 'Ollama offline — start ollama serve'
+              ? `Offline · ${backend} — check OLLAMA_API_KEY / restart Vite`
               : 'Checking Ollama…'}
         </p>
 
