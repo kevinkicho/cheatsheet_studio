@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import {
   DndContext,
   DragOverlay,
@@ -32,6 +32,9 @@ import { useSheetSync } from '@/hooks/useSheetSync'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { FullLibraryView } from '@/pages/FullLibraryView'
 import { SheetsView } from '@/pages/SheetsView'
+import { SheetJsonDropOverlay } from '@/components/import/SheetJsonDropOverlay'
+import { Toast, type ToastMessage } from '@/components/ui/Toast'
+import { useSheetJsonImport } from '@/hooks/useSheetJsonImport'
 
 export function AppShell() {
   const view = useUiStore((s) => s.view)
@@ -44,6 +47,23 @@ export function AppShell() {
   const addFromLibrary = useCanvasStore((s) => s.addFromLibrary)
 
   const [activeLib, setActiveLib] = useState<LibraryItem | null>(null)
+  const [toast, setToast] = useState<ToastMessage | null>(null)
+
+  const showToast = useCallback(
+    (kind: ToastMessage['kind'], title: string, detail?: string) => {
+      setToast({
+        id: `${Date.now()}`,
+        kind,
+        title,
+        detail,
+      })
+    },
+    [],
+  )
+
+  const { importFile, busy: importBusy, user } = useSheetJsonImport((fb) => {
+    showToast(fb.kind, fb.title, fb.detail)
+  })
 
   useSheetSync()
   useKeyboardShortcuts()
@@ -60,13 +80,11 @@ export function AppShell() {
   }
 
   const onDragEnd = (event: DragEndEvent) => {
-    // Read preview rect BEFORE clearing activeLib (overlay unmounts with it)
     const previewRect = dragPreviewClientRect(event)
     setActiveLib(null)
     const lib = event.active.data.current?.libraryItem as LibraryItem | undefined
     if (!lib) return
 
-    // Accept drop on the main viewport (or surface) droppable
     const overId = event.over?.id
     if (overId !== 'main-canvas' && overId !== 'main-canvas-surface') return
 
@@ -80,7 +98,6 @@ export function AppShell() {
     const zoom = Number(
       surface.dataset.zoom || useUiStore.getState().canvasZoom || 1,
     )
-    // Place at the same top-left AND size as the drag ghost (WYSIWYG)
     if (previewRect) {
       const { x, y } = previewRectToCanvasDrop(previewRect, surfaceRect, zoom)
       const { width, height } = previewSizeToCanvasSize(previewRect, zoom)
@@ -99,7 +116,6 @@ export function AppShell() {
       <PanelGroup direction="vertical" autoSaveId="cheatsheet-v">
         <Panel defaultSize={bottomOpen ? 68 : 96} minSize={30}>
           <PanelGroup direction="horizontal" autoSaveId="cheatsheet-h">
-            {/* Left (Properties) — thin strip when minimized */}
             {leftOpen ? (
               <>
                 <Panel defaultSize={18} minSize={12} maxSize={32} order={1}>
@@ -139,7 +155,6 @@ export function AppShell() {
               <MainCanvas />
             </Panel>
 
-            {/* Right (Tools) — thin strip when minimized */}
             {rightOpen ? (
               <>
                 <PanelResizeHandle className="group relative w-1.5 bg-zinc-900 transition hover:bg-indigo-500/50">
@@ -177,26 +192,24 @@ export function AppShell() {
           </PanelGroup>
         </Panel>
 
-        <PanelResizeHandle className="group relative h-1.5 bg-zinc-900 hover:bg-indigo-500/50">
-          <button
-            type="button"
-            onClick={() => setBottomOpen(!bottomOpen)}
-            className="absolute left-1/2 top-1/2 z-10 flex -translate-x-1/2 -translate-y-1/2 items-center gap-1 rounded-full border border-zinc-700 bg-zinc-900 px-2 py-0.5 text-[10px] text-zinc-400 opacity-0 transition group-hover:opacity-100 hover:text-zinc-200"
-          >
-            <ChevronUp
-              className={`h-3 w-3 transition ${bottomOpen ? 'rotate-180' : ''}`}
-            />
-            Library
-          </button>
+        <PanelResizeHandle className="group relative h-1.5 bg-zinc-900 transition hover:bg-indigo-500/50">
+          {bottomOpen && (
+            <button
+              type="button"
+              title="Minimize library"
+              onClick={() => setBottomOpen(false)}
+              className="absolute left-1/2 top-1/2 z-10 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-zinc-700 bg-zinc-900 p-0.5 text-zinc-400 opacity-0 transition group-hover:opacity-100 hover:text-zinc-200"
+            >
+              <ChevronUp className="h-3 w-3 rotate-180" />
+            </button>
+          )}
         </PanelResizeHandle>
 
         <Panel
           defaultSize={bottomOpen ? 32 : 4}
-          minSize={bottomOpen ? 16 : 4}
-          maxSize={bottomOpen ? 55 : 8}
+          minSize={bottomOpen ? 12 : 4}
+          maxSize={bottomOpen ? 50 : 6}
           collapsible
-          collapsedSize={4}
-          onCollapse={() => setBottomOpen(false)}
           onExpand={() => setBottomOpen(true)}
         >
           {bottomOpen ? (
@@ -224,6 +237,9 @@ export function AppShell() {
     ],
   )
 
+  const dropEnabled =
+    Boolean(user) && (view === 'workspace' || view === 'sheets') && !importBusy
+
   return (
     <DndContext
       sensors={sensors}
@@ -231,14 +247,29 @@ export function AppShell() {
       onDragEnd={onDragEnd}
     >
       <div className="flex h-screen flex-col bg-zinc-950 text-zinc-100">
-        <TopBar />
-        {/* overflow only on content so topbar dropdowns are not clipped */}
+        <TopBar
+          onImportFeedback={(fb) => showToast(fb.kind, fb.title, fb.detail)}
+        />
         <div className="relative z-0 min-h-0 flex-1 overflow-hidden">
           {view === 'workspace' && workspace}
           {view === 'library' && <FullLibraryView />}
-          {view === 'sheets' && <SheetsView />}
+          {view === 'sheets' && (
+            <SheetsView
+              onImportFeedback={(fb) => showToast(fb.kind, fb.title, fb.detail)}
+            />
+          )}
         </div>
       </div>
+
+      <SheetJsonDropOverlay
+        enabled={dropEnabled}
+        busy={importBusy}
+        onFile={(file) => {
+          void importFile(file)
+        }}
+      />
+
+      <Toast toast={toast} onDismiss={() => setToast(null)} />
 
       <DragOverlay dropAnimation={null}>
         {activeLib ? (

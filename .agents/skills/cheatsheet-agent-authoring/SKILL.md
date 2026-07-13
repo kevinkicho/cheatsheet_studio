@@ -18,21 +18,34 @@ description: >
 
 ## Preferred workflows
 
+### 0. Flagship path (demo the product)
+
+```bash
+npm run agent:flagship
+# → examples/agent-out/finance-midterm.sheet.json
+npm run agent:flagship:validate
+# optional agent PDF:
+npm run agent:flagship:pdf
+```
+
+User: **My Sheets → Import JSON** (or **drop** the file) → polish → **Export PDF**.
+
 ### 1. Topic pack (fastest)
 
 ```bash
 npm run cheatsheet -- packs
+npm run cheatsheet -- pack finance-midterm -o out/finance-midterm.sheet.json
 npm run cheatsheet -- pack calc-derivatives -o out/calc.sheet.json
 ```
 
-16+ packs — run `npm run cheatsheet -- packs` (filter: `--subject finance`).
+17+ packs — run `npm run cheatsheet -- packs` (filter: `--subject finance`).
 
 ```bash
 npm run cheatsheet -- doctor
 npm run cheatsheet -- packs --subject mathematics
 npm run cheatsheet -- pack --all -o out/packs/
 npm run cheatsheet -- merge a.sheet.json b.sheet.json -o combined.sheet.json
-# Demo: pwsh scripts/agent-sheet-workflow.ps1 calc-derivatives
+# Demo: pwsh scripts/agent-sheet-workflow.ps1 finance-midterm
 ```
 
 User: **My Sheets → Import JSON** → polish in Workspace.

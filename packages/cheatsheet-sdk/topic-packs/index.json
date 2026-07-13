@@ -58,6 +58,13 @@
       "subjects": ["finance"]
     },
     {
+      "id": "finance-midterm",
+      "file": "finance-midterm.json",
+      "title": "Finance — Midterm Review",
+      "description": "Flagship: TVM, NPV/IRR, CAPM, WACC — agent → Import → Export PDF.",
+      "subjects": ["finance", "economics"]
+    },
+    {
       "id": "accounting-basics",
       "file": "accounting-basics.json",
       "title": "Accounting — Core Identity",

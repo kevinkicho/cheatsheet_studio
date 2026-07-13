@@ -30,12 +30,37 @@ This matches what Firestore stores under `sheets/{id}` (`ownerId`, `title`, `can
 
 ## Workflows
 
+### Flagship path (agent → Import → Export PDF)
+
+One story that exercises the full product:
+
+```bash
+# 1. Agent builds a midterm finance sheet (topic pack)
+npm run agent:flagship
+# → examples/agent-out/finance-midterm.sheet.json
+
+# Optional: agent-side print PDF (Playwright; not Studio WYSIWYG)
+npm run agent:flagship:pdf
+```
+
+Then in the Studio (signed in):
+
+1. **My Sheets → Import JSON** (or drag the `.sheet.json` onto the window)  
+2. Workspace opens with TVM / NPV / CAPM / WACC cards  
+3. Polish layout if needed → top bar **Export → PDF** (print-page capture)
+
+Toast feedback confirms success; invalid JSON shows a friendly error (not a silent fail).
+
+```bash
+npm run agent:flagship:validate   # pack + validate + summarize
+```
+
 ### Local file + Import JSON (recommended)
 
 1. Agent writes `*.sheet.json` (or an outline + `compose`)  
-2. Human: **My Sheets → Import JSON** → file picker  
+2. Human: **My Sheets → Import JSON** (or **drop** the file onto Workspace / My Sheets)  
 3. Workspace opens; sheet is created under the signed-in user (or local fallback)  
-4. Human polishes layout / process charts in the UI  
+4. Human polishes layout / process charts in the UI · **Export PDF** from the top bar  
 
 This path never requires a service account in the browser.
 
@@ -148,6 +173,7 @@ Premade outlines under `packages/cheatsheet-sdk/topic-packs/`:
 
 | Pack id | Theme |
 |---------|--------|
+| **`finance-midterm`** | **Flagship** — TVM, NPV/IRR, CAPM, WACC midterm sheet |
 | `calc-derivatives` | Calculus derivatives |
 | `calc-integrals` | FTC, substitution, parts |
 | `lin-algebra` | Linear algebra essentials |
@@ -166,16 +192,18 @@ Premade outlines under `packages/cheatsheet-sdk/topic-packs/`:
 ```bash
 npm run cheatsheet -- doctor
 npm run cheatsheet -- packs --subject mathematics
+npm run agent:flagship
+npm run cheatsheet -- pack finance-midterm -o out/finance-midterm.sheet.json
 npm run cheatsheet -- pack finance-capm -o out/capm.sheet.json
 npm run cheatsheet -- pack --all -o out/packs/
 npm run cheatsheet -- merge a.sheet.json b.sheet.json -o combined.sheet.json
 npm run cheatsheet -- add-catalog sheet.json --id math-quad --id math-binom
 npm run cheatsheet -- append-outline out/capm.sheet.json extra.outline.json
-# Windows: pwsh scripts/agent-sheet-workflow.ps1 calc-derivatives
-# Unix:    bash scripts/agent-sheet-workflow.sh calc-derivatives
+# Windows: pwsh scripts/agent-sheet-workflow.ps1 finance-midterm
+# Unix:    bash scripts/agent-sheet-workflow.sh finance-midterm
 ```
 
-Then **My Sheets → Import JSON** in the app.
+Then **My Sheets → Import JSON** (or drop the file) in the app.
 
 ## Workspace export / import loop
 

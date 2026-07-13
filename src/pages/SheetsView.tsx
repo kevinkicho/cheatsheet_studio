@@ -27,7 +27,10 @@ import {
   type SheetPreview,
 } from '@/stores/sheetsStore'
 import { useUiStore } from '@/stores/uiStore'
-import { readSheetFileFromBrowserFile } from '@/lib/sheetDocumentImport'
+import {
+  useSheetJsonImport,
+  type ImportFeedback,
+} from '@/hooks/useSheetJsonImport'
 import {
   formatPageSizeLabel,
   multiPageLayoutBounds,
@@ -1132,14 +1135,18 @@ function DeleteConfirmModal({
   )
 }
 
-export function SheetsView() {
+type SheetsViewProps = {
+  /** Toast / status feedback for Import JSON (wired from AppShell). */
+  onImportFeedback?: (fb: ImportFeedback) => void
+}
+
+export function SheetsView({ onImportFeedback }: SheetsViewProps = {}) {
   const user = useAuthStore((s) => s.user)
   const sheets = useSheetsStore((s) => s.sheets)
   const loading = useSheetsStore((s) => s.loading)
   const createSheet = useSheetsStore((s) => s.createSheet)
   const openSheet = useSheetsStore((s) => s.openSheet)
   const deleteSheet = useSheetsStore((s) => s.deleteSheet)
-  const importSheetDocument = useSheetsStore((s) => s.importSheetDocument)
   const fetchSheetPreview = useSheetsStore((s) => s.fetchSheetPreview)
   const activeSheetId = useSheetsStore((s) => s.activeSheetId)
   const setView = useUiStore((s) => s.setView)
@@ -1154,31 +1161,15 @@ export function SheetsView() {
     () => new Set(),
   )
   const [deleteConfirm, setDeleteConfirm] = useState(false)
-  const [importBusy, setImportBusy] = useState(false)
-  const [importError, setImportError] = useState<string | null>(null)
   const importInputRef = useRef<HTMLInputElement>(null)
+  const { importFile, busy: importBusy } = useSheetJsonImport(onImportFeedback)
 
   const handleImportJson = useCallback(
     async (file: File | null) => {
-      if (!file || !user) return
-      setImportBusy(true)
-      setImportError(null)
-      try {
-        const parsed = await readSheetFileFromBrowserFile(file)
-        if (!parsed.ok) {
-          setImportError(parsed.error)
-          return
-        }
-        await importSheetDocument(user.uid, parsed.sheet)
-        setView('workspace')
-      } catch (e) {
-        setImportError(e instanceof Error ? e.message : 'Import failed')
-      } finally {
-        setImportBusy(false)
-        if (importInputRef.current) importInputRef.current.value = ''
-      }
+      await importFile(file)
+      if (importInputRef.current) importInputRef.current.value = ''
     },
-    [user, importSheetDocument, setView],
+    [importFile],
   )
 
   const toggleKindHighlight = useCallback((kind: CardKind) => {
@@ -1318,15 +1309,11 @@ export function SheetsView() {
           type="file"
           accept="application/json,.json,.sheet.json"
           className="hidden"
+          data-testid="sheets-import-json-input"
           onChange={(e) => {
             void handleImportJson(e.target.files?.[0] ?? null)
           }}
         />
-        {importError && (
-          <span className="max-w-xs truncate text-[11px] text-rose-400" title={importError}>
-            {importError}
-          </span>
-        )}
         <button
           type="button"
           onClick={() => setView('workspace')}

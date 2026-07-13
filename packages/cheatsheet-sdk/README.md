@@ -25,12 +25,36 @@ Published name: **`@cheatsheet-studio/sdk`** (optional; monorepo works without p
 | Bundle | Unchanged | Not linked into the app |
 | When it runs | Browser | Terminal / agent |
 
-Sheets produced here use the **same document shape** the app already loads (`canvas` + `items` + `folders`). After `push` (or a future import UI), open **My Sheets / Workspace** as usual — layout and polish stay in the Studio.
+Sheets produced here use the **same document shape** the app already loads (`canvas` + `items` + `folders`). Import in Studio, polish layout, export PDF — the UI stays the product surface.
+
+## Flagship story (one path)
+
+**Agent builds a finance midterm → Import JSON → Export PDF**
+
+```bash
+# From monorepo root
+npm run agent:flagship
+# writes examples/agent-out/finance-midterm.sheet.json
+
+# Optional agent-side PDF (Playwright print layout)
+npm run agent:flagship:pdf
+```
+
+In the Studio (signed in):
+
+1. **My Sheets → Import JSON** or **drop** the `.sheet.json` onto the window  
+2. Toast confirms import; Workspace opens with TVM / NPV / CAPM / WACC  
+3. Polish if needed → top bar **Export → PDF**
+
+That is the whole product loop: headless authoring + polished UI + print delivery.
 
 ## Quick start (from monorepo root)
 
 ```bash
-# Agent-friendly outline → full sheet
+# Flagship pack (recommended first run)
+npm run agent:flagship
+
+# Or agent-friendly outline → full sheet
 npm run cheatsheet -- compose examples/outline.demo.json -o examples/from-outline.sheet.json
 
 # Or build step by step
@@ -43,8 +67,9 @@ npm run cheatsheet -- validate examples/demo.sheet.json
 ### Open in the web app (no Admin required)
 
 1. Generate `*.sheet.json` with the CLI/SDK  
-2. In the Studio: **My Sheets → Import JSON**  
-3. Workspace opens with the imported sheet (saved to your account when signed in)
+2. In the Studio: **My Sheets → Import JSON** (or drag-and-drop onto Workspace / My Sheets)  
+3. Workspace opens with the imported sheet (saved to your account when signed in)  
+4. **Export → PDF** for print-page capture
 
 ### TypeScript API
 
@@ -100,8 +125,12 @@ See [mcp.example.json](./mcp.example.json) and monorepo [`.mcp.json.example`](..
 
 ```bash
 npm run cheatsheet -- packs
+npm run cheatsheet -- packs --subject finance
+npm run cheatsheet -- pack finance-midterm -o examples/agent-out/finance-midterm.sheet.json
 npm run cheatsheet -- pack stats-bayes -o examples/bayes.sheet.json
 ```
+
+Flagship pack id: **`finance-midterm`**.
 
 ## Design notes
 

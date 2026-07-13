@@ -54,6 +54,8 @@ organize layers in nested folders, and sync sheets per Google account.
 | Undo / redo (document history) | **Implemented** |
 | Process charts (flowchart pipe editor + processFlow cards; mind maps) | **Implemented** |
 | My Sheets preview + card detail | **Implemented** |
+| Agent Import JSON (toast, drag-drop, friendly errors) | **Implemented** |
+| Headless SDK/CLI + flagship finance-midterm pack | **Implemented** |
 | Color pickers (defaults + recent) | **Implemented** |
 | Collapsible left / right / bottom chrome | **Implemented** |
 | Unit + component tests (Vitest) | **Vitest** |
@@ -348,18 +350,30 @@ CI (`.github/workflows/ci.yml`) runs, in order:
 
 Agents and scripts can **compose sheet JSON** without opening the React app. The package lives in `packages/cheatsheet-sdk/` and is **not** bundled into the web client — your current Workspace look and behavior are unchanged.
 
+### Flagship path
+
 ```bash
-# Outline → sheet (best for agents)
+# Agent builds finance midterm sheet
+npm run agent:flagship
+# → examples/agent-out/finance-midterm.sheet.json
+```
+
+Then in the Studio: **Import JSON** (or drop the file) → polish → **Export PDF**.  
+That is the full story: headless authoring + polished UI + print delivery.
+
+```bash
+# Outline → sheet (also fine for agents)
 npm run cheatsheet -- compose examples/outline.demo.json -o examples/from-outline.sheet.json
 npm run cheatsheet -- validate examples/from-outline.sheet.json
 ```
 
 In the app:
 
-- **My Sheets → Import JSON** — open an agent sheet in Workspace  
+- **My Sheets → Import JSON** (or drag-and-drop `.sheet.json`) — toast on success/error  
 - **Workspace → Export JSON** — download the current sheet for agents  
+- **Export → PDF** — print-page capture after import polish  
 
-Topic packs: `npm run cheatsheet -- packs` then `pack calc-derivatives -o out.json`.  
+Topic packs: `npm run cheatsheet -- packs` then `pack finance-midterm -o out.json`.  
 MCP: see [`.mcp.json.example`](./.mcp.json.example) · `npm run cheatsheet:mcp`.  
 
 TypeScript: `composeFromOutline` / `composeTopicPack` / `createSheet()`.  

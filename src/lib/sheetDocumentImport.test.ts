@@ -29,11 +29,47 @@ describe('parseSheetDocumentJson', () => {
     }
   })
 
-  it('rejects missing title', () => {
+  it('rejects missing title with a friendly hint', () => {
     const r = parseSheetDocumentJson({
       canvas: {},
       items: [],
     })
     expect(r.ok).toBe(false)
+    if (!r.ok) {
+      expect(r.error.toLowerCase()).toMatch(/title/)
+    }
+  })
+
+  it('rejects missing items with agent-oriented guidance', () => {
+    const r = parseSheetDocumentJson({
+      title: 'Almost',
+      canvas: {},
+    })
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      expect(r.error).toMatch(/items/i)
+    }
+  })
+
+  it('rejects bad card geometry with card identity in the message', () => {
+    const r = parseSheetDocumentJson({
+      title: 'Bad card',
+      canvas: {},
+      items: [
+        {
+          id: 'broken',
+          type: 'equation',
+          x: 'left',
+          y: 0,
+          width: 100,
+          height: 40,
+        },
+      ],
+    })
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      expect(r.error).toMatch(/broken/)
+      expect(r.error).toMatch(/x/i)
+    }
   })
 })

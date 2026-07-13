@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1
+
+- Flagship pack **`finance-midterm`** (TVM, NPV/IRR, CAPM, WACC + decision flows)
+- Monorepo scripts: `agent:flagship`, `agent:flagship:pdf`, `agent:flagship:validate`
+- App: shared Import JSON path (toast, drag-drop overlay, My Sheets + TopBar)
+
 ## 0.3.0
 
 - `export-html` / `export-pdf` (Playwright) for agent delivery

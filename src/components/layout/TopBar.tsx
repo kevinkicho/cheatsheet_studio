@@ -21,11 +21,18 @@ import { useCanvasStore } from '@/stores/canvasStore'
 import { useSheetsStore } from '@/stores/sheetsStore'
 import { useUiStore, type AppView } from '@/stores/uiStore'
 import { downloadWorkspaceSheetJson } from '@/lib/exportSheetDocument'
-import { readSheetFileFromBrowserFile } from '@/lib/sheetDocumentImport'
+import {
+  useSheetJsonImport,
+  type ImportFeedback,
+} from '@/hooks/useSheetJsonImport'
 import { PrintSizeMenu } from './PrintSizeMenu'
 import { ExportMenu, type ExportStatusKind } from './ExportMenu'
 
-export function TopBar() {
+type TopBarProps = {
+  onImportFeedback?: (fb: ImportFeedback) => void
+}
+
+export function TopBar({ onImportFeedback }: TopBarProps = {}) {
   const user = useAuthStore((s) => s.user)
   const signOut = useAuthStore((s) => s.signOut)
   const title = useCanvasStore((s) => s.title)
@@ -49,24 +56,25 @@ export function TopBar() {
   const openSheet = useSheetsStore((s) => s.openSheet)
   const saveActiveSheet = useSheetsStore((s) => s.saveActiveSheet)
   const retryCloudSync = useSheetsStore((s) => s.retryCloudSync)
-  const importSheetDocument = useSheetsStore((s) => s.importSheetDocument)
   const canvasSheetId = useCanvasStore((s) => s.sheetId)
   const currentSheetId = activeSheetId ?? canvasSheetId ?? ''
   const isLocalSheet = currentSheetId.startsWith('local_')
   const view = useUiStore((s) => s.view)
   const setView = useUiStore((s) => s.setView)
   const importInputRef = useRef<HTMLInputElement>(null)
-  const [importBusy, setImportBusy] = useState(false)
 
-  // Ctrl+Shift+I (and any code that dispatches this event) opens the importer
+  const { importFile, busy: importBusy } = useSheetJsonImport(onImportFeedback)
+
   useEffect(() => {
     const open = () => {
       if (!user || importBusy) return
       importInputRef.current?.click()
     }
     window.addEventListener('cheatsheet:import-sheet-json', open)
-    return () => window.removeEventListener('cheatsheet:import-sheet-json', open)
+    return () =>
+      window.removeEventListener('cheatsheet:import-sheet-json', open)
   }, [user, importBusy])
+
   const leftOpen = useUiStore((s) => s.leftOpen)
   const rightOpen = useUiStore((s) => s.rightOpen)
   const bottomOpen = useUiStore((s) => s.bottomOpen)
@@ -195,7 +203,7 @@ export function TopBar() {
 
           <button
             type="button"
-            title="Import agent sheet JSON as a new sheet (Ctrl+Shift+I)"
+            title="Import agent sheet JSON (Ctrl+Shift+I) — or drop a .json file on the window"
             data-testid="import-sheet-json"
             disabled={!user || importBusy}
             onClick={() => importInputRef.current?.click()}
@@ -213,26 +221,8 @@ export function TopBar() {
             className="hidden"
             onChange={(e) => {
               const file = e.target.files?.[0]
-              if (!file || !user) return
-              setImportBusy(true)
-              void readSheetFileFromBrowserFile(file)
-                .then(async (parsed) => {
-                  if (!parsed.ok) {
-                    window.alert(parsed.error)
-                    return
-                  }
-                  await importSheetDocument(user.uid, parsed.sheet)
-                  setView('workspace')
-                })
-                .catch((err) => {
-                  window.alert(
-                    err instanceof Error ? err.message : 'Import failed',
-                  )
-                })
-                .finally(() => {
-                  setImportBusy(false)
-                  if (importInputRef.current) importInputRef.current.value = ''
-                })
+              void importFile(file)
+              if (importInputRef.current) importInputRef.current.value = ''
             }}
           />
 
@@ -291,93 +281,102 @@ export function TopBar() {
             onClick={() => {
               if (user) void createSheet(user.uid)
             }}
-            className="inline-flex items-center gap-1 rounded-md border border-zinc-800 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-900"
+            disabled={!user}
+            className="inline-flex items-center gap-1 rounded-md border border-zinc-800 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-900 disabled:opacity-40"
           >
             <FilePlus2 className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">New</span>
+            <span className="hidden xl:inline">New</span>
           </button>
-
-          <PrintSizeMenu />
-
-          <ExportMenu
-            busy={exportBusy}
-            setBusy={setExportBusy}
-            setStatus={setExportStatus}
-            setStatusKind={setExportStatusKind}
-          />
-        </div>
-      )}
-
-      {exportStatus && view === 'workspace' && (
-        <div
-          role="status"
-          data-testid="export-pdf-status"
-          className={`pointer-events-none absolute left-1/2 top-full z-[60] mt-1 max-w-[min(28rem,92vw)] -translate-x-1/2 rounded-md border px-3 py-1.5 text-center text-[11px] shadow-lg ${
-            exportStatusKind === 'err'
-              ? 'border-rose-500/40 bg-rose-950/95 text-rose-100'
-              : exportStatusKind === 'ok'
-                ? 'border-emerald-500/40 bg-emerald-950/95 text-emerald-100'
-                : 'border-zinc-700 bg-zinc-900/95 text-zinc-200'
-          }`}
-          title={exportStatus}
-        >
-          {exportStatus}
         </div>
       )}
 
       {view !== 'workspace' && <div className="flex-1" />}
 
-      <div className="flex items-center gap-1">
+      <div className="ml-auto flex items-center gap-1.5">
+        {view === 'workspace' && (
+          <>
+            <PrintSizeMenu />
+            <ExportMenu
+              busy={exportBusy}
+              setBusy={setExportBusy}
+              setStatus={setExportStatus}
+              setStatusKind={setExportStatusKind}
+            />
+            {exportStatus && (
+              <span
+                className={`hidden max-w-[10rem] truncate text-[10px] sm:inline ${
+                  exportStatusKind === 'ok'
+                    ? 'text-emerald-400'
+                    : exportStatusKind === 'err'
+                      ? 'text-rose-400'
+                      : 'text-zinc-500'
+                }`}
+                title={exportStatus}
+                data-testid="export-status"
+              >
+                {exportStatus}
+              </span>
+            )}
+          </>
+        )}
+
         <button
           type="button"
-          title="Toggle left sidebar"
+          title={leftOpen ? 'Hide properties' : 'Show properties'}
           onClick={() => setLeftOpen(!leftOpen)}
-          className={`rounded-md p-1.5 ${leftOpen ? 'text-indigo-300' : 'text-zinc-500'} hover:bg-zinc-900`}
+          className={`rounded-md p-1.5 ${
+            leftOpen ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-500 hover:bg-zinc-900'
+          }`}
         >
           <PanelLeft className="h-4 w-4" />
         </button>
         <button
           type="button"
-          title="Toggle right sidebar"
-          onClick={() => setRightOpen(!rightOpen)}
-          className={`rounded-md p-1.5 ${rightOpen ? 'text-indigo-300' : 'text-zinc-500'} hover:bg-zinc-900`}
-        >
-          <PanelRight className="h-4 w-4" />
-        </button>
-        <button
-          type="button"
-          title="Toggle library panel"
+          title={bottomOpen ? 'Hide library' : 'Show library'}
           onClick={() => setBottomOpen(!bottomOpen)}
-          className={`rounded-md p-1.5 ${bottomOpen ? 'text-indigo-300' : 'text-zinc-500'} hover:bg-zinc-900`}
+          className={`rounded-md p-1.5 ${
+            bottomOpen
+              ? 'bg-zinc-800 text-zinc-100'
+              : 'text-zinc-500 hover:bg-zinc-900'
+          }`}
         >
           <PanelBottom className="h-4 w-4" />
         </button>
-      </div>
-
-      <div className="ml-1 flex items-center gap-2 border-l border-zinc-800 pl-3">
-        {user?.photoURL ? (
-          <img
-            src={user.photoURL}
-            alt=""
-            className="h-7 w-7 rounded-full border border-zinc-700"
-            referrerPolicy="no-referrer"
-          />
-        ) : (
-          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-zinc-800 text-xs text-zinc-300">
-            {user?.displayName?.[0] ?? '?'}
-          </div>
-        )}
-        <span className="hidden max-w-[120px] truncate text-xs text-zinc-400 lg:inline">
-          {user?.displayName}
-        </span>
         <button
           type="button"
-          onClick={() => void signOut()}
-          title="Sign out"
-          className="rounded-md p-1.5 text-zinc-500 hover:bg-zinc-900 hover:text-zinc-200"
+          title={rightOpen ? 'Hide tools' : 'Show tools'}
+          onClick={() => setRightOpen(!rightOpen)}
+          className={`rounded-md p-1.5 ${
+            rightOpen
+              ? 'bg-zinc-800 text-zinc-100'
+              : 'text-zinc-500 hover:bg-zinc-900'
+          }`}
         >
-          <LogOut className="h-4 w-4" />
+          <PanelRight className="h-4 w-4" />
         </button>
+
+        {user ? (
+          <button
+            type="button"
+            title={`Sign out (${user.email ?? user.uid})`}
+            onClick={() => void signOut()}
+            className="ml-1 inline-flex items-center gap-1.5 rounded-md border border-zinc-800 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-900"
+          >
+            {user.photoURL ? (
+              <img
+                src={user.photoURL}
+                alt=""
+                className="h-5 w-5 rounded-full"
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <LogOut className="h-3.5 w-3.5" />
+            )}
+            <span className="hidden max-w-[8rem] truncate sm:inline">
+              {user.displayName ?? 'Account'}
+            </span>
+          </button>
+        ) : null}
       </div>
     </header>
   )
