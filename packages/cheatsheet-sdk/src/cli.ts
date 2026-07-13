@@ -39,10 +39,11 @@ Commands:
   layout         Auto-pack items (multi-column when tall)
   validate       Check sheet JSON shape
   summarize      Print summary (--verbose lists items)
-  export-html    Sheet JSON → print HTML (KaTeX + Mermaid CDN)
-  export-pdf     Sheet JSON → PDF (Playwright Chromium)
-  export-png     Sheet JSON → PNG screenshot
-  export-jpg     Sheet JSON → JPEG screenshot
+  export-html    Sheet JSON → print HTML (vector in browser — zoom forever)
+  export-svg     Sheet JSON → SVG (vector layout; prefer over PNG for scale)
+  export-pdf     Sheet JSON → PDF (Playwright; print-friendly vectors)
+  export-png     Sheet JSON → PNG *raster* screenshot (pixels — will pixelate)
+  export-jpg     Sheet JSON → JPEG *raster* screenshot
   push / pull    Firestore (CHEATSHEET_SA_PATH + CHEATSHEET_UID)
   mcp            Stdio MCP server for coding agents
 
@@ -483,14 +484,44 @@ async function run() {
       return
     }
 
+    if (cmd === 'export-svg') {
+      const file = args[1]
+      if (!file) {
+        console.error(
+          'Usage: export-svg <sheet.json> -o <out.svg> [--keep-html] [--light] [--plain]\n' +
+            'Vector export (zoom forever in a browser). Prefer over PNG for scalability.\n' +
+            'Requires: npx playwright install chromium',
+        )
+        process.exit(1)
+      }
+      const out = argValue(args, '-o') ?? argValue(args, '--out')
+      if (!out) {
+        console.error('Missing -o / --out path')
+        process.exit(1)
+      }
+      const { exportSheetSvg } = await import('./export-print')
+      const sheet = readSheetFile(file)
+      const result = await exportSheetSvg(sheet, out, {
+        dark: !args.includes('--light'),
+        keepHtml: args.includes('--keep-html'),
+        rich: !args.includes('--plain'),
+      })
+      console.log(
+        `SVG → ${result.svgPath} (${result.width}×${result.height} viewBox, vector)`,
+      )
+      if (result.htmlPath) console.log(`HTML kept → ${result.htmlPath}`)
+      return
+    }
+
     if (cmd === 'export-png' || cmd === 'export-jpg' || cmd === 'export-jpeg') {
       const file = args[1]
       const isJpg = cmd === 'export-jpg' || cmd === 'export-jpeg'
       if (!file) {
         console.error(
           `Usage: ${cmd} <sheet.json> -o <out.${isJpg ? 'jpg' : 'png'}> [--keep-html] [--light] [--plain] [--scale 1|2|3]\n` +
+            'NOTE: PNG/JPG are *raster* (pixels). For infinite scale use export-svg or export-html.\n' +
             'Requires: npx playwright install chromium\n' +
-            '  --scale 2 (default) ≈ retina; --scale 3 for print-grade PNG',
+            '  --scale 2 (default) ≈ retina; --scale 3 for denser pixels only',
         )
         process.exit(1)
       }
@@ -515,7 +546,7 @@ async function run() {
         ? await exportSheetJpeg(sheet, out, common)
         : await exportSheetPng(sheet, out, common)
       console.log(
-        `${result.format.toUpperCase()} → ${result.imagePath} (${result.engine})`,
+        `${result.format.toUpperCase()} → ${result.imagePath} (${result.engine}, raster — not vector)`,
       )
       if (result.htmlPath) console.log(`HTML kept → ${result.htmlPath}`)
       return

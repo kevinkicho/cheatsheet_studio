@@ -1,7 +1,15 @@
 /**
- * Headless print export: HTML / PDF / PNG / JPG.
- * Default layout is **canvas** (absolute x/y positions) so dense cheatsheet
- * packing is visible — not a vertical document stack.
+ * Headless print export: HTML / SVG / PDF / PNG / JPG.
+ *
+ * Vector-scalable (zoom forever, sharp type/diagrams):
+ *   - HTML  — KaTeX + Mermaid SVG in the browser
+ *   - SVG   — foreignObject wrap of the rendered sheet (vector layout)
+ *   - PDF   — Playwright print (fonts/paths; not a bitmap)
+ *
+ * Raster only (pixels, will pixelate when scaled):
+ *   - PNG / JPG — screenshots for quick share; use --scale 2|3 for more pixels
+ *
+ * Default layout is **canvas** (absolute x/y) for dense cheatsheet mosaics.
  */
 import { mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
@@ -401,6 +409,14 @@ export type ExportImageResult = {
   engine: 'playwright'
 }
 
+export type ExportSvgResult = {
+  svgPath: string
+  htmlPath?: string
+  width: number
+  height: number
+  engine: 'playwright'
+}
+
 function pathToFileUrl(p: string): string {
   const resolved = path.resolve(p)
   if (process.platform === 'win32') {
@@ -613,4 +629,155 @@ export async function exportSheetJpeg(
   opts?: ExportHtmlOptions & { keepHtml?: boolean; quality?: number },
 ): Promise<ExportImageResult> {
   return exportSheetImage(sheet, outPath, { ...opts, format: 'jpeg' })
+}
+
+/**
+ * Vector-friendly SVG export.
+ *
+ * After KaTeX + Mermaid render in Chromium, the sheet surface is wrapped in an
+ * SVG `<foreignObject>` so layout/type stay resolution-independent when zoomed
+ * in a browser (or tools that support foreignObject). Mermaid diagrams are
+ * already true SVG in the DOM.
+ *
+ * Note: PNG cannot be “infinitely scalable” — it is always a pixel grid.
+ * Prefer SVG / HTML / PDF for sharp zoom and print.
+ */
+export async function exportSheetSvg(
+  sheet: SheetDocument,
+  outPath: string,
+  opts?: ExportHtmlOptions & { keepHtml?: boolean },
+): Promise<ExportSvgResult> {
+  const abs = path.resolve(outPath.endsWith('.svg') ? outPath : `${outPath}.svg`)
+  mkdirSync(path.dirname(abs), { recursive: true })
+  const htmlPath = abs.replace(/\.svg$/i, '') + '.print.html'
+  const dims = pageDims(sheet, opts)
+  writeSheetHtml(sheet, htmlPath, {
+    layout: 'canvas',
+    rich: opts?.rich !== false,
+    footer: false,
+    dark: opts?.dark !== false,
+    ...opts,
+  })
+
+  try {
+    let width = dims.width
+    let height = dims.height
+    let svgBody = ''
+
+    await withPlaywrightPage(
+      htmlPath,
+      opts,
+      dims,
+      async (page) => {
+        const data = await (page as unknown as {
+          evaluate: (fn: () => unknown) => Promise<unknown>
+        }).evaluate(() => {
+          const surface = document.querySelector('.surface') as HTMLElement | null
+          if (!surface) {
+            return { ok: false as const, error: 'missing .surface' }
+          }
+          // Promote rendered Mermaid SVGs: already inside pre.mermaid
+          // Ensure SVG root has xmlns for standalone file
+          surface.querySelectorAll('svg').forEach((svg) => {
+            if (!svg.getAttribute('xmlns')) {
+              svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+            }
+          })
+          const w = Math.ceil(surface.offsetWidth || surface.clientWidth)
+          const h = Math.ceil(surface.offsetHeight || surface.clientHeight)
+          return {
+            ok: true as const,
+            width: w,
+            height: h,
+            html: surface.outerHTML,
+          }
+        })
+
+        const d = data as {
+          ok: boolean
+          width?: number
+          height?: number
+          html?: string
+          error?: string
+        }
+        if (!d.ok || !d.html) {
+          throw new Error(d.error ?? 'Could not serialize sheet surface')
+        }
+        width = d.width ?? dims.width
+        height = d.height ?? dims.height
+        // XHTML namespace required inside foreignObject
+        const xhtml = d.html
+          .replace(/<div/i, '<div xmlns="http://www.w3.org/1999/xhtml"')
+          // already has class surface
+          .replace(
+            /class="surface"/,
+            'class="surface" xmlns="http://www.w3.org/1999/xhtml"',
+          )
+
+        const dark = opts?.dark !== false
+        const bg = dark ? '#0f1115' : '#faf9f6'
+        svgBody = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
+  width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+  <title>${escapeXml(sheet.title)}</title>
+  <desc>CheatSheet Studio vector export — zoom freely in a browser. Prefer this over PNG for infinite scale.</desc>
+  <rect width="100%" height="100%" fill="${bg}"/>
+  <foreignObject x="0" y="0" width="${width}" height="${height}">
+    <div xmlns="http://www.w3.org/1999/xhtml" style="margin:0;padding:0;width:${width}px;height:${height}px;background:${bg};">
+      <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.css" />
+      <style>
+        html, body { margin: 0; padding: 0; background: ${bg}; }
+        .surface { position: relative; width: ${width}px; height: ${height}px; background: ${bg};
+          font-family: ui-sans-serif, system-ui, sans-serif; color: ${dark ? '#e8eaed' : '#1a1a1a'};
+          -webkit-font-smoothing: antialiased; }
+        .card.abs { position: absolute; overflow: hidden; display: flex; flex-direction: column;
+          background: ${dark ? 'rgba(28,30,36,0.98)' : 'rgba(255,255,255,0.95)'};
+          border: 1px solid ${dark ? 'rgba(99,102,241,0.4)' : 'rgba(0,0,0,0.12)'};
+          border-radius: 4px; padding: 3px 5px 4px; }
+        .card-title { font-size: 7px; text-transform: uppercase; letter-spacing: 0.04em;
+          color: ${dark ? '#9ca3af' : '#555'}; margin-bottom: 2px; font-weight: 650; flex-shrink: 0; }
+        .card-body { flex: 1; min-height: 0; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+        .latex .katex { font-size: 1em !important; }
+        pre.mermaid { margin: 0; background: transparent; max-width: 100%; max-height: 100%; overflow: hidden; }
+        pre.mermaid svg { max-width: 100% !important; height: auto !important; }
+        table { border-collapse: collapse; width: 100%; font-size: 0.85em; }
+        th, td { border: 1px solid ${dark ? 'rgba(99,102,241,0.35)' : '#ccc'}; padding: 1px 3px; }
+        img.fig { max-width: 100%; max-height: 100%; object-fit: contain; }
+      </style>
+      ${xhtml}
+    </div>
+  </foreignObject>
+</svg>
+`
+      },
+      1, // DPR 1 — we want CSS px == SVG viewBox units, not a bitmap
+    )
+
+    writeFileSync(abs, svgBody, 'utf8')
+    if (!opts?.keepHtml) {
+      try {
+        const { unlinkSync } = await import('node:fs')
+        unlinkSync(htmlPath)
+      } catch {
+        /* keep */
+      }
+      return { svgPath: abs, width, height, engine: 'playwright' }
+    }
+    return { svgPath: abs, htmlPath, width, height, engine: 'playwright' }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    throw new Error(
+      `SVG export needs Playwright (npx playwright install chromium).\n` +
+        `HTML was written to ${htmlPath}\n${msg}`,
+    )
+  }
+}
+
+function escapeXml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
 }

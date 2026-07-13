@@ -41,6 +41,7 @@ import {
   exportSheetPdf,
   exportSheetPng,
   exportSheetJpeg,
+  exportSheetSvg,
 } from '../packages/cheatsheet-sdk/src/export-print.ts'
 import {
   packSheetDocument,
@@ -71,10 +72,11 @@ const FLAGSHIPS = [
 ] as const
 
 type PackId = (typeof FLAGSHIPS)[number]['id']
-type Format = 'json' | 'html' | 'pdf' | 'png' | 'jpg'
+type Format = 'json' | 'html' | 'svg' | 'pdf' | 'png' | 'jpg'
 type Density = PackDensity
 
-const ALL_FORMATS: Format[] = ['json', 'html', 'pdf', 'png', 'jpg']
+/** Prefer vector formats first; PNG/JPG are optional raster previews. */
+const ALL_FORMATS: Format[] = ['json', 'html', 'svg', 'pdf', 'png', 'jpg']
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const outDir = path.join(root, 'examples', 'agent-out')
@@ -162,12 +164,16 @@ Flagship cheatsheet builder
   npm run agent:flagships -- -y --ai      Full run + Ollama layout assist
 
   --packs finance-midterm,calc-final
-  --formats json,html,pdf,png,jpg
+  --formats json,html,svg,pdf,png,jpg
   --density xs|sm|md|lg
   --columns 1|2|3|auto
   --gap 8
   --ai / --no-ai
   --json-only
+
+Formats:
+  json/html/svg/pdf  — keep type sharp when zoomed (vector-friendly)
+  png/jpg            — fixed pixels; will look soft if you scale past their size
 `.trim())
 }
 
@@ -437,7 +443,23 @@ async function buildAndExport(
   }
   if (want.has('html')) {
     const htmlPath = writeSheetHtml(sheet, `${base}.html`, exportOpts)
-    console.log(`  HTML  ${path.relative(root, htmlPath)}`)
+    console.log(`  HTML  ${path.relative(root, htmlPath)}  (vector in browser)`)
+  }
+  if (want.has('svg')) {
+    try {
+      const svg = await exportSheetSvg(sheet, `${base}.svg`, {
+        dark: true,
+        rich: true,
+        layout: 'canvas',
+      })
+      console.log(
+        `  SVG   ${path.relative(root, svg.svgPath)}  (${svg.width}×${svg.height} viewBox, vector)`,
+      )
+    } catch (e) {
+      console.warn(
+        `  SVG   skipped: ${e instanceof Error ? e.message.split('\n')[0] : e}`,
+      )
+    }
   }
   if (want.has('pdf')) {
     try {
@@ -445,7 +467,7 @@ async function buildAndExport(
         ...exportOpts,
         keepHtml: false,
       })
-      console.log(`  PDF   ${path.relative(root, pdf.pdfPath)}`)
+      console.log(`  PDF   ${path.relative(root, pdf.pdfPath)}  (print vectors)`)
     } catch (e) {
       console.warn(
         `  PDF   skipped: ${e instanceof Error ? e.message.split('\n')[0] : e}`,
@@ -455,7 +477,9 @@ async function buildAndExport(
   if (want.has('png')) {
     try {
       const png = await exportSheetPng(sheet, `${base}.png`, exportOpts)
-      console.log(`  PNG   ${path.relative(root, png.imagePath)}`)
+      console.log(
+        `  PNG   ${path.relative(root, png.imagePath)}  (raster — not infinite scale)`,
+      )
     } catch (e) {
       console.warn(
         `  PNG   skipped: ${e instanceof Error ? e.message.split('\n')[0] : e}`,
@@ -466,9 +490,11 @@ async function buildAndExport(
     try {
       const jpg = await exportSheetJpeg(sheet, `${base}.jpg`, {
         ...exportOpts,
-        quality: 88,
+        quality: 92,
       })
-      console.log(`  JPG   ${path.relative(root, jpg.imagePath)}`)
+      console.log(
+        `  JPG   ${path.relative(root, jpg.imagePath)}  (raster — not infinite scale)`,
+      )
     } catch (e) {
       console.warn(
         `  JPG   skipped: ${e instanceof Error ? e.message.split('\n')[0] : e}`,
@@ -497,21 +523,23 @@ async function interactiveConfig(
 
   const formats = await pickMulti(
     rl,
-    'Which outputs?',
+    'Which outputs? (SVG/HTML/PDF scale cleanly; PNG/JPG are pixels)',
     ALL_FORMATS.map((f) => ({
       id: f,
       label:
         f === 'json'
           ? 'JSON (.sheet.json) — Import in Studio'
           : f === 'html'
-            ? 'HTML print preview (KaTeX + Mermaid)'
-            : f === 'pdf'
-              ? 'PDF (Playwright)'
-              : f === 'png'
-                ? 'PNG screenshot'
-                : 'JPG screenshot',
+            ? 'HTML — vector in browser (zoom forever)'
+            : f === 'svg'
+              ? 'SVG — vector file (prefer over PNG for scale)'
+              : f === 'pdf'
+                ? 'PDF — print-friendly vectors'
+                : f === 'png'
+                  ? 'PNG — raster only (will pixelate when zoomed)'
+                  : 'JPG — raster only',
     })),
-    seed?.formats ?? ALL_FORMATS,
+    seed?.formats ?? (['json', 'html', 'svg', 'pdf'] as Format[]),
   )
 
   const density = await pickOne(

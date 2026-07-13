@@ -91,11 +91,13 @@ export {
   exportSheetImage,
   exportSheetPng,
   exportSheetJpeg,
+  exportSheetSvg,
 } from './export-print'
 export type {
   ExportHtmlOptions,
   ExportPdfResult,
   ExportImageResult,
+  ExportSvgResult,
 } from './export-print'
 
 export {
