@@ -2,6 +2,10 @@ import type { ReactNode, Ref } from 'react'
 import { useState, useRef } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useFlowStore } from '../lib/store'
+import {
+  runAutoLayout,
+  runOrganizeConnections,
+} from '../lib/layoutActions'
 import { ShapePickerPopover } from './ShapePickerPopover'
 import { SettingsPopover } from './SettingsPopover'
 
@@ -9,7 +13,7 @@ interface TopToolbarProps {
   inspectorOpen: boolean
   onToggleInspector: () => void
   onOpenPalette?: () => void
-  /** @deprecated Unused — Mermaid import/copy live in Chart Settings. */
+  /** Current Mermaid text hint for layout measure (optional). */
   syntax?: string
   /** Confirmed reset to default starter diagram (parent performs reload). */
   onReset?: () => void
@@ -175,10 +179,53 @@ const IconSettings = () => (
   </svg>
 )
 
+/** Tree hierarchy — Auto Layout */
+const IconAutoLayout = () => (
+  <svg
+    width="18"
+    height="18"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <rect x="9" y="1" width="6" height="4" rx="1" />
+    <rect x="2" y="16" width="6" height="4" rx="1" />
+    <rect x="16" y="16" width="6" height="4" rx="1" />
+    <line x1="12" y1="5" x2="12" y2="11" />
+    <line x1="5" y1="11" x2="19" y2="11" />
+    <line x1="5" y1="11" x2="5" y2="16" />
+    <line x1="19" y1="11" x2="19" y2="16" />
+  </svg>
+)
+
+/** Fan / align pipes — Organize connections */
+const IconOrganizeEdges = () => (
+  <svg
+    width="18"
+    height="18"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <circle cx="6" cy="6" r="2.5" />
+    <circle cx="18" cy="6" r="2.5" />
+    <circle cx="12" cy="18" r="2.5" />
+    <path d="M7.5 8 L10.5 15.5" />
+    <path d="M16.5 8 L13.5 15.5" />
+  </svg>
+)
+
 export function TopToolbar({
   inspectorOpen,
   onToggleInspector,
   onOpenPalette,
+  syntax,
   onReset,
 }: TopToolbarProps) {
   const [shapePickerOpen, setShapePickerOpen] = useState(false)
@@ -194,6 +241,7 @@ export function TopToolbar({
   const drawingShape = useFlowStore((s) => s.drawingShape)
   const interactionMode = useFlowStore((s) => s.interactionMode)
   const chromeLayout = useFlowStore((s) => s.chromeLayout)
+  const nodesLength = useFlowStore((s) => s.nodes.length)
   const vertical = chromeLayout === 'vertical'
 
   const shapeRootRef = useRef<HTMLDivElement>(null)
@@ -204,11 +252,12 @@ export function TopToolbar({
   const selectActive = !drawingShape && interactionMode === 'select'
   const panActive = !drawingShape && interactionMode === 'pan'
 
-  const handleReset = () => {
+  const handleLoadExample = () => {
     if (!onReset) return
     const ok = window.confirm(
-      'Reset the diagram to the default starter template?\n\n' +
-        'All shapes, connections, and edits will be lost. This cannot be undone.',
+      'Load the example flowchart template into the editor?\n\n' +
+        'Current shapes and connections in the editor will be replaced. ' +
+        'Canvas cards already on the board are not deleted.',
     )
     if (!ok) return
     onReset()
@@ -289,14 +338,33 @@ export function TopToolbar({
           ⬡
         </NeuIconBtn>
 
+        <Divider vertical={vertical} />
+
+        <NeuIconBtn
+          onClick={() => runAutoLayout(syntax)}
+          disabled={nodesLength === 0}
+          title="Auto Layout — rearrange nodes into a clean stack (clears bend/shaft waypoints)"
+        >
+          <IconAutoLayout />
+        </NeuIconBtn>
+
+        <NeuIconBtn
+          onClick={() => runOrganizeConnections()}
+          disabled={nodesLength === 0}
+          title="Organize connections — keep nodes, re-route pipes (clear bends; align/overlap faces)"
+        >
+          <IconOrganizeEdges />
+        </NeuIconBtn>
+
         {onReset && (
           <NeuIconBtn
-            onClick={handleReset}
-            title="Reset diagram to default starter (clears all edits)"
+            onClick={handleLoadExample}
+            title="Example template — load the starter flowchart (Start → Collect → Valid → …) into the editor"
           >
+            {/* Document with star — example template */}
             <svg
-              width="16"
-              height="16"
+              width="17"
+              height="17"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -304,8 +372,9 @@ export function TopToolbar({
               strokeLinecap="round"
               strokeLinejoin="round"
             >
-              <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-              <path d="M3 3v5h5" />
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+              <path d="M12 18l1.2-2.4L16 14.8l-2.4-1.2L12 11l-1.2 2.6L8 14.8l2.8.8L12 18z" />
             </svg>
           </NeuIconBtn>
         )}

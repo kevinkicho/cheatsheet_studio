@@ -132,51 +132,25 @@ export function applyDagreLayout(
 }
 
 /**
- * Clean TD/LR stack: dagre positions + drop Mermaid free-path noise so
- * smooth-step edges look like a normal flowchart (not diagonals / ovals).
- * Keeps manualConnect plugs and bend waypoints.
+ * Re-route edges for current node positions: clear bend/shaft waypoints and
+ * (unless keepManualHandles) assign face ports so smooth-step pipes align/overlap cleanly.
+ * Does not move nodes.
  */
-export function cleanFlowchartLayout(
+export function organizeConnectionRoutes(
   nodes: Node<FlowNodeData>[],
   edges: Edge<FlowEdgeData>[],
-  direction: Direction = 'TD',
-): { nodes: Node<FlowNodeData>[]; edges: Edge<FlowEdgeData>[] } {
-  if (nodes.length === 0) return { nodes, edges }
+  opts?: { keepManualHandles?: boolean },
+): Edge<FlowEdgeData>[] {
+  if (nodes.length === 0) return edges
+  const keepManual = opts?.keepManualHandles !== false
 
-  const sized = nodes.map((n) => {
-    if (n.data?.isSubgraph) return n
-    const w =
-      typeof n.width === 'number'
-        ? n.width
-        : typeof n.style?.width === 'number'
-          ? n.style.width
-          : NODE_WIDTH
-    const h =
-      typeof n.height === 'number'
-        ? n.height
-        : typeof n.style?.height === 'number'
-          ? n.style.height
-          : NODE_HEIGHT
-    return {
-      ...n,
-      width: w,
-      height: h,
-      style: { ...n.style, width: w, height: h },
-    }
-  })
-
-  const positioned = applyDagreLayout(sized, edges, direction)
-
-  // Assign port handles that match the faces smooth-step will use, so the
-  // painted blue dots and the line ends are the same connection points.
-  // Never changes edge.source / edge.target. Manual plugs keep their handles.
   const edgeRefs = edges.map((e) => ({
     id: e.id,
     source: e.source,
     target: e.target,
   }))
   const centers = new Map(
-    positioned.map((n) => {
+    nodes.map((n) => {
       const w =
         typeof n.width === 'number'
           ? n.width
@@ -195,16 +169,19 @@ export function cleanFlowchartLayout(
       ] as const
     }),
   )
-  const byId = new Map(positioned.map((n) => [n.id, n]))
+  const byId = new Map(nodes.map((n) => [n.id, n]))
 
-  const cleanedEdges = edges.map((e) => {
+  return edges.map((e) => {
     const data = { ...(e.data ?? {}) } as FlowEdgeData
-    const manual = data.manualConnect === true
+    // Absolute bend/shaft coords go stale — always clear for a clean re-route
     delete data.mermaidPath
     delete data.mermaidLabelX
     delete data.mermaidLabelY
+    delete data.waypoints
+    // Keep labelOffsetX/Y so Yes/No stays where the user put it
 
-    if (manual) {
+    const manual = data.manualConnect === true
+    if (manual && keepManual && e.sourceHandle && e.targetHandle) {
       return {
         ...e,
         type: 'flowEdge' as const,
@@ -283,6 +260,46 @@ export function cleanFlowchartLayout(
       reconnectable: true,
       data,
     }
+  })
+}
+
+/**
+ * Clean TD/LR stack: dagre positions + re-route edges (drop stale bend/shaft
+ * waypoints). Manual port plugs keep handles; auto edges get face ports.
+ */
+export function cleanFlowchartLayout(
+  nodes: Node<FlowNodeData>[],
+  edges: Edge<FlowEdgeData>[],
+  direction: Direction = 'TD',
+): { nodes: Node<FlowNodeData>[]; edges: Edge<FlowEdgeData>[] } {
+  if (nodes.length === 0) return { nodes, edges }
+
+  const sized = nodes.map((n) => {
+    if (n.data?.isSubgraph) return n
+    const w =
+      typeof n.width === 'number'
+        ? n.width
+        : typeof n.style?.width === 'number'
+          ? n.style.width
+          : NODE_WIDTH
+    const h =
+      typeof n.height === 'number'
+        ? n.height
+        : typeof n.style?.height === 'number'
+          ? n.style.height
+          : NODE_HEIGHT
+    return {
+      ...n,
+      width: w,
+      height: h,
+      style: { ...n.style, width: w, height: h },
+    }
+  })
+
+  const positioned = applyDagreLayout(sized, edges, direction)
+  // Waypoints are absolute — must clear after nodes move
+  const cleanedEdges = organizeConnectionRoutes(positioned, edges, {
+    keepManualHandles: true,
   })
 
   return { nodes: positioned, edges: cleanedEdges }

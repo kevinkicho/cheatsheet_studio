@@ -16,7 +16,7 @@ import {
   type InternalNode,
   Position,
 } from '@xyflow/react'
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   resolveEdgeMarkers,
   useFlowStore,
@@ -35,6 +35,24 @@ import {
   normalizePortHandleId,
   portFlowPoint,
 } from '../../lib/portLayout'
+import {
+  collectPipeSnapTargets,
+  diagramBounds,
+  snapPipePoint,
+  type PipeSnapGuide,
+} from '../../lib/pipeSnap'
+import {
+  cornersToWaypoints,
+  extractElbowsFromPath,
+  moveShaft,
+  polylineFromEdge,
+  shaftsFromCorners,
+  type PipeShaft,
+} from '../../lib/pipeShafts'
+import {
+  clearLiveEdgePaint,
+  setLiveEdgePaint,
+} from '../../lib/liveEdgePaint'
 
 function solidStroke(color: string | undefined, fallback: string): string {
   if (!color || color.startsWith('var(')) return fallback
@@ -117,11 +135,30 @@ export function FlowEdge({
   const curveStyle = useFlowStore((s) => s.curveStyle)
   const chartEdgeColor = useFlowStore((s) => s.chartEdgeColor)
   const multiEdgeSpacing = useFlowStore((s) => s.multiEdgeSpacing)
+  const pipeSnapEnabled = useFlowStore((s) => s.pipeSnapEnabled)
+  const pipeSnapThreshold = useFlowStore((s) => s.pipeSnapThreshold)
   const updateEdgeWaypoint = useFlowStore((s) => s.updateEdgeWaypoint)
+  const setEdgeWaypointsLive = useFlowStore((s) => s.setEdgeWaypointsLive)
+  const updateEdgeLabelOffsetLive = useFlowStore(
+    (s) => s.updateEdgeLabelOffsetLive,
+  )
   const setSelectedWaypoint = useFlowStore((s) => s.setSelectedWaypoint)
   const selectedWaypoint = useFlowStore((s) => s.selectedWaypoint)
   const pushHistory = useFlowStore((s) => s.pushHistory)
-  const { screenToFlowPosition } = useReactFlow()
+  const { screenToFlowPosition, getZoom } = useReactFlow()
+  const [snapGuides, setSnapGuides] = useState<PipeSnapGuide[]>([])
+  const dragShaft = useRef<{
+    index: number
+    axis: 'h' | 'v'
+    corners: { x: number; y: number }[]
+  } | null>(null)
+  const dragLabel = useRef<{
+    startClientX: number
+    startClientY: number
+    origOffX: number
+    origOffY: number
+  } | null>(null)
+  const [draggingLabel, setDraggingLabel] = useState(false)
 
   const sourceNode = useInternalNode(source)
   const targetNode = useInternalNode(target)
@@ -253,13 +290,48 @@ export function FlowEdge({
   ])
 
   const edgePath = routed.path
-  const labelX = routed.labelX
-  const labelY = routed.labelY
+  const labelOffX = Number(edgeData?.labelOffsetX) || 0
+  const labelOffY = Number(edgeData?.labelOffsetY) || 0
+  const labelX = routed.labelX + labelOffX
+  const labelY = routed.labelY + labelOffY
+
+  // Publish exact paint so canvas processFlow capture matches the editor
+  useEffect(() => {
+    if (!edgePath) {
+      clearLiveEdgePaint(id)
+      return
+    }
+    setLiveEdgePaint(id, { path: edgePath, labelX, labelY })
+    return () => clearLiveEdgePaint(id)
+  }, [id, edgePath, labelX, labelY])
+
+  // Orthogonal elbows for shaft handles (ports fixed at start/end)
+  const pipeCorners = useMemo(() => {
+    if (!edgePath) return [] as { x: number; y: number }[]
+    const startPt =
+      'start' in routed && routed.start
+        ? routed.start
+        : null
+    const endPt =
+      'end' in routed && routed.end ? routed.end : null
+    if (waypoints.length > 0 && startPt && endPt) {
+      return polylineFromEdge(startPt, endPt, waypoints)
+    }
+    return extractElbowsFromPath(edgePath)
+  }, [edgePath, waypoints, routed])
+
+  const pipeShafts = useMemo(
+    () => (selected ? shaftsFromCorners(pipeCorners) : ([] as PipeShaft[])),
+    [selected, pipeCorners],
+  )
 
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState((label as string) ?? '')
   const updateEdgeLabel = useFlowStore((s) => s.updateEdgeLabel)
   const dragWp = useRef<string | null>(null)
+  const snapTargetsRef = useRef(
+    null as ReturnType<typeof collectPipeSnapTargets> | null,
+  )
 
   const commitLabel = useCallback(() => {
     updateEdgeLabel(id, draft.trim())
@@ -389,7 +461,7 @@ export function FlowEdge({
                 className="nodrag nopan"
                 role="button"
                 tabIndex={0}
-                title="Bend point — drag to reshape; Delete to remove"
+                title="Bend point — drag to reshape (snaps to edges/ports/centers); Delete to remove"
                 style={{
                   position: 'absolute',
                   transform: `translate(-50%, -50%) translate(${wp.x}px,${wp.y}px)`,
@@ -408,6 +480,14 @@ export function FlowEdge({
                   e.preventDefault()
                   dragWp.current = wp.id
                   setSelectedWaypoint({ edgeId: id, waypointId: wp.id })
+                  // Rebuild sticky targets once per drag (nodes + ports + other bends)
+                  snapTargetsRef.current = pipeSnapEnabled
+                    ? collectPipeSnapTargets(allNodes, allEdges, {
+                        excludeEdgeId: id,
+                        excludeWaypointId: wp.id,
+                      })
+                    : []
+                  const bounds = diagramBounds(allNodes)
                   const el = e.currentTarget
                   el.setPointerCapture(e.pointerId)
                   const onMove = (ev: PointerEvent) => {
@@ -416,20 +496,45 @@ export function FlowEdge({
                       x: ev.clientX,
                       y: ev.clientY,
                     })
-                    updateEdgeWaypoint(id, wp.id, {
-                      x: Math.round(flow.x),
-                      y: Math.round(flow.y),
-                    })
+                    if (
+                      pipeSnapEnabled &&
+                      snapTargetsRef.current &&
+                      snapTargetsRef.current.length > 0
+                    ) {
+                      const sn = snapPipePoint(
+                        flow.x,
+                        flow.y,
+                        snapTargetsRef.current,
+                        pipeSnapThreshold,
+                        bounds,
+                      )
+                      updateEdgeWaypoint(id, wp.id, { x: sn.x, y: sn.y })
+                      setSnapGuides(sn.guides)
+                    } else {
+                      updateEdgeWaypoint(id, wp.id, {
+                        x: Math.round(flow.x),
+                        y: Math.round(flow.y),
+                      })
+                      setSnapGuides([])
+                    }
                   }
                   const onUp = (ev: PointerEvent) => {
                     dragWp.current = null
-                    el.releasePointerCapture(ev.pointerId)
+                    snapTargetsRef.current = null
+                    setSnapGuides([])
+                    try {
+                      el.releasePointerCapture(ev.pointerId)
+                    } catch {
+                      /* already released */
+                    }
                     window.removeEventListener('pointermove', onMove)
                     window.removeEventListener('pointerup', onUp)
+                    window.removeEventListener('pointercancel', onUp)
                     pushHistory()
                   }
                   window.addEventListener('pointermove', onMove)
                   window.addEventListener('pointerup', onUp)
+                  window.addEventListener('pointercancel', onUp)
                 }}
                 onClick={(e) => {
                   e.stopPropagation()
@@ -440,19 +545,229 @@ export function FlowEdge({
           )
         })}
 
+      {/* CAD-style alignment guides while a bend/shaft snaps */}
+      {snapGuides.map((g, i) =>
+        g.axis === 'x' ? (
+          <EdgeLabelRenderer key={`sg-x-${i}-${g.at}`}>
+            <div
+              className="nodrag nopan pointer-events-none"
+              style={{
+                position: 'absolute',
+                left: g.at,
+                top: g.from,
+                width: 0,
+                height: Math.max(1, g.to - g.from),
+                borderLeft: '1px dashed #38bdf8',
+                opacity: 0.85,
+                zIndex: 25,
+                transform: 'translateX(-0.5px)',
+              }}
+            />
+          </EdgeLabelRenderer>
+        ) : (
+          <EdgeLabelRenderer key={`sg-y-${i}-${g.at}`}>
+            <div
+              className="nodrag nopan pointer-events-none"
+              style={{
+                position: 'absolute',
+                left: g.from,
+                top: g.at,
+                width: Math.max(1, g.to - g.from),
+                height: 0,
+                borderTop: '1px dashed #38bdf8',
+                opacity: 0.85,
+                zIndex: 25,
+                transform: 'translateY(-0.5px)',
+              }}
+            />
+          </EdgeLabelRenderer>
+        ),
+      )}
+
+      {/* Movable orthogonal shafts (interior runs) */}
+      {selected &&
+        pipeShafts.map((sh) => (
+          <EdgeLabelRenderer key={`shaft-${id}-${sh.index}-${sh.axis}`}>
+            <div
+              className="nodrag nopan"
+              role="button"
+              tabIndex={0}
+              title={
+                sh.axis === 'v'
+                  ? 'Vertical shaft — drag left/right (snaps to align)'
+                  : 'Horizontal shaft — drag up/down (snaps to align)'
+              }
+              style={{
+                position: 'absolute',
+                transform: `translate(-50%, -50%) translate(${sh.midX}px,${sh.midY}px)`,
+                width: sh.axis === 'v' ? 10 : Math.min(28, sh.length * 0.35),
+                height: sh.axis === 'h' ? 10 : Math.min(28, sh.length * 0.35),
+                borderRadius: 4,
+                background: 'rgba(56, 189, 248, 0.35)',
+                border: '1px solid #38bdf8',
+                boxShadow: '0 0 0 1px rgba(0,0,0,0.25)',
+                cursor: sh.axis === 'v' ? 'ew-resize' : 'ns-resize',
+                zIndex: 19,
+                pointerEvents: 'all',
+              }}
+              onPointerDown={(e) => {
+                e.stopPropagation()
+                e.preventDefault()
+                // Ensure waypoints exist so shaft edits persist
+                let corners = pipeCorners
+                let liveWps = waypoints
+                if (waypoints.length === 0 && corners.length >= 2) {
+                  liveWps = cornersToWaypoints(corners)
+                  setEdgeWaypointsLive(id, liveWps)
+                  corners = polylineFromEdge(
+                    corners[0]!,
+                    corners[corners.length - 1]!,
+                    liveWps,
+                  )
+                }
+                dragShaft.current = {
+                  index: sh.index,
+                  axis: sh.axis,
+                  corners: corners.map((p) => ({ ...p })),
+                }
+                snapTargetsRef.current = pipeSnapEnabled
+                  ? collectPipeSnapTargets(allNodes, allEdges, {
+                      excludeEdgeId: id,
+                    })
+                  : []
+                const bounds = diagramBounds(allNodes)
+                const el = e.currentTarget
+                el.setPointerCapture(e.pointerId)
+                const onMove = (ev: PointerEvent) => {
+                  const st = dragShaft.current
+                  if (!st) return
+                  const flow = screenToFlowPosition({
+                    x: ev.clientX,
+                    y: ev.clientY,
+                  })
+                  let value = st.axis === 'v' ? flow.x : flow.y
+                  if (
+                    pipeSnapEnabled &&
+                    snapTargetsRef.current &&
+                    snapTargetsRef.current.length > 0
+                  ) {
+                    const sn = snapPipePoint(
+                      st.axis === 'v' ? value : st.corners[st.index]!.x,
+                      st.axis === 'h' ? value : st.corners[st.index]!.y,
+                      snapTargetsRef.current,
+                      pipeSnapThreshold,
+                      bounds,
+                    )
+                    value = st.axis === 'v' ? sn.x : sn.y
+                    setSnapGuides(sn.guides)
+                  } else {
+                    setSnapGuides([])
+                  }
+                  const nextCorners = moveShaft(
+                    st.corners,
+                    st.index,
+                    st.axis,
+                    value,
+                  )
+                  st.corners = nextCorners
+                  const prevWps =
+                    useFlowStore.getState().edges.find((ed) => ed.id === id)
+                      ?.data?.waypoints ?? liveWps
+                  const wps = cornersToWaypoints(nextCorners, prevWps)
+                  setEdgeWaypointsLive(id, wps)
+                }
+                const onUp = (ev: PointerEvent) => {
+                  dragShaft.current = null
+                  snapTargetsRef.current = null
+                  setSnapGuides([])
+                  try {
+                    el.releasePointerCapture(ev.pointerId)
+                  } catch {
+                    /* already released */
+                  }
+                  window.removeEventListener('pointermove', onMove)
+                  window.removeEventListener('pointerup', onUp)
+                  window.removeEventListener('pointercancel', onUp)
+                  pushHistory()
+                }
+                window.addEventListener('pointermove', onMove)
+                window.addEventListener('pointerup', onUp)
+                window.addEventListener('pointercancel', onUp)
+              }}
+            />
+          </EdgeLabelRenderer>
+        ))}
+
       <EdgeLabelRenderer>
         <div
           style={{
             position: 'absolute',
             transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
             pointerEvents: 'all',
-            zIndex: selected ? 14 : 9,
+            zIndex: selected || draggingLabel ? 16 : 9,
+            cursor: editing
+              ? 'text'
+              : draggingLabel
+                ? 'grabbing'
+                : displayLabel
+                  ? 'grab'
+                  : 'default',
+            userSelect: 'none',
+            touchAction: 'none',
           }}
           className="nodrag nopan"
+          title={
+            displayLabel
+              ? 'Drag to move label · double-click to edit text'
+              : undefined
+          }
           onDoubleClick={(e) => {
             e.stopPropagation()
             setDraft((label as string) ?? '')
             setEditing(true)
+          }}
+          onPointerDown={(e) => {
+            if (editing || !displayLabel) return
+            // Only primary button / touch
+            if (e.button !== 0) return
+            e.stopPropagation()
+            e.preventDefault()
+            setDraggingLabel(true)
+            dragLabel.current = {
+              startClientX: e.clientX,
+              startClientY: e.clientY,
+              origOffX: labelOffX,
+              origOffY: labelOffY,
+            }
+            const el = e.currentTarget
+            el.setPointerCapture(e.pointerId)
+            const onMove = (ev: PointerEvent) => {
+              const st = dragLabel.current
+              if (!st) return
+              const z = getZoom() || 1
+              const dx = (ev.clientX - st.startClientX) / z
+              const dy = (ev.clientY - st.startClientY) / z
+              updateEdgeLabelOffsetLive(id, {
+                labelOffsetX: Math.round(st.origOffX + dx),
+                labelOffsetY: Math.round(st.origOffY + dy),
+              })
+            }
+            const onUp = () => {
+              dragLabel.current = null
+              setDraggingLabel(false)
+              try {
+                el.releasePointerCapture(e.pointerId)
+              } catch {
+                /* already released */
+              }
+              window.removeEventListener('pointermove', onMove)
+              window.removeEventListener('pointerup', onUp)
+              window.removeEventListener('pointercancel', onUp)
+              pushHistory()
+            }
+            window.addEventListener('pointermove', onMove)
+            window.addEventListener('pointerup', onUp)
+            window.addEventListener('pointercancel', onUp)
           }}
         >
           {editing ? (
@@ -471,10 +786,12 @@ export function FlowEdge({
             />
           ) : displayLabel ? (
             <span
-              className="cursor-pointer rounded border px-2 py-0.5 text-xs shadow-sm"
+              className="select-none rounded border px-2 py-0.5 text-xs shadow-sm"
               style={{
                 background: 'var(--neu-surface, #1e2028)',
-                borderColor: 'var(--neu-border, #3f3f46)',
+                borderColor: selected
+                  ? 'var(--neu-icon-active, #818cf8)'
+                  : 'var(--neu-border, #3f3f46)',
                 color: 'var(--neu-text, #e4e4e7)',
               }}
             >

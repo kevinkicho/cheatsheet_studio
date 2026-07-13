@@ -16,6 +16,7 @@ import {
   normalizePortHandleId,
   portFlowPoint,
 } from './portLayout'
+import { labelAnchorFromPath, orthogonalPipePath } from './pipeShafts'
 
 /** RF face for a port handle (matches blue-dot side). */
 function positionFromPortHandle(
@@ -206,7 +207,7 @@ export function smoothStepEdgePath(
   const base = reverseLoop || sameSide
     ? Math.max(72, spacing * 4, clear + 24)
     : Math.max(20, spacing, clear * 0.25)
-  const [path, labelX, labelY] = getSmoothStepPath({
+  const [path, rfLabelX, rfLabelY] = getSmoothStepPath({
     sourceX: start.x,
     sourceY: start.y,
     targetX: end.x,
@@ -216,7 +217,10 @@ export function smoothStepEdgePath(
     borderRadius: 12,
     offset: base,
   })
-  return { path, labelX, labelY }
+  // RF path midpoint often lands on a short elbow/stub (e.g. reverse No near
+  // Collect). Anchor on the longest orthogonal shaft mid instead.
+  const anchor = labelAnchorFromPath(path, { x: rfLabelX, y: rfLabelY })
+  return { path, labelX: anchor.x, labelY: anchor.y }
 }
 
 /** @deprecated kept for tests — mild Q bow perpendicular to chord */
@@ -262,7 +266,22 @@ export function pathThroughPoints(points: Pt[]): {
   const path =
     gen(points) ??
     simpleStraightPath(points[0]!, points[points.length - 1]!).path
-  const mid = points[Math.floor(points.length / 2)]!
+  // Prefer longest leg mid over middle vertex (same as pipe labels)
+  const mid = (() => {
+    // For curved catmull paths, approximate with polyline mid of longest segment
+    let bestLen = -1
+    let best = points[Math.floor(points.length / 2)]!
+    for (let i = 0; i < points.length - 1; i++) {
+      const a = points[i]!
+      const b = points[i + 1]!
+      const len = Math.hypot(b.x - a.x, b.y - a.y)
+      if (len > bestLen) {
+        bestLen = len
+        best = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
+      }
+    }
+    return best
+  })()
   return { path, labelX: mid.x, labelY: mid.y }
 }
 
@@ -370,7 +389,8 @@ export function buildEdgePath(opts: BuildEdgePathOpts): {
       ...wps.map((w) => ({ x: w.x, y: w.y })),
       end,
     ]
-    const r = pathThroughPoints(points)
+    // Orthogonal pipe through elbows (movable shafts stay axis-aligned)
+    const r = orthogonalPipePath(points)
     return {
       path: r.path,
       labelX: r.labelX,

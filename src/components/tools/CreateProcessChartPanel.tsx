@@ -10,12 +10,14 @@ import {
 } from 'lucide-react'
 import { useCanvasStore } from '@/stores/canvasStore'
 import { useAuthStore } from '@/stores/authStore'
+import { useUiStore } from '@/stores/uiStore'
 import { useFlowchartLibraryStore } from '@/stores/flowchartLibraryStore'
 import {
   MermaidVisualEditor,
   getVisualEditorMermaidSource,
   getVisualEditorProcessFlow,
 } from '@/components/tools/MermaidVisualEditor'
+import { isProcessFlowSnapshot } from '@/lib/processFlowSnapshot'
 import type { MermaidDiagramKind, MermaidFlowDirection } from '@/types'
 import {
   MERMAID_KINDS,
@@ -25,7 +27,10 @@ import {
   mermaidTemplate,
 } from '@/lib/mermaidTemplates'
 import type { StoredFlowchart } from '@/lib/flowchartLibrary'
-import type { DiagramKind } from '@/vendor/mermaid-visual-editor/lib/store'
+import {
+  useFlowStore,
+  type DiagramKind,
+} from '@/vendor/mermaid-visual-editor/lib/store'
 
 const REPLACE_WARNING =
   'Replace the diagram editor with this content?\n\n' +
@@ -56,9 +61,11 @@ function toEditorKind(kind: MermaidDiagramKind): DiagramKind {
 export function CreateProcessChartPanel() {
   const addProcessChart = useCanvasStore((s) => s.addProcessChart)
   const updateItem = useCanvasStore((s) => s.updateItem)
-  const selectedIds = useCanvasStore((s) => s.selectedIds)
+  const select = useCanvasStore((s) => s.select)
   const items = useCanvasStore((s) => s.items)
   const user = useAuthStore((s) => s.user)
+  const editingProcessChartId = useUiStore((s) => s.editingProcessChartId)
+  const endEditProcessChart = useUiStore((s) => s.endEditProcessChart)
 
   const libItems = useFlowchartLibraryStore((s) => s.items)
   const libLoading = useFlowchartLibraryStore((s) => s.loading)
@@ -72,11 +79,16 @@ export function CreateProcessChartPanel() {
   const setActiveLibId = useFlowchartLibraryStore((s) => s.setActiveId)
   const clearLibError = useFlowchartLibraryStore((s) => s.clearError)
 
-  const selectedChart = useMemo(() => {
-    if (selectedIds.length !== 1) return null
-    const it = items.find((i) => i.id === selectedIds[0])
-    return it?.type === 'process-chart' ? it : null
-  }, [items, selectedIds])
+  /** Canvas card currently open via Edit mode (not canvas selection). */
+  const editingChart = useMemo(() => {
+    if (!editingProcessChartId) return null
+    const it = items.find((i) => i.id === editingProcessChartId)
+    if (!it) return null
+    if (it.type !== 'process-chart' && !it.mermaidSource && !it.processFlow) {
+      return null
+    }
+    return it
+  }, [items, editingProcessChartId])
 
   const [title, setTitle] = useState('Process chart')
   const [kind, setKind] = useState<MermaidDiagramKind>('flowchart')
@@ -87,10 +99,22 @@ export function CreateProcessChartPanel() {
   const [libraryOpen, setLibraryOpen] = useState(false)
 
   const isFlowchart = kind === 'flowchart'
+  const chartIdDisplay = editingProcessChartId ?? '—'
 
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const flash = useCallback((msg: string, ms = 1800) => {
     setStatus(msg)
-    window.setTimeout(() => setStatus(null), ms)
+    if (flashTimer.current) clearTimeout(flashTimer.current)
+    flashTimer.current = setTimeout(() => {
+      setStatus(null)
+      flashTimer.current = null
+    }, ms)
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (flashTimer.current) clearTimeout(flashTimer.current)
+    }
   }, [])
 
   useEffect(() => {
@@ -98,71 +122,155 @@ export function CreateProcessChartPanel() {
     void loadLibrary(user.uid)
   }, [user?.uid, loadLibrary])
 
-  // Selected canvas card → editor (inherit processFlow snapshot when present)
   const [editorProcessFlow, setEditorProcessFlow] = useState<
     import('@/lib/processFlowSnapshot').ProcessFlowSnapshot | null
   >(null)
-  const prevSelectedId = useRef<string | null>(null)
+  const prevEditingId = useRef<string | null>(null)
 
+  // Edit-mode card → load into interactive editor (explicit Edit button only)
   useEffect(() => {
-    // Deselected / card left viewport selection → restore default flowchart editor
-    if (!selectedChart) {
-      if (prevSelectedId.current) {
-        prevSelectedId.current = null
-        const tpl = mermaidTemplate('flowchart', direction)
-        setTitle('Process chart')
-        setKind('flowchart')
-        setSource(tpl)
-        setEditorProcessFlow(null)
-        setActiveLibId(null)
-        setReloadToken((t) => t + 1)
-      }
+    if (!editingProcessChartId) {
+      prevEditingId.current = null
+      return
+    }
+    if (prevEditingId.current === editingProcessChartId) return
+
+    const chart = items.find((i) => i.id === editingProcessChartId)
+    if (!chart) {
+      endEditProcessChart()
       return
     }
 
-    prevSelectedId.current = selectedChart.id
-    setTitle(selectedChart.title || 'Process chart')
-    const src =
-      selectedChart.mermaidSource || mermaidTemplate('flowchart', 'TD')
-    const k = selectedChart.mermaidKind ?? detectMermaidKind(src)
+    prevEditingId.current = editingProcessChartId
+    // Canvas must not stay selected — Delete would remove the card
+    select(null)
+
+    setTitle(chart.title || 'Process chart')
+    const src = chart.mermaidSource || mermaidTemplate('flowchart', 'TD')
+    const k = chart.mermaidKind ?? detectMermaidKind(src)
     if (!isProcessPanelKind(k)) {
       flash(
         'Selected card type is not editable in Process (use Flowchart or Mind map)',
       )
-      setActiveLibId(null)
+      endEditProcessChart()
       return
     }
     setKind(k)
     setSource(src)
-    setDirection(
-      selectedChart.mermaidDirection ?? detectFlowDirection(src) ?? 'TD',
+    setDirection(chart.mermaidDirection ?? detectFlowDirection(src) ?? 'TD')
+    const snap = chart.processFlow
+    setEditorProcessFlow(
+      snap && isProcessFlowSnapshot(snap) ? structuredClone(snap) : null,
     )
-    // Free-form card layout → editor (exact match); null falls back to Mermaid layout
-    setEditorProcessFlow(selectedChart.processFlow ?? null)
     setReloadToken((t) => t + 1)
     setActiveLibId(null)
-  }, [selectedChart?.id]) // eslint-disable-line react-hooks/exhaustive-deps -- load on select change
+    flash(`Editing “${chart.title || 'Process chart'}”`)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load only when edit target changes
+  }, [editingProcessChartId])
 
-  /** Live editor → selected card (bidirectional fine-tune) */
+  // If the card was deleted while editing, exit edit mode
+  useEffect(() => {
+    if (!editingProcessChartId) return
+    if (!items.some((i) => i.id === editingProcessChartId)) {
+      endEditProcessChart()
+      prevEditingId.current = null
+    }
+  }, [items, editingProcessChartId, endEditProcessChart])
+
+  /** Live editor → canvas card bound to edit mode (auto-save) */
   const handleEditorSnapshot = useCallback(
     (
       mermaid: string,
       flow: import('@/lib/processFlowSnapshot').ProcessFlowSnapshot | null,
     ) => {
-      if (!selectedChart) return
+      const targetId = editingProcessChartId
+      if (!targetId) return
+      const chart = items.find((i) => i.id === targetId)
+      if (!chart) return
       const k = detectMermaidKind(mermaid)
       const dir = detectFlowDirection(mermaid) ?? direction
-      updateItem(selectedChart.id, {
+      // Never write processFlow: undefined — that wipes the card snapshot
+      const patch: Parameters<typeof updateItem>[1] = {
         mermaidSource: mermaid,
-        // Clone so card holds a frozen editor snapshot, not a live store ref
-        processFlow: flow ? structuredClone(flow) : undefined,
         mermaidKind: isProcessPanelKind(k) ? k : kind,
         mermaidDirection: dir,
-        title: title.trim() || selectedChart.title,
-      })
+        title: title.trim() || chart.title,
+      }
+      if (flow && isProcessFlowSnapshot(flow)) {
+        patch.processFlow = structuredClone(flow)
+      }
+      updateItem(targetId, patch)
     },
-    [selectedChart, direction, kind, title, updateItem],
+    [editingProcessChartId, items, direction, kind, title, updateItem],
   )
+
+  const finishEditing = useCallback(() => {
+    // Flush latest editor state onto the card before leaving edit mode
+    const mermaid = getVisualEditorMermaidSource().trim()
+    const flow = getVisualEditorProcessFlow()
+    if (editingProcessChartId && mermaid) {
+      handleEditorSnapshot(mermaid, flow)
+    }
+    endEditProcessChart()
+    prevEditingId.current = null
+    flash('Saved · left edit mode')
+  }, [
+    editingProcessChartId,
+    handleEditorSnapshot,
+    endEditProcessChart,
+    flash,
+  ])
+
+  // Persist title edits while in edit mode (without waiting for a graph change)
+  useEffect(() => {
+    if (!editingProcessChartId) return
+    const chart = items.find((i) => i.id === editingProcessChartId)
+    if (!chart) return
+    const next = title.trim() || chart.title
+    if (next === chart.title) return
+    const t = window.setTimeout(() => {
+      updateItem(editingProcessChartId, { title: next })
+    }, 400)
+    return () => window.clearTimeout(t)
+  }, [title, editingProcessChartId, items, updateItem])
+
+  // Unmount (switch away from Process tool) → flush auto-save, free editor RAM
+  useEffect(() => {
+    return () => {
+      const id = useUiStore.getState().editingProcessChartId
+      if (id) {
+        const mermaid = getVisualEditorMermaidSource().trim()
+        const flow = getVisualEditorProcessFlow()
+        if (mermaid) {
+          const k = detectMermaidKind(mermaid)
+          const dir = detectFlowDirection(mermaid) ?? 'TD'
+          const patch: Parameters<typeof updateItem>[1] = {
+            mermaidSource: mermaid,
+            mermaidKind: isProcessPanelKind(k) ? k : 'flowchart',
+            mermaidDirection: dir,
+          }
+          if (flow && isProcessFlowSnapshot(flow)) {
+            patch.processFlow = structuredClone(flow)
+          }
+          useCanvasStore.getState().updateItem(id, patch)
+        }
+        useUiStore.getState().endEditProcessChart()
+      }
+      // Drop RF graph + undo stacks so Process panel unmount doesn't keep
+      // large node/edge history in the global flow store.
+      useFlowStore.setState({
+        nodes: [],
+        edges: [],
+        past: [],
+        future: [],
+        clipboard: null,
+        selectedWaypoint: null,
+      })
+      void import('@/vendor/mermaid-visual-editor/lib/liveEdgePaint').then(
+        (m) => m.clearAllLiveEdgePaint(),
+      )
+    }
+  }, [])
 
   const resolveSource = useCallback(() => {
     const fromCanvas = getVisualEditorMermaidSource().trim()
@@ -212,19 +320,34 @@ export function CreateProcessChartPanel() {
       // Always set processFlow on load — undefined means "clear" so a previous
       // card/library snapshot cannot override the mermaid source import.
       setEditorProcessFlow(
-        next.processFlow === undefined ? null : next.processFlow,
+        next.processFlow === undefined
+          ? null
+          : next.processFlow && isProcessFlowSnapshot(next.processFlow)
+            ? structuredClone(next.processFlow)
+            : next.processFlow,
       )
+      // Leaving edit mode when loading unrelated content
+      if (editingProcessChartId) {
+        endEditProcessChart()
+        prevEditingId.current = null
+      }
       setReloadToken((t) => t + 1)
       setActiveLibId(next.libId ?? null)
       return true
     },
-    [confirmReplaceEditor, direction, setActiveLibId, flash],
+    [
+      confirmReplaceEditor,
+      direction,
+      setActiveLibId,
+      flash,
+      editingProcessChartId,
+      endEditProcessChart,
+    ],
   )
 
   /** Same chip wiring for Flowchart and Mind map. */
   const applyTemplate = (nextKind: MermaidDiagramKind) => {
     if (!isProcessPanelKind(nextKind)) return
-    // Already on this kind and editor has content — still allow re-load of starter
     const tpl = mermaidTemplate(nextKind, direction)
     const ok = loadIntoEditor({
       source: tpl,
@@ -250,8 +373,6 @@ export function CreateProcessChartPanel() {
     setSource(src)
     const k = detectMermaidKind(src)
     const dir = detectFlowDirection(src) ?? direction
-    // Snapshot free-form editor so the sheet card paints the exact same
-    // geometry (never re-layout via Mermaid on the main canvas).
     const captured =
       k === 'mindmap' ? null : getVisualEditorProcessFlow()
     const processFlow = captured ? structuredClone(captured) : undefined
@@ -259,20 +380,24 @@ export function CreateProcessChartPanel() {
       flash('Could not capture diagram — add nodes in the editor first')
       return
     }
-    addProcessChart(src, {
+    const newId = addProcessChart(src, {
       title: title.trim() || (k === 'mindmap' ? 'Mind map' : 'Process chart'),
       mermaidTheme: 'dark',
       mermaidKind: isProcessPanelKind(k) ? k : kind,
       mermaidDirection: dir,
       processFlow,
     })
-    // Keep panel state in sync so re-selecting the new card reloads this snapshot
     if (processFlow) setEditorProcessFlow(processFlow)
+    // Add only — do not auto-open edit mode. User clicks the card's Edit badge
+    // (bottom-right) when they want to change the diagram.
+    if (newId) {
+      select(newId)
+    }
     flash('Added to canvas')
   }
 
-  const updateSelected = () => {
-    if (!selectedChart) return
+  const saveEditingCard = () => {
+    if (!editingProcessChartId) return
     const src = resolveSource()
     if (!src) {
       flash('Add at least one node on the canvas first')
@@ -288,8 +413,8 @@ export function CreateProcessChartPanel() {
       flash('Could not capture diagram — add nodes in the editor first')
       return
     }
-    updateItem(selectedChart.id, {
-      title: title.trim() || (k === 'mindmap' ? 'Mind map' : 'Process chart'),
+    updateItem(editingProcessChartId, {
+      title: title.trim() || (editingChart?.title ?? 'Process chart'),
       mermaidSource: src,
       processFlow,
       mermaidTheme: 'dark',
@@ -297,7 +422,7 @@ export function CreateProcessChartPanel() {
       mermaidDirection: dir,
     })
     if (processFlow) setEditorProcessFlow(processFlow)
-    flash('Updated selected chart')
+    flash('Saved to canvas card')
   }
 
   const handleSaveLibrary = async (mode: 'new' | 'overwrite') => {
@@ -399,17 +524,52 @@ export function CreateProcessChartPanel() {
       </div>
 
       <div className="shrink-0 space-y-2 border-b border-zinc-800 px-2.5 py-2">
-        <label className="flex flex-col gap-0.5">
-          <span className="text-[9px] font-medium uppercase text-zinc-500">
-            Title
-          </span>
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            className="field-input py-1 text-[11px]"
-            data-testid="mermaid-title"
-          />
-        </label>
+        {/* Title + ID side by side (ID = canvas card id for edit mode) */}
+        <div className="flex gap-2">
+          <label className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span className="text-[9px] font-medium uppercase text-zinc-500">
+              Title
+            </span>
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="field-input py-1 text-[11px]"
+              data-testid="mermaid-title"
+            />
+          </label>
+          <label className="flex w-[42%] shrink-0 flex-col gap-0.5">
+            <span className="text-[9px] font-medium uppercase text-zinc-500">
+              ID
+            </span>
+            <input
+              value={chartIdDisplay}
+              readOnly
+              title={
+                editingProcessChartId
+                  ? 'Canvas card id for this process chart'
+                  : 'Open a chart with Edit on the card to bind an id'
+              }
+              className="field-input cursor-default truncate py-1 font-mono text-[10px] text-zinc-400"
+              data-testid="process-chart-id"
+            />
+          </label>
+        </div>
+
+        {editingProcessChartId && (
+          <div className="flex items-center gap-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-1">
+            <span className="min-w-0 flex-1 truncate text-[10px] text-emerald-200/90">
+              Editing canvas card
+            </span>
+            <button
+              type="button"
+              onClick={finishEditing}
+              className="shrink-0 rounded border border-emerald-500/40 px-1.5 py-0.5 text-[10px] font-medium text-emerald-100 hover:bg-emerald-500/20"
+              data-testid="process-done-editing"
+            >
+              Done
+            </button>
+          </div>
+        )}
 
         <div>
           <span className="mb-1 block text-[9px] font-medium uppercase text-zinc-500">
@@ -561,19 +721,36 @@ export function CreateProcessChartPanel() {
           source={source}
           onSourceChange={setSource}
           processFlow={editorProcessFlow}
-          onEditorSnapshot={selectedChart ? handleEditorSnapshot : undefined}
+          onEditorSnapshot={
+            editingProcessChartId ? handleEditorSnapshot : undefined
+          }
           reloadToken={reloadToken}
           diagramKind={toEditorKind(kind)}
           onReset={() => {
-            const tpl = mermaidTemplate(kind, direction)
-            setSource(tpl)
-            setEditorProcessFlow(null)
-            setReloadToken((t) => t + 1)
-            setActiveLibId(null)
+            // Load built-in example into the interactive editor (not a canvas card).
+            // Prefer flowchart example unless the panel is currently on mind map.
+            const exampleKind: MermaidDiagramKind =
+              kind === 'mindmap' ? 'mindmap' : 'flowchart'
+            const tpl = mermaidTemplate(exampleKind, direction)
+            const ok = loadIntoEditor(
+              {
+                source: tpl,
+                kind: exampleKind,
+                direction,
+                libId: null,
+                processFlow: null, // Mermaid layout → clean stack + pipes
+                title:
+                  exampleKind === 'mindmap'
+                    ? 'Mind map'
+                    : 'Process chart',
+              },
+              { skipConfirm: true },
+            )
+            if (!ok) return
             flash(
-              kind === 'mindmap'
-                ? 'Mind map reset to default template'
-                : 'Flowchart reset to default template',
+              exampleKind === 'mindmap'
+                ? 'Loaded example mind map into editor'
+                : 'Loaded example flowchart into editor',
             )
           }}
           className="h-full min-h-[16rem]"
@@ -585,26 +762,37 @@ export function CreateProcessChartPanel() {
           <p className="text-center text-[10px] text-emerald-300/90">{status}</p>
         )}
         <div className="flex gap-1.5">
-          {selectedChart && (
+          {editingProcessChartId ? (
+            <>
+              <button
+                type="button"
+                onClick={saveEditingCard}
+                className="inline-flex flex-1 items-center justify-center gap-1 rounded-md border border-zinc-700 px-2 py-2 text-xs font-medium text-zinc-200 hover:bg-zinc-900"
+                data-testid="mermaid-update-selected"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                Save card
+              </button>
+              <button
+                type="button"
+                onClick={finishEditing}
+                className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-md bg-emerald-600 px-2 py-2 text-xs font-medium text-white hover:bg-emerald-500"
+                data-testid="process-done-editing-footer"
+              >
+                Done
+              </button>
+            </>
+          ) : (
             <button
               type="button"
-              onClick={updateSelected}
-              className="inline-flex flex-1 items-center justify-center gap-1 rounded-md border border-zinc-700 px-2 py-2 text-xs font-medium text-zinc-200 hover:bg-zinc-900"
-              data-testid="mermaid-update-selected"
+              onClick={insert}
+              className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-md bg-indigo-500 px-2 py-2 text-xs font-medium text-white hover:bg-indigo-400"
+              data-testid="mermaid-add-to-canvas"
             >
-              <RefreshCw className="h-3.5 w-3.5" />
-              Update card
+              <Plus className="h-3.5 w-3.5" />
+              Add to canvas
             </button>
           )}
-          <button
-            type="button"
-            onClick={insert}
-            className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-md bg-indigo-500 px-2 py-2 text-xs font-medium text-white hover:bg-indigo-400"
-            data-testid="mermaid-add-to-canvas"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            Add to canvas
-          </button>
         </div>
       </div>
     </div>

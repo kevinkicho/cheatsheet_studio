@@ -70,6 +70,32 @@ describe('processFlowSnapshot', () => {
     expect(rf.nodes[0]!.position.x).toBe(snap.nodes[0]!.x)
   })
 
+  it('round-trips port handles and manualConnect (re-select must not lose pipes)', () => {
+    const plugged = [
+      {
+        id: 'e1',
+        source: 'Start',
+        target: 'Done',
+        type: 'flowEdge',
+        sourceHandle: 'port-2',
+        targetHandle: 'port-0',
+        data: {
+          edgeStyle: 'solid',
+          endMarker: 'arrow',
+          manualConnect: true,
+        },
+      },
+    ] as Edge<FlowEdgeData>[]
+    const snap = captureProcessFlow(nodes, plugged)!
+    expect(snap.edges[0]!.sourceHandle).toBe('port-2')
+    expect(snap.edges[0]!.targetHandle).toBe('port-0')
+    expect(snap.edges[0]!.manualConnect).toBe(true)
+    const rf = processFlowToRf(snap)
+    expect(rf.edges[0]!.sourceHandle).toBe('port-2')
+    expect(rf.edges[0]!.targetHandle).toBe('port-0')
+    expect(rf.edges[0]!.data?.manualConnect).toBe(true)
+  })
+
   it('multi reverse edge (No) is a U-turn, not a crossed diagonal', () => {
     const n2 = [
       {

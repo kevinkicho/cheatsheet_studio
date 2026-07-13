@@ -28,6 +28,7 @@ import {
 } from 'lucide-react'
 import type { CanvasItem, OutlinerFolder } from '@/types'
 import { useCanvasStore } from '@/stores/canvasStore'
+import { useUiStore } from '@/stores/uiStore'
 
 /**
  * Fine-grained drop slot for slide-between reordering:
@@ -60,6 +61,7 @@ export function LayersPanel() {
   const select = useCanvasStore((s) => s.select)
   const toggleSelect = useCanvasStore((s) => s.toggleSelect)
   const setSelectedIds = useCanvasStore((s) => s.setSelectedIds)
+  const requestFocusCanvasItem = useUiStore((s) => s.requestFocusCanvasItem)
   const bringForward = useCanvasStore((s) => s.bringForward)
   const sendBackward = useCanvasStore((s) => s.sendBackward)
   const bringToFront = useCanvasStore((s) => s.bringToFront)
@@ -557,7 +559,10 @@ export function LayersPanel() {
                   dragging={draggingItemIds?.includes(item.id) ?? false}
                   onSelect={(e) => {
                     if (e.shiftKey) toggleSelect(item.id)
-                    else select(item.id)
+                    else {
+                      select(item.id)
+                      requestFocusCanvasItem(item.id)
+                    }
                   }}
                   onToggleHidden={() => toggleHiddenForRow(item.id)}
                   onToggleLocked={() => toggleLockedForRow(item.id)}
@@ -724,7 +729,10 @@ export function LayersPanel() {
                   dragging={draggingItemIds?.includes(item.id) ?? false}
                   onSelect={(e) => {
                     if (e.shiftKey) toggleSelect(item.id)
-                    else select(item.id)
+                    else {
+                      select(item.id)
+                      requestFocusCanvasItem(item.id)
+                    }
                   }}
                   onToggleHidden={() => toggleHiddenForRow(item.id)}
                   onToggleLocked={() => toggleLockedForRow(item.id)}

@@ -70,6 +70,28 @@ describe('flowchart smooth-step edges', () => {
     ).toBe(true)
   })
 
+  it('reverse multi label sits on longest exterior shaft, not a short stub', () => {
+    // Diamond below rect — reverse No U-turn on the right
+    const rev = buildEdgePath({
+      source: b,
+      target: a,
+      siblingIndex: 1,
+      isMultiEdge: true,
+      siblingSpacing: 14,
+    })
+    // Exterior vertical run is to the right of both nodes (NodeBox uses cx/cy)
+    const maxRight = Math.max(a.cx + a.width / 2, b.cx + b.width / 2)
+    expect(rev.labelX).toBeGreaterThan(maxRight)
+    // Vertically between the two node centers (mid of long side shaft)
+    const topCy = Math.min(a.cy, b.cy)
+    const botCy = Math.max(a.cy, b.cy)
+    expect(rev.labelY).toBeGreaterThan(topCy - 20)
+    expect(rev.labelY).toBeLessThan(botCy + 20)
+    // Not glued to either endpoint Y (that would be a stub)
+    expect(Math.abs(rev.labelY - rev.start.y)).toBeGreaterThan(15)
+    expect(Math.abs(rev.labelY - rev.end.y)).toBeGreaterThan(15)
+  })
+
   it('manual port handles pin ends and use curved pipe (smooth-step)', () => {
     const plugged = buildEdgePath({
       source: a,

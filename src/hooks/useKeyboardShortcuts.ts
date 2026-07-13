@@ -12,6 +12,10 @@ export function useKeyboardShortcuts() {
     const onKey = (e: KeyboardEvent) => {
       // Delete inside process interactive editor must not remove the canvas card
       if (e.key === 'Delete' || e.key === 'Backspace') {
+        // Explicit Edit mode: canvas card is unbound; never delete board items
+        if (useUiStore.getState().editingProcessChartId) {
+          return
+        }
         if (
           isProcessEditorTarget(e.target) ||
           isProcessEditorTarget(document.activeElement)

@@ -67,13 +67,20 @@ export function CanvasCardBody({
     // Free-form snapshot: fill card via SVG viewBox (like Mermaid fillContainer).
     // Avoid FitContent+meet double letterbox — that made horizontal resize look uneven.
     if (isProcessFlowSnapshot(item.processFlow)) {
-      // Include path fingerprint so baked editor geometry always re-paints
-      const pathSig = item.processFlow.edges
-        .map((e) => e.path?.length ?? 0)
-        .join('.')
+      // Fingerprint geometry so any path/node move re-paints the card
+      const pf = item.processFlow
+      const pathSig = pf.edges
+        .map(
+          (e) =>
+            `${e.path?.length ?? 0}:${e.labelX ?? 0}:${e.labelY ?? 0}:${e.waypoints?.length ?? 0}`,
+        )
+        .join('|')
+      const nodeSig = pf.nodes
+        .map((n) => `${n.x},${n.y},${n.width}x${n.height}`)
+        .join('|')
       return (
         <ProcessFlowView
-          key={`${item.id}-pf-${item.processFlow.nodes.length}-${item.processFlow.edges.length}-${pathSig}-ar${keepAspectRatio ? 1 : 0}`}
+          key={`${item.id}-pf-${pathSig}-${nodeSig}-ar${keepAspectRatio ? 1 : 0}`}
           snapshot={item.processFlow}
           title={item.title}
           preserveAspect={keepAspectRatio ? 'meet' : 'none'}

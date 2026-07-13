@@ -17,18 +17,28 @@ tool and placed as canvas cards.
    - **Mind map** — radial hierarchy, promote/demote, bang/cloud shapes
 3. Edit on the **dark** React Flow canvas (never a static Mermaid preview pane —
    the editor *is* the preview). Toolbar: **Inspector**, **Select (V)**,
-   **Pan (H or Shift+drag)**, shapes, **zoom fit**, diagram **Reset**.
+   **Pan (H or Shift+drag)**, shapes, **example template**, **Auto Layout**,
+   **Organize Connections**, **zoom fit**, diagram **Reset**.
 4. Drag **port → port** to connect. Lines use orthogonal **smooth-step “pipe”**
    curves. Drop a link on empty canvas → new rectangle + connection.
-5. **Cloud library** (signed in): **Save new** / **Update saved** / **Load…**
+5. **Pipe tools:** snap to node edges / centers / ports / bends; select an edge
+   and drag **shaft midpoints** to slide orthogonal runs. **Yes/No** labels sit
+   on the **longest shaft midpoint** by default; drag to move; double-click to
+   edit text.
+6. **Cloud library** (signed in): **Save new** / **Update saved** / **Load…**
    stores Mermaid source **and** flowchart `processFlow` snapshots under the
    user’s `flowcharts` collection. Load restores free-form layout when present.
-6. Set a **title**, then **Add to canvas** (or **Update card** when a process
-   card is selected).
-7. On the board, process cards use solid panel chrome. **Flowcharts** paint the
+7. Set a **title**, then **Add to canvas**. This **only places the card** — it
+   does **not** enter edit mode. Use the card’s bottom-right **Edit** badge
+   when you want to change the diagram; **Done** saves and exits. Title and
+   chart **ID** appear in the Process panel while editing.
+8. On the board, process cards use solid panel chrome. **Flowcharts** paint the
    free-form **`processFlow` snapshot** (same geometry as the interactive
-   editor). **Mind maps** still use Mermaid SVG. Both stay vector at card size —
-   see [vector-graphics.md](./vector-graphics.md).
+   editor, including live pipe paths when the editor is open). **Mind maps**
+   still use Mermaid SVG. Both stay vector at card size — see
+   [vector-graphics.md](./vector-graphics.md).
+9. **Layers:** click a process card row to **zoom-fit** it on the board.
+   Properties (when not editing that card): readonly Mermaid source + **Copy**.
 
 At insert/update:
 
@@ -37,9 +47,10 @@ At insert/update:
 | `mermaidSource` | `getVisualEditorMermaidSource()` | Re-open, library, mind-map cards |
 | `processFlow` | `getVisualEditorProcessFlow()` | Flowchart card paint + print export |
 
-Selecting a flowchart card loads its `processFlow` into the editor (live edits
-push back while the card stays selected). **Delete** in the editor removes only
-nodes/edges — not the canvas card.
+**Edit mode** is explicit (`editingProcessChartId`): the Edit badge opens the
+card in the Process panel and deselects board selection so **Delete** only
+affects RF nodes/edges. Selecting a card without Edit does **not** push live
+edits back into the card.
 
 ---
 
@@ -59,15 +70,20 @@ Process panel chips. Existing cards of other kinds remain on the board if presen
 
 | Piece | Role |
 |-------|------|
-| `CreateProcessChartPanel` | Sidebar: title, flowchart/mindmap chips, cloud library, visual editor, Add / Update |
+| `CreateProcessChartPanel` | Sidebar: title\|ID, chips, library, editor, Add / Done; edit mode by id |
 | `MermaidVisualEditor` | Dark React Flow host; prefer `processFlow` on load; serialize Mermaid + snapshot helpers |
-| `processFlowSnapshot.ts` | Capture / restore / SVG paint for free-form flowcharts |
+| `processFlowSnapshot.ts` | Capture / restore / SVG paint; prefers live edge paint when editor mounted |
+| `liveEdgePaint.ts` | Registry of exact path + label positions from `FlowEdge` |
 | `ProcessFlowView` | Card body SVG from snapshot (viewBox includes edge U-turns) |
-| `edgePath.ts` | Shared pipe router (smooth-step); port-locked plugs; reverse multi “No” U-turn |
+| `edgePath.ts` | Shared pipe router (smooth-step); port-locked plugs; reverse multi “No” U-turn; longest-shaft label anchors |
+| `pipeShafts.ts` | Orthogonal shaft extract / move; label at longest segment mid |
+| `pipeSnap.ts` | CAD snap targets (edges, centers, ports, bends) |
+| `layoutActions.ts` | Auto Layout + Organize Connections (clear absolute waypoints on node move) |
 | `portLayout.ts` | Perimeter ports (stadium mid-sides); handle normalize / reconcile |
 | `layout.ts` → `cleanFlowchartLayout` | Dagre stack after Mermaid size measure; face-port handles for auto edges |
 | `layoutFromMermaid.ts` | Optional Mermaid SVG measure for import sizes |
 | `flowchartLibrary.ts` + store | Firestore CRUD; persists `mermaidSource` + `processFlow` |
+| `uiStore.editingProcessChartId` | Explicit edit mode for a canvas process card |
 | `src/vendor/mermaid-visual-editor/*` | Vendored editor + mindmap layout / nodes / edges |
 | `canvasStore.addProcessChart` | Inserts `process-chart` with `processFlow` when captured |
 | `keyboardShortcuts` | Delete in process editor does **not** remove canvas cards |
@@ -105,8 +121,15 @@ Process panel (React Flow editor)
 |--------|----------|
 | Port → port connect | Curved pipe; `manualConnect: true` |
 | Drop link on empty | New rectangle + edge |
+| Select edge → shaft grip | Slide orthogonal mid-run (snap guides) |
+| Yes/No label | Default longest-shaft mid; drag offset; double-click edit |
+| Add to canvas | Places card only — no auto edit mode |
+| Card **Edit** badge | Enters `editingProcessChartId`; **Done** saves + exits |
+| Layers click | Zoom-fit that canvas item |
+| Auto Layout | Dagre ranks; clears sticky absolute waypoints |
+| Organize Connections | Re-routes pipes; keeps label offsets |
 | Shift + left-drag | Temporary pan (selection key null so Shift is free) |
-| Delete / Backspace | RF nodes/edges only while editor has focus or selection |
+| Delete / Backspace | RF nodes/edges only while editing (not the canvas card) |
 | Auto-connect toggle | Re-layout rewire only; imports still show edges when off |
 
 ---

@@ -26,10 +26,25 @@ export function ProcessFlowView({
   title,
   preserveAspect = 'meet',
 }: Props) {
+  // Depend on geometry fields so SVG rebuilds whenever paths/nodes change
+  // (object identity alone can miss deep updates from the editor sync).
+  const geomKey = [
+    snapshot.width,
+    snapshot.height,
+    snapshot.nodes.map((n) => `${n.id}:${n.x},${n.y},${n.width}x${n.height}`).join(';'),
+    snapshot.edges
+      .map(
+        (e) =>
+          `${e.id}:${e.path ?? ''}:${e.labelX ?? ''}:${e.labelY ?? ''}:${e.label ?? ''}`,
+      )
+      .join(';'),
+  ].join('#')
+
   const svg = useMemo(() => {
     if (!isProcessFlowSnapshot(snapshot)) return ''
     return processFlowToSvg(snapshot, { preserveAspect })
-  }, [snapshot, preserveAspect])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- geomKey encodes snapshot paint state
+  }, [geomKey, preserveAspect])
 
   if (!svg) {
     return (

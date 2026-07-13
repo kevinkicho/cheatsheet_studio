@@ -24,6 +24,7 @@ import {
   buildEdgePath,
   samplePathPoints,
 } from '@/vendor/mermaid-visual-editor/lib/edgePath'
+import { getLiveEdgePaint } from '@/vendor/mermaid-visual-editor/lib/liveEdgePaint'
 
 export const PROCESS_FLOW_VERSION = 1 as const
 
@@ -53,13 +54,16 @@ export type ProcessFlowEdgeSnap = {
   path?: string
   labelX?: number
   labelY?: number
-  /** User bend points along the edge. */
+  /** User bend points along the edge (same space as nodes). */
   waypoints?: { id: string; x: number; y: number }[]
   /** Port ids when user plugged the connection. */
   sourceHandle?: string | null
   targetHandle?: string | null
   /** Path should anchor to ports (not auto face-attach). */
   manualConnect?: boolean
+  /** Label drag offset from auto mid-path (flow units). */
+  labelOffsetX?: number
+  labelOffsetY?: number
 }
 
 export type ProcessFlowSnapshot = {
@@ -185,13 +189,26 @@ export function captureProcessFlow(
     const srcNode = byId.get(e.source)
     const tgtNode = byId.get(e.target)
 
-    // Same builder as FlowEdge — port handles win over auto face attach
+    // Prefer the exact path FlowEdge is painting (editor truth).
+    // Fall back to buildEdgePath when the editor is not mounted.
     let path: string | undefined
     let labelX: number | undefined
     let labelY: number | undefined
     const wps = e.data?.waypoints
+    // Waypoints must live in the same space as normalized nodes (subtract ox/oy)
+    const shiftedWps = (wps ?? []).map((w) => ({
+      ...w,
+      x: w.x - ox,
+      y: w.y - oy,
+    }))
 
-    if (sn && tn) {
+    const live = getLiveEdgePaint(e.id)
+    if (live?.path) {
+      // Live paint is in absolute RF flow coords — shift into snapshot space
+      path = shiftSvgPath(live.path, -ox, -oy)
+      labelX = live.labelX - ox
+      labelY = live.labelY - oy
+    } else if (sn && tn) {
       const siblingIndex = siblingIndexForEdge(
         e.id,
         e.source,
@@ -204,18 +221,11 @@ export function captureProcessFlow(
           (x.source === e.source && x.target === e.target) ||
           (x.source === e.target && x.target === e.source),
       ).length
-      const shifted = (wps ?? []).map((w) => ({
-        ...w,
-        x: w.x - ox,
-        y: w.y - oy,
-      }))
       const manual = e.data?.manualConnect === true
-      // Same routing as FlowEdge / buildEdgePath:
-      // manual → straight ports; auto → smooth-step (No = U-turn when multi)
       const routed = buildEdgePath({
         source: nodeBoxFromRf(sn.x, sn.y, sn.width, sn.height, sn.shape),
         target: nodeBoxFromRf(tn.x, tn.y, tn.width, tn.height, tn.shape),
-        waypoints: shifted.length > 0 ? shifted : undefined,
+        waypoints: shiftedWps.length > 0 ? shiftedWps : undefined,
         siblingIndex,
         siblingSpacing: opts.multiEdgeSpacing ?? 14,
         curveStyle: opts.curveStyle ?? 'basis',
@@ -227,8 +237,10 @@ export function captureProcessFlow(
         targetData: tgtNode?.data,
       })
       path = routed.path
-      labelX = routed.labelX
-      labelY = routed.labelY
+      const offX = Number(e.data?.labelOffsetX) || 0
+      const offY = Number(e.data?.labelOffsetY) || 0
+      labelX = routed.labelX + offX
+      labelY = routed.labelY + offY
     }
 
     return {
@@ -243,10 +255,12 @@ export function captureProcessFlow(
       path,
       labelX,
       labelY,
-      waypoints: e.data?.waypoints,
+      waypoints: shiftedWps.length > 0 ? shiftedWps : undefined,
       sourceHandle: e.sourceHandle,
       targetHandle: e.targetHandle,
       manualConnect: e.data?.manualConnect === true ? true : undefined,
+      labelOffsetX: Number(e.data?.labelOffsetX) || undefined,
+      labelOffsetY: Number(e.data?.labelOffsetY) || undefined,
     }
   })
 
@@ -297,6 +311,9 @@ export function captureProcessFlow(
             x: w.x + shiftX,
             y: w.y + shiftY,
           })),
+          // offsets are relative — keep as-is
+          labelOffsetX: e.labelOffsetX,
+          labelOffsetY: e.labelOffsetY,
         }))
       : edgeSnaps
 
@@ -382,8 +399,9 @@ export function processFlowToRf(snap: ProcessFlowSnapshot): {
       id: e.id,
       source: e.source,
       target: e.target,
-      sourceHandle: e.sourceHandle ?? undefined,
-      targetHandle: e.targetHandle ?? undefined,
+      // Prefer null over undefined so RF keeps the handle id on restore
+      sourceHandle: e.sourceHandle ?? null,
+      targetHandle: e.targetHandle ?? null,
       type: 'flowEdge',
       label: e.label,
       reconnectable: true,
@@ -395,6 +413,8 @@ export function processFlowToRf(snap: ProcessFlowSnapshot): {
         // Paths are rebuilt live from positions; keep waypoints + plug flag
         waypoints: e.waypoints,
         manualConnect: e.manualConnect === true ? true : undefined,
+        labelOffsetX: e.labelOffsetX,
+        labelOffsetY: e.labelOffsetY,
       },
     }
   })
@@ -480,8 +500,7 @@ export function processFlowToSvg(
     const tn = byId.get(e.target)
     if (!sn || !tn) continue
 
-    // Prefer baked path from capture (exact interactive-editor geometry).
-    // Rebuild only when missing so older snapshots still paint.
+    // Always prefer baked path from capture (editor truth). Rebuild only if missing.
     let path = e.path
     let labelX = e.labelX
     let labelY = e.labelY

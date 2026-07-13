@@ -50,6 +50,17 @@ interface UiState {
   canvasZoom: number
   /** Active canvas tool: select (marquee / cards) or pan (hand). */
   canvasTool: CanvasTool
+  /**
+   * Canvas process-chart item id open in the Process interactive editor.
+   * While set, canvas selection is cleared so Delete only hits the editor.
+   * Not persisted — session-only edit mode.
+   */
+  editingProcessChartId: string | null
+  /**
+   * Request MainCanvas to zoom/scroll so a card is in view (e.g. Layers click).
+   * Bump `token` so the same id can be requested again.
+   */
+  focusCanvasItemRequest: { id: string; token: number } | null
   setView: (view: AppView) => void
   setLeftOpen: (open: boolean) => void
   setRightOpen: (open: boolean) => void
@@ -60,6 +71,12 @@ interface UiState {
   toggleBottom: () => void
   toggleMinimap: () => void
   setRightTool: (tool: RightTool) => void
+  setEditingProcessChartId: (id: string | null) => void
+  /** Open Process panel and bind the interactive editor to this canvas card. */
+  beginEditProcessChart: (id: string) => void
+  endEditProcessChart: () => void
+  /** Zoom/scroll the main canvas to center on a card. */
+  requestFocusCanvasItem: (id: string) => void
   setLibrarySubject: (subject: string) => void
   setLibrarySearch: (q: string) => void
   setLibraryTopic: (topic: string) => void
@@ -101,6 +118,8 @@ export const useUiStore = create<UiState>()(
       libraryEquationsOnly: false,
       canvasZoom: 1,
       canvasTool: 'select',
+      editingProcessChartId: null,
+      focusCanvasItemRequest: null,
       setView: (view) => set({ view }),
       setLeftOpen: (leftOpen) => set({ leftOpen }),
       setRightOpen: (rightOpen) => set({ rightOpen }),
@@ -110,7 +129,30 @@ export const useUiStore = create<UiState>()(
       toggleRight: () => set({ rightOpen: !get().rightOpen }),
       toggleBottom: () => set({ bottomOpen: !get().bottomOpen }),
       toggleMinimap: () => set({ minimapOpen: !get().minimapOpen }),
-      setRightTool: (rightTool) => set({ rightTool, rightOpen: true }),
+      setRightTool: (rightTool) =>
+        set((s) => ({
+          rightTool,
+          rightOpen: true,
+          // Leaving Process panel exits edit mode (auto-save already ran via debounce)
+          editingProcessChartId:
+            rightTool === 'process' ? s.editingProcessChartId : null,
+        })),
+      setEditingProcessChartId: (editingProcessChartId) =>
+        set({ editingProcessChartId }),
+      beginEditProcessChart: (id) =>
+        set({
+          editingProcessChartId: id,
+          rightTool: 'process',
+          rightOpen: true,
+        }),
+      endEditProcessChart: () => set({ editingProcessChartId: null }),
+      requestFocusCanvasItem: (id) =>
+        set((s) => ({
+          focusCanvasItemRequest: {
+            id,
+            token: (s.focusCanvasItemRequest?.token ?? 0) + 1,
+          },
+        })),
       setLibrarySubject: (librarySubject) =>
         set({ librarySubject, libraryTopic: 'all' }),
       setLibrarySearch: (librarySearch) => set({ librarySearch }),

@@ -130,6 +130,10 @@ function EdgeBendPointsPanel() {
     selectedWaypoint,
     multiEdgeSpacing,
     updateEdgeType,
+    pipeSnapEnabled,
+    pipeSnapThreshold,
+    setPipeSnapEnabled,
+    setPipeSnapThreshold,
   } = useFlowStore(
     useShallow((s) => ({
       setEdgeWaypoints: s.setEdgeWaypoints,
@@ -138,6 +142,10 @@ function EdgeBendPointsPanel() {
       selectedWaypoint: s.selectedWaypoint,
       multiEdgeSpacing: s.multiEdgeSpacing,
       updateEdgeType: s.updateEdgeType,
+      pipeSnapEnabled: s.pipeSnapEnabled,
+      pipeSnapThreshold: s.pipeSnapThreshold,
+      setPipeSnapEnabled: s.setPipeSnapEnabled,
+      setPipeSnapThreshold: s.setPipeSnapThreshold,
     })),
   )
 
@@ -270,8 +278,10 @@ function EdgeBendPointsPanel() {
           margin: '0 0 10px',
         }}
       >
-        Color and bend points for this connection. Select the edge, then edit
-        below. Bend dots hide when the edge is deselected.
+        Color, bend points, shafts, and labels (Yes/No). Select the edge —
+        drag labels to reposition, double-click to edit text. Cyan shaft grips
+        slide mid-runs; bend dots reshape corners. Snap aligns pipes when
+        enabled.
       </p>
 
       <FieldLabel>Connection color</FieldLabel>
@@ -288,6 +298,58 @@ function EdgeBendPointsPanel() {
           compact
           aria-label="Connection color"
         />
+      </div>
+
+      <FieldLabel>Pipe snap points</FieldLabel>
+      <p
+        style={{
+          fontSize: 9,
+          color: MUTED,
+          lineHeight: 1.4,
+          margin: '0 0 8px',
+        }}
+      >
+        While dragging bends, stick to node edges, centers, ports, and other
+        bends (cyan guides). Turn snap off for free placement.
+      </p>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          marginBottom: 10,
+          flexWrap: 'wrap',
+        }}
+      >
+        <NeuBtn
+          title="Toggle CAD-style sticky snap for bend handles"
+          onClick={() => setPipeSnapEnabled(!pipeSnapEnabled)}
+        >
+          {pipeSnapEnabled ? 'Snap: On' : 'Snap: Off'}
+        </NeuBtn>
+        <label
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+            fontSize: 10,
+            color: MUTED,
+          }}
+        >
+          Reach
+          <input
+            type="range"
+            min={4}
+            max={32}
+            value={pipeSnapThreshold}
+            onChange={(e) => setPipeSnapThreshold(Number(e.target.value))}
+            style={{ width: 72 }}
+            title="Snap distance (flow px)"
+          />
+          <span style={{ color: TEXT, fontVariantNumeric: 'tabular-nums' }}>
+            {pipeSnapThreshold}px
+          </span>
+        </label>
       </div>
 
       <FieldLabel>Bend count</FieldLabel>

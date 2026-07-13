@@ -2,7 +2,6 @@ import type { ReactNode } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useFlowStore } from '../lib/store'
-import { applyDagreLayout } from '../lib/layout'
 import { serialize } from '../lib/serializer'
 import { ALL_SHAPES, ShapeIcon } from './ShapeIcons'
 import { ImportModal } from './ImportModal'
@@ -27,11 +26,10 @@ export function CommandPalette({ onClose }: CommandPaletteProps) {
   const [importOpen, setImportOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const { undo, redo, setNodes, setDrawingShape } = useFlowStore(
+  const { undo, redo, setDrawingShape } = useFlowStore(
     useShallow((s) => ({
       undo: s.undo,
       redo: s.redo,
-      setNodes: s.setNodes,
       setDrawingShape: s.setDrawingShape,
     }))
   )
@@ -49,10 +47,11 @@ export function CommandPalette({ onClose }: CommandPaletteProps) {
   }, [onClose])
 
   const handleAutoLayout = () => {
-    const { nodes, edges, direction } = useFlowStore.getState()
-    if (nodes.length === 0) return
-    setNodes(applyDagreLayout(nodes, edges, direction))
-    onClose()
+    // Shared action: dagre + re-route pipes (clears stale bend waypoints)
+    void import('../lib/layoutActions').then(({ runAutoLayout }) => {
+      runAutoLayout()
+      onClose()
+    })
   }
 
   const handleCopySyntax = async () => {

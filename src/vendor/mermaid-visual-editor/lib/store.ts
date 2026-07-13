@@ -129,7 +129,7 @@ export interface FlowEdgeData extends Record<string, unknown> {
   mermaidLabelY?: number;
   /**
    * Manual bend dots along the edge. When set, path is start→waypoints→end
-   * (catmull-rom). User can drag/delete each dot; count editable in Object Settings.
+   * (orthogonal pipe). User can drag/delete each dot; count editable in Object Settings.
    */
   waypoints?: EdgeWaypoint[];
   /**
@@ -137,6 +137,9 @@ export interface FlowEdgeData extends Record<string, unknown> {
    * ports. Mermaid/template edges leave this unset and use auto face-attach.
    */
   manualConnect?: boolean;
+  /** User drag offset for edge label (Yes/No) from auto mid-path position. */
+  labelOffsetX?: number;
+  labelOffsetY?: number;
 }
 
 /** Resolve per-side markers, migrating legacy `arrowType` when needed. */
@@ -216,12 +219,21 @@ interface FlowState {
    * links; user adds more by plugging ports. Templates still show their lines.
    */
   autoConnectEdges: boolean;
+  /**
+   * When true (default), pipe bend handles stick to node edges/centers/ports
+   * and other bend points while dragging (CAD-style snap).
+   */
+  pipeSnapEnabled: boolean;
+  /** Sticky distance in flow px (default 12). */
+  pipeSnapThreshold: number;
   setChartBackground: (hex: string) => void;
   setChartShowGrid: (show: boolean) => void;
   setChartGridColor: (hex: string) => void;
   setChartEdgeColor: (hex: string) => void;
   setMultiEdgeSpacing: (px: number) => void;
   setAutoConnectEdges: (on: boolean) => void;
+  setPipeSnapEnabled: (on: boolean) => void;
+  setPipeSnapThreshold: (px: number) => void;
   /**
    * Bumped after mindmap auto-layout so the canvas can fitView.
    * Not part of undo history.
@@ -338,6 +350,8 @@ interface FlowState {
       look: Look;
       curveStyle: CurveStyle;
       diagramKind?: DiagramKind;
+      /** Skip facing-port rewrite (processFlow restore must keep plugs). */
+      skipHandleReconcile?: boolean;
     },
   ) => void;
 
@@ -350,12 +364,19 @@ interface FlowState {
   updateEdgeType: (id: string, updates: Partial<FlowEdgeData>) => void;
   /** Set / replace waypoints on an edge (clears mermaidPath when non-empty). */
   setEdgeWaypoints: (id: string, waypoints: EdgeWaypoint[]) => void;
+  /** Replace waypoints while dragging (no history — pushHistory on pointer up). */
+  setEdgeWaypointsLive: (id: string, waypoints: EdgeWaypoint[]) => void;
   addEdgeWaypoint: (id: string, at?: { x: number; y: number }) => void;
   removeEdgeWaypoint: (edgeId: string, waypointId: string) => void;
   updateEdgeWaypoint: (
     edgeId: string,
     waypointId: string,
     pos: { x: number; y: number },
+  ) => void;
+  /** Live label drag (no history — pushHistory on pointer up). */
+  updateEdgeLabelOffsetLive: (
+    id: string,
+    offset: { labelOffsetX: number; labelOffsetY: number },
   ) => void;
   /** Currently selected bend dot (for Delete key / inspector). */
   selectedWaypoint: { edgeId: string; waypointId: string } | null;
@@ -451,6 +472,8 @@ export const useFlowStore = create<FlowState>((set, get) => {
     // Mermaid reverse edges sit ~14px off the forward corridor
     multiEdgeSpacing: 14,
     autoConnectEdges: false,
+    pipeSnapEnabled: true,
+    pipeSnapThreshold: 12,
     setChartBackground: (hex) => set({ chartBackground: hex }),
     setChartShowGrid: (show) => set({ chartShowGrid: show }),
     setChartGridColor: (hex) => set({ chartGridColor: hex }),
@@ -460,6 +483,11 @@ export const useFlowStore = create<FlowState>((set, get) => {
         multiEdgeSpacing: Math.min(48, Math.max(8, Math.round(px))),
       }),
     setAutoConnectEdges: (on) => set({ autoConnectEdges: on }),
+    setPipeSnapEnabled: (on) => set({ pipeSnapEnabled: on }),
+    setPipeSnapThreshold: (px) =>
+      set({
+        pipeSnapThreshold: Math.min(40, Math.max(4, Math.round(px))),
+      }),
     layoutEpoch: 0,
     focusNodeRequest: null,
     requestFocusNode: (nodeId) =>
@@ -1292,6 +1320,24 @@ export const useFlowStore = create<FlowState>((set, get) => {
       });
     }),
 
+    setEdgeWaypointsLive: (id, waypoints) => {
+      set({
+        edges: get().edges.map((e) => {
+          if (e.id !== id) return e;
+          const data: FlowEdgeData = {
+            ...(e.data ?? {}),
+            waypoints,
+          };
+          if (waypoints.length > 0) {
+            delete data.mermaidPath;
+            delete data.mermaidLabelX;
+            delete data.mermaidLabelY;
+          }
+          return { ...e, data };
+        }),
+      });
+    },
+
     addEdgeWaypoint: withHistory((id, at) => {
       set({
         edges: get().edges.map((e) => {
@@ -1349,6 +1395,23 @@ export const useFlowStore = create<FlowState>((set, get) => {
             data: { ...(e.data ?? {}), waypoints: wps },
           };
         }),
+      });
+    },
+
+    updateEdgeLabelOffsetLive: (id, offset) => {
+      set({
+        edges: get().edges.map((e) =>
+          e.id === id
+            ? {
+                ...e,
+                data: {
+                  ...(e.data ?? {}),
+                  labelOffsetX: offset.labelOffsetX,
+                  labelOffsetY: offset.labelOffsetY,
+                },
+              }
+            : e,
+        ),
       });
     },
 
@@ -1420,7 +1483,8 @@ export const useFlowStore = create<FlowState>((set, get) => {
               type: "flowEdge",
               reconnectable: true,
             })) as Edge<FlowEdgeData>[]);
-      if (kind !== "mindmap") {
+      // processFlow restore: never re-pick ports (would change pipe geometry)
+      if (kind !== "mindmap" && settings.skipHandleReconcile !== true) {
         stampedEdges = reconcileEdgeHandles(
           stampedNodes as Node<FlowNodeData>[],
           stampedEdges,

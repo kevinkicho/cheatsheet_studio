@@ -166,7 +166,12 @@ async function tryImport(
       look: 'classic',
       curveStyle: processFlow.curveStyle ?? 'basis',
       diagramKind: 'flowchart',
+      // Keep snapshot handles/paths exactly as saved on the card
+      skipHandleReconcile: true,
     })
+    if (typeof processFlow.multiEdgeSpacing === 'number') {
+      useFlowStore.setState({ multiEdgeSpacing: processFlow.multiEdgeSpacing })
+    }
     useFlowStore.setState((s) => ({ layoutEpoch: s.layoutEpoch + 1 }))
     const syntaxOut =
       trimmed && /^(flowchart|graph)\b/im.test(body)
@@ -308,6 +313,7 @@ function VisualEditorInner({
   const theme = useFlowStore((s) => s.theme)
   const look = useFlowStore((s) => s.look)
   const curveStyle = useFlowStore((s) => s.curveStyle)
+  const multiEdgeSpacing = useFlowStore((s) => s.multiEdgeSpacing)
   const diagramKind = useFlowStore((s) => s.diagramKind)
   const importDiagram = useFlowStore((s) => s.importDiagram)
   const setTheme = useFlowStore((s) => s.setTheme)
@@ -323,10 +329,30 @@ function VisualEditorInner({
   const lastLoaded = useRef('')
   const lastReload = useRef(reloadToken)
   const lastKindProp = useRef<DiagramKind | undefined>(diagramKindProp)
+  const lastPfKey = useRef('')
   // Ignore canvas→parent pushes until import for this kind has settled
   const suppressPush = useRef(false)
+  const suppressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const processFlowRef = useRef(processFlow)
   processFlowRef.current = processFlow
+
+  const pfKey = (() => {
+    if (!isProcessFlowSnapshot(processFlow) || processFlow.nodes.length === 0) {
+      return ''
+    }
+    // Fingerprint geometry so re-select with same Mermaid text still restores
+    const paths = processFlow.edges.map((e) => e.path?.length ?? 0).join('.')
+    return `${processFlow.nodes.length}:${processFlow.edges.length}:${processFlow.width}x${processFlow.height}:${paths}`
+  })()
+
+  const beginSuppressPush = (ms = 600) => {
+    suppressPush.current = true
+    if (suppressTimer.current) clearTimeout(suppressTimer.current)
+    suppressTimer.current = setTimeout(() => {
+      suppressPush.current = false
+      suppressTimer.current = null
+    }, ms)
+  }
 
   useEffect(() => {
     setTheme('dark')
@@ -335,7 +361,7 @@ function VisualEditorInner({
   // Bootstrap (or remount via key={kind} on parent)
   useEffect(() => {
     if (bootstrapped.current) return
-    suppressPush.current = true
+    beginSuppressPush(800)
     let cancelled = false
     void tryImport(
       source,
@@ -350,13 +376,13 @@ function VisualEditorInner({
         onSourceChange(out)
       }
       lastKindProp.current = diagramKindProp
+      lastPfKey.current = pfKey
       bootstrapped.current = true
-      queueMicrotask(() => {
-        suppressPush.current = false
-      })
+      beginSuppressPush(600)
     })
     return () => {
       cancelled = true
+      if (suppressTimer.current) clearTimeout(suppressTimer.current)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -371,19 +397,22 @@ function VisualEditorInner({
     onSourceChange(syntax)
   }, [syntax, nodes.length, onSourceChange])
 
-  // Debounced free-form snapshot → parent (keeps selected card in sync)
+  // Debounced free-form snapshot → parent (card must match live editor paint)
   useEffect(() => {
     if (!bootstrapped.current || suppressPush.current) return
     if (!onEditorSnapshot) return
     if (nodes.length === 0) return
+    // Short delay so FlowEdge can publish live paths before capture
     const t = window.setTimeout(() => {
       if (suppressPush.current) return
       const mermaid = serializeCanvas()
       const flow = getVisualEditorProcessFlow()
+      // Never push null flow — that would wipe processFlow on the card
+      if (!flow) return
       onEditorSnapshot(mermaid, flow)
-    }, 280)
+    }, 120)
     return () => window.clearTimeout(t)
-  }, [nodes, edges, direction, curveStyle, onEditorSnapshot])
+  }, [nodes, edges, direction, curveStyle, multiEdgeSpacing, onEditorSnapshot])
 
   // Parent source / reloadToken / diagram kind chip / processFlow changed
   useEffect(() => {
@@ -397,12 +426,16 @@ function VisualEditorInner({
       diagramKindProp !== lastKindProp.current
     lastKindProp.current = diagramKindProp
 
-    const trimmed = source.trim()
-    if (!trimmed && !kindChanged && !tokenBump) return
+    const pfChanged = pfKey !== lastPfKey.current
 
+    const trimmed = source.trim()
+    if (!trimmed && !kindChanged && !tokenBump && !pfChanged) return
+
+    // Same Mermaid text alone must not skip restore when processFlow geometry changed
     if (
       !tokenBump &&
       !kindChanged &&
+      !pfChanged &&
       (trimmed === lastLoaded.current || trimmed === lastEmitted.current)
     ) {
       lastLoaded.current = trimmed
@@ -410,7 +443,8 @@ function VisualEditorInner({
     }
 
     // Kind chip, template reload, or card selection — prefer processFlow when set
-    suppressPush.current = true
+    beginSuppressPush(800)
+    lastPfKey.current = pfKey
     let cancelled = false
     void tryImport(
       trimmed ||
@@ -425,14 +459,34 @@ function VisualEditorInner({
         lastEmitted.current = out
         onSourceChange(out)
       }
-      queueMicrotask(() => {
-        suppressPush.current = false
-      })
+      beginSuppressPush(600)
     })
     return () => {
       cancelled = true
+      // Import may have scheduled suppress timers — clear on cancel/unmount
+      if (suppressTimer.current) {
+        clearTimeout(suppressTimer.current)
+        suppressTimer.current = null
+      }
     }
-  }, [source, reloadToken, importDiagram, onSourceChange, diagramKindProp])
+  }, [
+    source,
+    reloadToken,
+    importDiagram,
+    onSourceChange,
+    diagramKindProp,
+    pfKey,
+  ])
+
+  // Unmount: drop suppress timer (store is global; panel flush reads it first)
+  useEffect(() => {
+    return () => {
+      if (suppressTimer.current) {
+        clearTimeout(suppressTimer.current)
+        suppressTimer.current = null
+      }
+    }
+  }, [])
 
   return (
     <div

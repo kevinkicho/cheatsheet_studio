@@ -132,6 +132,7 @@ export function MainCanvas() {
   const setCanvasTool = useUiStore((s) => s.setCanvasTool)
   const minimapOpen = useUiStore((s) => s.minimapOpen)
   const toggleMinimap = useUiStore((s) => s.toggleMinimap)
+  const focusCanvasItemRequest = useUiStore((s) => s.focusCanvasItemRequest)
   const margins = { ...DEFAULT_MARGINS, ...canvas.margins }
   const printPage = getPrintPageSize(
     canvas.printSizeId ?? 'letter',
@@ -535,6 +536,53 @@ export function MainCanvas() {
     printPageLayout,
     setCanvasZoom,
   ])
+
+  /**
+   * Zoom/scroll so a single card fills (or is centered in) the viewport.
+   * Used when selecting a row in the Layers outliner.
+   */
+  const zoomFitItem = useCallback(
+    (itemId: string) => {
+      const vp = viewportRef.current
+      if (!vp) return
+      const it = useCanvasStore.getState().items.find((i) => i.id === itemId)
+      if (!it || it.hidden) return
+      if (!Number.isFinite(it.x) || !Number.isFinite(it.y)) return
+
+      const pad = 64
+      const availW = Math.max(vp.clientWidth - pad, 80)
+      const availH = Math.max(vp.clientHeight - pad, 80)
+      const contentW = Math.max(it.width || 80, 40)
+      const contentH = Math.max(it.height || 48, 40)
+      // Cap zoom so tiny cards don't blow past readable size
+      const scale = Math.min(availW / contentW, availH / contentH, 1.75)
+      setCanvasZoom(scale)
+
+      requestAnimationFrame(() => {
+        const el = viewportRef.current
+        if (!el) return
+        const left = Math.max(
+          0,
+          it.x * scale - (el.clientWidth - contentW * scale) / 2,
+        )
+        const top = Math.max(
+          0,
+          it.y * scale - (el.clientHeight - contentH * scale) / 2,
+        )
+        el.scrollTo({ left, top, behavior: 'smooth' })
+      })
+    },
+    [setCanvasZoom],
+  )
+
+  // Layers panel (and others) request zoom-to-card via uiStore
+  const lastFocusToken = useRef(0)
+  useEffect(() => {
+    if (!focusCanvasItemRequest) return
+    if (focusCanvasItemRequest.token === lastFocusToken.current) return
+    lastFocusToken.current = focusCanvasItemRequest.token
+    zoomFitItem(focusCanvasItemRequest.id)
+  }, [focusCanvasItemRequest, zoomFitItem])
 
   /**
    * Fit the bounding box of placed cards. If none, fall back to print page

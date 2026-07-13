@@ -10,6 +10,7 @@ import {
 import type { CanvasItem } from '@/types'
 import { DEFAULT_TITLE_FONT_SIZE, titleBandPx } from '@/types'
 import { useCanvasStore } from '@/stores/canvasStore'
+import { useUiStore } from '@/stores/uiStore'
 import { LatexView } from '@/components/math/LatexView'
 import { MarkdownTable } from '@/components/math/MarkdownTable'
 import { MermaidView } from '@/components/math/MermaidView'
@@ -116,6 +117,13 @@ export function CanvasItemView({
   const multiSelected = selected && selectedCount > 1
   const displayZ = multiSelected ? item.zIndex + 10_000 : item.zIndex
   const updateItem = useCanvasStore((s) => s.updateItem)
+  const editingProcessChartId = useUiStore((s) => s.editingProcessChartId)
+  const beginEditProcessChart = useUiStore((s) => s.beginEditProcessChart)
+  const isProcessChart =
+    item.type === 'process-chart' ||
+    Boolean(item.mermaidSource || item.processFlow)
+  const isEditingThis =
+    isProcessChart && editingProcessChartId === item.id
   const rootRef = useRef<HTMLDivElement>(null)
   const naturalRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{
@@ -633,11 +641,13 @@ export function CanvasItemView({
       data-canvas-item
       // overflow-visible so corner/edge handles are not clipped by rounded border
       className={`absolute select-none touch-none ${
-        selected
-          ? 'ring-2 ring-indigo-400'
-          : transparent
-            ? 'ring-1 ring-transparent hover:ring-zinc-600/60'
-            : 'ring-1 ring-transparent hover:ring-zinc-600'
+        isEditingThis
+          ? 'ring-2 ring-emerald-400/90'
+          : selected
+            ? 'ring-2 ring-indigo-400'
+            : transparent
+              ? 'ring-1 ring-transparent hover:ring-zinc-600/60'
+              : 'ring-1 ring-transparent hover:ring-zinc-600'
       } ${
         !interactive
           ? 'pointer-events-none'
@@ -775,6 +785,37 @@ export function CanvasItemView({
         >
           🔒
         </div>
+      )}
+
+      {/* Process chart: Edit mode control (bottom-right, like zoom badges) */}
+      {isProcessChart && interactive && !item.locked && (
+        <button
+          type="button"
+          data-process-edit
+          className={`absolute bottom-1 right-1 z-30 rounded px-1.5 py-0.5 text-[9px] font-semibold shadow-sm ring-1 ${
+            isEditingThis
+              ? 'bg-emerald-500/25 text-emerald-200 ring-emerald-400/50'
+              : 'bg-zinc-950/90 text-zinc-200 ring-zinc-600 hover:bg-indigo-500/25 hover:text-indigo-100 hover:ring-indigo-400/60'
+          }`}
+          title={
+            isEditingThis
+              ? 'Editing in Process panel — canvas card is not selected (Delete is safe for diagram nodes)'
+              : 'Edit in Process panel (loads this chart; deselects card so Delete won’t remove it)'
+          }
+          onPointerDown={(e) => {
+            e.stopPropagation()
+            e.preventDefault()
+          }}
+          onClick={(e) => {
+            e.stopPropagation()
+            e.preventDefault()
+            // Deselect canvas so Delete never removes this card while editing
+            select(null)
+            beginEditProcessChart(item.id)
+          }}
+        >
+          {isEditingThis ? 'Editing' : 'Edit'}
+        </button>
       )}
     </div>
   )
