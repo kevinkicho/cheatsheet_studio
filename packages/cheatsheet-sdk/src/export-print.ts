@@ -20,6 +20,13 @@ export type ExportHtmlOptions = {
   /** Page background size; default letter or content bounds for canvas. */
   pageWidth?: number
   pageHeight?: number
+  /**
+   * Raster scale for PNG/JPG (Playwright deviceScaleFactor).
+   * 1 ≈ 96 DPI (~900×1100 letter) — soft on retina / print.
+   * 2 ≈ 192 DPI (default) — sharp screen + light print.
+   * 3 ≈ 288 DPI — high-res print / zoom.
+   */
+  scale?: 1 | 2 | 3
 }
 
 function escapeHtml(s: string): string {
@@ -226,13 +233,18 @@ export function sheetToPrintHtml(
     .board.canvas {
       display: flex;
       justify-content: center;
-      padding: 12px;
+      /* No outer padding — hi-DPI screenshots crop .surface cleanly */
+      padding: 0;
+      margin: 0;
     }
     .surface {
       position: relative;
       background: ${bg};
-      box-shadow: 0 4px 24px rgba(0,0,0,0.35);
+      box-shadow: none;
       overflow: hidden;
+      /* Hint browsers to rasterize sharply */
+      -webkit-font-smoothing: antialiased;
+      text-rendering: geometricPrecision;
     }
     .surface::before {
       content: ${JSON.stringify(sheet.title)};
@@ -397,38 +409,53 @@ function pathToFileUrl(p: string): string {
   return 'file://' + resolved
 }
 
+type PlaywrightPage = {
+  screenshot: (o: Record<string, unknown>) => Promise<Buffer>
+  pdf: (o: Record<string, unknown>) => Promise<Buffer>
+  goto: (url: string, o?: Record<string, unknown>) => Promise<unknown>
+  waitForTimeout: (ms: number) => Promise<void>
+  setViewportSize: (s: { width: number; height: number }) => Promise<void>
+  locator: (sel: string) => {
+    screenshot: (o: Record<string, unknown>) => Promise<Buffer>
+    count: () => Promise<number>
+    first: () => { screenshot: (o: Record<string, unknown>) => Promise<Buffer> }
+  }
+}
+
 async function withPlaywrightPage(
   htmlPath: string,
   opts: ExportHtmlOptions | undefined,
   pageSize: { width: number; height: number },
-  run: (page: {
-    screenshot: (o: Record<string, unknown>) => Promise<Buffer>
-    pdf: (o: Record<string, unknown>) => Promise<Buffer>
-    goto: (url: string, o?: Record<string, unknown>) => Promise<unknown>
-    waitForTimeout: (ms: number) => Promise<void>
-    setViewportSize: (s: { width: number; height: number }) => Promise<void>
-  }) => Promise<void>,
+  run: (page: PlaywrightPage) => Promise<void>,
+  /** deviceScaleFactor for crisp PNG/JPG (ignored for PDF vector output) */
+  deviceScaleFactor = 1,
 ): Promise<void> {
   const { chromium } = await import('playwright')
   const browser = await chromium.launch({ headless: true })
   try {
-    const page = await browser.newPage()
-    await page.setViewportSize({
-      width: Math.min(1400, Math.max(900, pageSize.width + 48)),
-      height: Math.min(2000, Math.max(1100, pageSize.height + 48)),
+    // Viewport in CSS px; bitmap = viewport × deviceScaleFactor
+    const vpW = Math.ceil(pageSize.width + 40)
+    const vpH = Math.ceil(pageSize.height + 40)
+    const context = await browser.newContext({
+      viewport: { width: vpW, height: vpH },
+      deviceScaleFactor: Math.min(3, Math.max(1, deviceScaleFactor)),
+      // Avoid subpixel blur
+      isMobile: false,
     })
+    const page = await context.newPage()
     await page.goto(pathToFileUrl(htmlPath), {
       waitUntil: 'networkidle',
       timeout: 60_000,
     })
     if (opts?.rich !== false) {
-      await page.waitForTimeout(900)
+      await page.waitForTimeout(1000)
       try {
         await page.waitForFunction(
           () => {
             const blocks = document.querySelectorAll('pre.mermaid').length
-            const svgs = document.querySelectorAll('pre.mermaid svg, .mermaid svg')
-              .length
+            const svgs = document.querySelectorAll(
+              'pre.mermaid svg, .mermaid svg',
+            ).length
             return blocks === 0 || svgs > 0
           },
           { timeout: 14_000 },
@@ -436,9 +463,11 @@ async function withPlaywrightPage(
       } catch {
         /* partial ok */
       }
-      await page.waitForTimeout(400)
+      // Wait for KaTeX fonts + layout
+      await page.waitForTimeout(500)
     }
     await run(page as never)
+    await context.close()
   } finally {
     await browser.close()
   }
@@ -508,10 +537,14 @@ export async function exportSheetImage(
     keepHtml?: boolean
     format?: 'png' | 'jpeg'
     quality?: number
+    /** Override scale (default 2 ≈ retina / ~192 DPI letter). */
+    scale?: 1 | 2 | 3
   },
 ): Promise<ExportImageResult> {
   const format =
     opts?.format ?? (/\.jpe?g$/i.test(outPath) ? 'jpeg' : 'png')
+  /** Default 2× — previous 1× fullPage screenshots were only ~900×1100 and looked soft. */
+  const dpr = Math.min(3, Math.max(1, opts?.scale ?? 2)) as 1 | 2 | 3
   const abs = path.resolve(outPath)
   mkdirSync(path.dirname(abs), { recursive: true })
   const htmlPath = abs.replace(/\.(png|jpe?g)$/i, '') + '.print.html'
@@ -519,21 +552,35 @@ export async function exportSheetImage(
   writeSheetHtml(sheet, htmlPath, {
     layout: 'canvas',
     rich: opts?.rich !== false,
+    footer: false, // crop to sheet surface only
     ...opts,
   })
 
   try {
-    await withPlaywrightPage(htmlPath, opts, dims, async (page) => {
-      const shot: Record<string, unknown> = {
-        path: abs,
-        fullPage: true,
-        type: format,
-      }
-      if (format === 'jpeg') {
-        shot.quality = Math.min(100, Math.max(40, opts?.quality ?? 88))
-      }
-      await page.screenshot(shot)
-    })
+    await withPlaywrightPage(
+      htmlPath,
+      opts,
+      dims,
+      async (page) => {
+        const shot: Record<string, unknown> = {
+          path: abs,
+          type: format,
+          // Prefer the letter/surface element — avoids soft full-page chrome
+          animations: 'disabled',
+        }
+        if (format === 'jpeg') {
+          shot.quality = Math.min(100, Math.max(50, opts?.quality ?? 92))
+        }
+        const surface = page.locator('.surface')
+        if ((await surface.count()) > 0) {
+          await surface.first().screenshot(shot)
+        } else {
+          shot.fullPage = true
+          await page.screenshot(shot)
+        }
+      },
+      dpr,
+    )
     if (!opts?.keepHtml) {
       try {
         const { unlinkSync } = await import('node:fs')

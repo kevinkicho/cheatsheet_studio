@@ -488,8 +488,9 @@ async function run() {
       const isJpg = cmd === 'export-jpg' || cmd === 'export-jpeg'
       if (!file) {
         console.error(
-          `Usage: ${cmd} <sheet.json> -o <out.${isJpg ? 'jpg' : 'png'}> [--keep-html] [--light] [--plain]\n` +
-            'Requires: npx playwright install chromium',
+          `Usage: ${cmd} <sheet.json> -o <out.${isJpg ? 'jpg' : 'png'}> [--keep-html] [--light] [--plain] [--scale 1|2|3]\n` +
+            'Requires: npx playwright install chromium\n' +
+            '  --scale 2 (default) ≈ retina; --scale 3 for print-grade PNG',
         )
         process.exit(1)
       }
@@ -498,12 +499,17 @@ async function run() {
         console.error('Missing -o / --out path')
         process.exit(1)
       }
+      const scaleRaw = argValue(args, '--scale')
+      const scaleN = scaleRaw ? Number(scaleRaw) : 2
+      const scale =
+        scaleN === 1 || scaleN === 2 || scaleN === 3 ? scaleN : 2
       const { exportSheetPng, exportSheetJpeg } = await import('./export-print')
       const sheet = readSheetFile(file)
       const common = {
         dark: !args.includes('--light'),
         keepHtml: args.includes('--keep-html'),
         rich: !args.includes('--plain'),
+        scale: scale as 1 | 2 | 3,
       }
       const result = isJpg
         ? await exportSheetJpeg(sheet, out, common)

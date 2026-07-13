@@ -428,7 +428,13 @@ async function buildAndExport(
     writeSheetFile(jsonPath, sheet)
     console.log(`  JSON  ${path.relative(root, jsonPath)}`)
   }
-  const exportOpts = { dark: true as const, rich: true as const, layout: 'canvas' as const }
+  // scale 2 ≈ ~192 DPI letter (~1600+ px wide) — 1 was only ~900px and looked soft
+  const exportOpts = {
+    dark: true as const,
+    rich: true as const,
+    layout: 'canvas' as const,
+    scale: 2 as const,
+  }
   if (want.has('html')) {
     const htmlPath = writeSheetHtml(sheet, `${base}.html`, exportOpts)
     console.log(`  HTML  ${path.relative(root, htmlPath)}`)
