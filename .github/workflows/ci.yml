@@ -1,59 +1,19 @@
+# CI is intentionally DISABLED for automatic runs.
+# Pushes and PRs will not trigger GitHub Actions.
+#
+# To re-enable later: restore `push` / `pull_request` under `on:`.
+# Manual run (optional): Actions → CI → Run workflow
 name: CI
 
 on:
-  push:
-    branches: [main, master]
-  pull_request:
-    branches: [main, master]
+  # No push / pull_request — never auto-run.
+  workflow_dispatch:
 
 jobs:
-  test-and-build:
+  disabled:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-
-      - name: Install
-        run: npm ci
-
-      - name: Unit & component tests
-        run: npm test
-
-      - name: Agent SDK tests + doctor
+      - name: CI disabled
         run: |
-          npm run test:sdk
-          npm run cheatsheet -- doctor
-
-      - name: Flagship packs smoke (block-rich JSON + auto-layout)
-        run: |
-          npm run agent:flagships -- --yes --json-only --density sm
-          npm run cheatsheet -- validate examples/agent-out/finance-midterm.sheet.json
-          npm run cheatsheet -- validate examples/agent-out/calc-final.sheet.json
-          npm run cheatsheet -- validate examples/agent-out/stats-midterm.sheet.json
-          npm run cheatsheet -- validate examples/agent-out/micro-midterm.sheet.json
-          # Capability check: finance pack must link catalog blocks + process
-          node -e "const s=require('./examples/agent-out/finance-midterm.sheet.json'); if(!s.items.some(i=>i.libraryItemId)) process.exit(1); if(!s.items.some(i=>i.mermaidSource)) process.exit(2); if(!s.items.some(i=>i.imageUrl)) process.exit(3); console.log('finance-midterm ok', s.items.length, 'items')"
-
-      - name: Install Playwright Chromium
-        run: npx playwright install --with-deps chromium
-
-      - name: E2E smoke (landing + auth gate)
-        run: npm run test:e2e
-
-      - name: Install Firebase CLI
-        run: npm install -g firebase-tools
-
-      - name: E2E with Auth emulator (signed-in workspace)
-        run: npm run test:e2e:emulators
-
-      - name: Typecheck & production build
-        run: npm run build
-
-      - name: Verify dist assets
-        run: |
-          test -f dist/index.html
-          grep -E 'assets/index-.*\.js' dist/index.html
+          echo "Automatic CI is turned off for this repo."
+          echo "Enable push/pull_request triggers in .github/workflows/ci.yml when you want it back."
