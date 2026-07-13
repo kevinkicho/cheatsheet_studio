@@ -9,10 +9,24 @@
       "subjects": ["mathematics"]
     },
     {
+      "id": "calc-integrals",
+      "file": "calc-integrals.json",
+      "title": "Calculus — Integrals",
+      "description": "FTC, substitution, parts, technique flowchart.",
+      "subjects": ["mathematics"]
+    },
+    {
       "id": "lin-algebra",
       "file": "lin-algebra.json",
       "title": "Linear Algebra — Essentials",
       "description": "Matrix product, inverse, det, eigenvalues.",
+      "subjects": ["mathematics"]
+    },
+    {
+      "id": "stats-bayes",
+      "file": "stats-bayes.json",
+      "title": "Statistics — Bayes",
+      "description": "Bayes theorem, terms table, update flowchart.",
       "subjects": ["mathematics"]
     },
     {
@@ -23,10 +37,31 @@
       "subjects": ["finance", "economics"]
     },
     {
+      "id": "finance-npv",
+      "file": "finance-npv.json",
+      "title": "Finance — NPV & IRR",
+      "description": "NPV, IRR, project decision flowchart.",
+      "subjects": ["finance"]
+    },
+    {
+      "id": "econ-elasticity",
+      "file": "econ-elasticity.json",
+      "title": "Economics — Elasticity",
+      "description": "PED, arc form, revenue implications.",
+      "subjects": ["economics"]
+    },
+    {
       "id": "physics-kinematics",
       "file": "physics-kinematics.json",
       "title": "Physics — 1D Kinematics",
       "description": "Constant-acceleration equations and approach flowchart.",
+      "subjects": ["physics"]
+    },
+    {
+      "id": "physics-energy",
+      "file": "physics-energy.json",
+      "title": "Physics — Energy & Work",
+      "description": "Work–energy theorem and conservation flowchart.",
       "subjects": ["physics"]
     },
     {
@@ -37,18 +72,11 @@
       "subjects": ["chemistry"]
     },
     {
-      "id": "stats-bayes",
-      "file": "stats-bayes.json",
-      "title": "Statistics — Bayes",
-      "description": "Bayes theorem, terms table, update flowchart.",
-      "subjects": ["mathematics"]
-    },
-    {
-      "id": "econ-elasticity",
-      "file": "econ-elasticity.json",
-      "title": "Economics — Elasticity",
-      "description": "PED, arc form, revenue implications.",
-      "subjects": ["economics"]
+      "id": "bio-genetics",
+      "file": "bio-genetics.json",
+      "title": "Biology — Mendelian Genetics",
+      "description": "Hardy–Weinberg and monohybrid cross flowchart.",
+      "subjects": ["biology"]
     }
   ]
 }

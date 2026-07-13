@@ -11,13 +11,17 @@ export type PullOptions = {
   projectId?: string
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AdminNs = any
+
 /**
  * Download a sheet document from Firestore into portable SheetDocument form.
  */
 export async function pullSheetFromFirestore(
   opts: PullOptions,
 ): Promise<SheetDocument> {
-  const admin = await import('firebase-admin')
+  const mod = (await import('firebase-admin')) as AdminNs
+  const admin: AdminNs = mod.default ?? mod
   const { readFileSync } = await import('node:fs')
   const path = await import('node:path')
 
@@ -26,26 +30,30 @@ export async function pullSheetFromFirestore(
     project_id?: string
   }
 
-  if (!admin.apps.length) {
+  if (!admin.apps?.length) {
     admin.initializeApp({
-      credential: admin.credential.cert(
-        sa as import('firebase-admin').ServiceAccount,
-      ),
+      credential: admin.credential.cert(sa),
       projectId: opts.projectId ?? sa.project_id,
     })
   }
 
-  const snap = await admin.firestore().collection('sheets').doc(opts.sheetId).get()
+  const snap = await admin
+    .firestore()
+    .collection('sheets')
+    .doc(opts.sheetId)
+    .get()
   if (!snap.exists) {
     throw new Error(`Sheet not found: ${opts.sheetId}`)
   }
-  const data = snap.data() ?? {}
+  const data = (snap.data() ?? {}) as Record<string, unknown>
   return {
     v: SHEET_DOC_VERSION,
     title: String(data.title ?? 'Untitled'),
     canvas: { ...defaultCanvas(), ...(data.canvas as object) },
-    items: Array.isArray(data.items) ? data.items : [],
-    folders: Array.isArray(data.folders) ? data.folders : [],
+    items: Array.isArray(data.items) ? (data.items as SheetDocument['items']) : [],
+    folders: Array.isArray(data.folders)
+      ? (data.folders as SheetDocument['folders'])
+      : [],
     meta: {
       source: `firestore:${opts.sheetId}`,
       notes: `pulled ${new Date().toISOString()}`,

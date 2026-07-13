@@ -1,21 +1,52 @@
 {
   "name": "@cheatsheet-studio/sdk",
-  "version": "0.1.0",
-  "private": true,
-  "description": "Headless SDK + CLI for agent-authored CheatSheet Studio sheets (does not load the React UI)",
+  "version": "0.2.0",
+  "description": "Headless SDK + CLI for agent-authored CheatSheet Studio sheets",
   "type": "module",
   "license": "MIT",
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
+  "author": "CheatSheet Studio",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kevinkicho/cheatsheet_studio.git",
+    "directory": "packages/cheatsheet-sdk"
+  },
+  "homepage": "https://github.com/kevinkicho/cheatsheet_studio/tree/main/packages/cheatsheet-sdk",
+  "keywords": [
+    "cheatsheet",
+    "education",
+    "latex",
+    "mermaid",
+    "agents",
+    "cli",
+    "mcp"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   },
   "bin": {
     "cheatsheet": "./bin/cheatsheet.mjs"
   },
+  "files": [
+    "dist",
+    "bin",
+    "topic-packs",
+    "data",
+    "README.md",
+    "mcp.example.json",
+    "CHANGELOG.md"
+  ],
   "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepack": "npm run build",
     "cli": "tsx src/cli.ts",
-    "test": "vitest run --config ../../vitest.config.ts src"
+    "export-catalog": "tsx ../../src/../packages/cheatsheet-sdk/scripts/export-seed-catalog.mjs",
+    "test": "vitest run --config ../../vitest.config.ts src",
+    "pack:dry": "npm pack --dry-run"
   },
   "engines": {
     "node": ">=20"
@@ -27,5 +58,8 @@
     "firebase-admin": {
       "optional": true
     }
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

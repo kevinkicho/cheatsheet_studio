@@ -3,7 +3,12 @@
     "cheatsheet-studio": {
       "command": "npx",
       "args": ["tsx", "packages/cheatsheet-sdk/src/cli.ts", "mcp"],
-      "cwd": "${workspaceFolder}"
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "CHEATSHEET_SA_PATH": "",
+        "CHEATSHEET_UID": "",
+        "CHEATSHEET_PROJECT_ID": ""
+      }
     }
   }
 }

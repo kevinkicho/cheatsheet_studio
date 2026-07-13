@@ -2,6 +2,19 @@
 
 Headless **SDK + CLI** for authoring [CheatSheet Studio](../../README.md) sheets from agents, scripts, or CI.
 
+## npm package
+
+```bash
+# Monorepo
+npm run sdk:build    # export seed catalog + tsc
+npm run sdk:pack     # create tarball (inspect before publish)
+
+# Publish (maintainers):
+# cd packages/cheatsheet-sdk && npm publish --access public
+```
+
+Published name: **`@cheatsheet-studio/sdk`** (optional; monorepo works without publishing).
+
 ## Does this change the web app?
 
 **No.** This package is isolated under `packages/cheatsheet-sdk/`.

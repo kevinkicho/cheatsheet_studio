@@ -1,0 +1,40 @@
+{
+  "id": "finance-npv",
+  "title": "Finance — NPV & IRR",
+  "description": "Net present value, discounting, and project decision flowchart.",
+  "subjects": ["finance"],
+  "outline": {
+    "title": "Finance — NPV & IRR",
+    "notes": "Topic pack: finance-npv",
+    "autoLayout": true,
+    "blocks": [
+      { "type": "heading", "title": "Discounted cash flows" },
+      {
+        "type": "equation",
+        "title": "Present value",
+        "latex": "PV = \\frac{C}{(1+r)^t}"
+      },
+      {
+        "type": "equation",
+        "title": "NPV",
+        "latex": "\\mathrm{NPV} = -C_0 + \\sum_{t=1}^{T} \\frac{C_t}{(1+r)^t}"
+      },
+      {
+        "type": "equation",
+        "title": "IRR definition",
+        "latex": "0 = -C_0 + \\sum_{t=1}^{T} \\frac{C_t}{(1+\\mathrm{IRR})^t}"
+      },
+      {
+        "type": "table",
+        "title": "Decision rules",
+        "markdown": "| Metric | Accept if |\n|--------|----------|\n| NPV | NPV > 0 |\n| IRR | IRR > r (cost of capital) |\n| PI | PI > 1 |"
+      },
+      {
+        "type": "process",
+        "title": "Project screen",
+        "kind": "flowchart",
+        "mermaid": "flowchart TD\n  A[Estimate C_t] --> B[Choose r]\n  B --> C[Compute NPV]\n  C --> D{NPV > 0?}\n  D -->|Yes| E[Accept / rank]\n  D -->|No| F[Reject]"
+      }
+    ]
+  }
+}

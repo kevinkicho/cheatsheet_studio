@@ -1,0 +1,35 @@
+{
+  "id": "bio-genetics",
+  "title": "Biology — Mendelian Genetics",
+  "description": "Hardy–Weinberg, Punnett overview table, inheritance flowchart.",
+  "subjects": ["biology"],
+  "outline": {
+    "title": "Biology — Mendelian Genetics",
+    "notes": "Topic pack: bio-genetics",
+    "autoLayout": true,
+    "blocks": [
+      { "type": "heading", "title": "Population genetics" },
+      {
+        "type": "equation",
+        "title": "Hardy–Weinberg",
+        "latex": "p^2 + 2pq + q^2 = 1,\\quad p + q = 1"
+      },
+      {
+        "type": "table",
+        "title": "Genotype frequencies",
+        "markdown": "| Genotype | Frequency |\n|----------|----------|\n| AA | p^2 |\n| Aa | 2pq |\n| aa | q^2 |"
+      },
+      {
+        "type": "table",
+        "title": "H-W assumptions",
+        "markdown": "| Assumption | Meaning |\n|------------|--------|\n| No selection | Equal fitness |\n| No mutation | Alleles fixed |\n| No migration | Closed pop. |\n| Random mating | No assortment |\n| Large N | No drift |"
+      },
+      {
+        "type": "process",
+        "title": "Monohybrid cross",
+        "kind": "flowchart",
+        "mermaid": "flowchart TD\n  A[Parental genotypes] --> B[Gametes]\n  B --> C[Punnett square]\n  C --> D[Offspring ratios]\n  D --> E[Phenotype map]"
+      }
+    ]
+  }
+}

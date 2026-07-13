@@ -139,6 +139,41 @@ const TOOLS: ToolDef[] = [
       required: ['path', 'outline'],
     },
   },
+  {
+    name: 'cheatsheet_push',
+    description:
+      'Push sheet JSON to Firestore (requires CHEATSHEET_SA_PATH + CHEATSHEET_UID env, or args)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string' },
+        uid: { type: 'string', description: 'Owner Firebase uid (or env)' },
+        saPath: {
+          type: 'string',
+          description: 'Service account JSON path (or CHEATSHEET_SA_PATH)',
+        },
+        sheetId: {
+          type: 'string',
+          description: 'Update existing sheet id (optional)',
+        },
+      },
+      required: ['path'],
+    },
+  },
+  {
+    name: 'cheatsheet_pull',
+    description:
+      'Pull a Firestore sheet to a local JSON file (requires CHEATSHEET_SA_PATH)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sheetId: { type: 'string' },
+        outPath: { type: 'string' },
+        saPath: { type: 'string' },
+      },
+      required: ['sheetId', 'outPath'],
+    },
+  },
 ]
 
 function respond(id: string | number | null | undefined, result: unknown) {
@@ -263,6 +298,49 @@ async function callTool(
       const next = await appendOutlineToSheet(readSheetFile(path), outline)
       writeSheetFile(path, next)
       return { ok: true, path, summary: summarizeSheet(next) }
+    }
+    case 'cheatsheet_push': {
+      const { resolveCloudAuth, requireOwnerUid } = await import('./auth')
+      const { pushSheetToFirestore } = await import('./firebase-push')
+      const path = String(args.path ?? '')
+      const auth = resolveCloudAuth({
+        sa: args.saPath ? String(args.saPath) : undefined,
+        uid: args.uid ? String(args.uid) : undefined,
+        sheetId: args.sheetId ? String(args.sheetId) : undefined,
+      })
+      const uid = requireOwnerUid(auth)
+      const r = await pushSheetToFirestore(readSheetFile(path), {
+        ownerId: uid,
+        serviceAccountPath: auth.serviceAccountPath,
+        sheetId: auth.defaultSheetId,
+        projectId: auth.projectId,
+      })
+      return {
+        ok: true,
+        sheetId: r.sheetId,
+        created: r.created,
+        message: r.created
+          ? 'Created Firestore sheet — open My Sheets in Studio'
+          : 'Updated Firestore sheet',
+      }
+    }
+    case 'cheatsheet_pull': {
+      const { resolveCloudAuth } = await import('./auth')
+      const { pullSheetFromFirestore } = await import('./firebase-pull')
+      const auth = resolveCloudAuth({
+        sa: args.saPath ? String(args.saPath) : undefined,
+        sheetId: args.sheetId ? String(args.sheetId) : undefined,
+      })
+      const sheetId = String(args.sheetId ?? auth.defaultSheetId ?? '')
+      const outPath = String(args.outPath ?? '')
+      if (!sheetId) throw new Error('sheetId required (or CHEATSHEET_SHEET_ID)')
+      const doc = await pullSheetFromFirestore({
+        sheetId,
+        serviceAccountPath: auth.serviceAccountPath,
+        projectId: auth.projectId,
+      })
+      writeSheetFile(outPath, doc)
+      return { ok: true, path: outPath, summary: summarizeSheet(doc) }
     }
     default:
       throw new Error(`Unknown tool: ${name}`)

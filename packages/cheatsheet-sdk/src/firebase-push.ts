@@ -6,10 +6,8 @@ import type { FirestoreSheetPayload, SheetDocument } from './types'
 import { SheetBuilder } from './builder'
 
 export type PushOptions = {
-  /** Absolute or relative path to Firebase Admin service account JSON. */
   serviceAccountPath: string
   ownerId: string
-  /** Update existing sheet id instead of creating. */
   sheetId?: string
   projectId?: string
 }
@@ -19,6 +17,9 @@ export type PushResult = {
   created: boolean
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AdminNs = any
+
 /**
  * Write a SheetDocument to Firestore `sheets` collection.
  * Requires `firebase-admin` installed (root already has it for seed scripts).
@@ -27,21 +28,19 @@ export async function pushSheetToFirestore(
   sheet: SheetDocument,
   opts: PushOptions,
 ): Promise<PushResult> {
-  // Dynamic import so SDK consumers without admin never load it
-  const admin = await import('firebase-admin')
+  const mod = (await import('firebase-admin')) as AdminNs
+  const admin: AdminNs = mod.default ?? mod
   const { readFileSync } = await import('node:fs')
   const path = await import('node:path')
 
   const abs = path.resolve(opts.serviceAccountPath)
   const sa = JSON.parse(readFileSync(abs, 'utf8')) as {
     project_id?: string
-    client_email?: string
-    private_key?: string
   }
 
-  if (!admin.apps.length) {
+  if (!admin.apps?.length) {
     admin.initializeApp({
-      credential: admin.credential.cert(sa as admin.ServiceAccount),
+      credential: admin.credential.cert(sa),
       projectId: opts.projectId ?? sa.project_id,
     })
   }
@@ -60,5 +59,5 @@ export async function pushSheetToFirestore(
   }
 
   const ref = await db.collection('sheets').add(payload)
-  return { sheetId: ref.id, created: true }
+  return { sheetId: ref.id as string, created: true }
 }

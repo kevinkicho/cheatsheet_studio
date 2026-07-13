@@ -59,3 +59,6 @@ export {
   composeTopicPack,
 } from './topic-packs'
 export type { TopicPack, TopicPackMeta } from './topic-packs'
+
+export { resolveCloudAuth, requireOwnerUid } from './auth'
+export type { CloudAuthConfig } from './auth'

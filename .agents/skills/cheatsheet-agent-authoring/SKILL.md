@@ -25,8 +25,9 @@ npm run cheatsheet -- packs
 npm run cheatsheet -- pack calc-derivatives -o out/calc.sheet.json
 ```
 
-Packs: `calc-derivatives`, `lin-algebra`, `finance-capm`, `physics-kinematics`,
-`chem-stoichiometry`, `stats-bayes`, `econ-elasticity`.
+Packs (11): `calc-derivatives`, `calc-integrals`, `lin-algebra`, `stats-bayes`,
+`finance-capm`, `finance-npv`, `econ-elasticity`, `physics-kinematics`,
+`physics-energy`, `chem-stoichiometry`, `bio-genetics`.
 
 User: **My Sheets → Import JSON** → polish in Workspace.
 
@@ -64,6 +65,14 @@ npm run cheatsheet -- add-catalog out/sheet.json --id math-quad
 
 ```bash
 npm run cheatsheet -- append-outline out/sheet.json extra.outline.json
+```
+
+### 5. Cloud (trusted only)
+
+```bash
+export CHEATSHEET_SA_PATH=./sa.json
+export CHEATSHEET_UID=<firebase_uid>
+npm run cheatsheet -- push out/sheet.json
 ```
 
 ### 5. Round-trip with UI

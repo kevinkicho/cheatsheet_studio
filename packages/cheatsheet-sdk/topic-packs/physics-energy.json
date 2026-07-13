@@ -1,0 +1,40 @@
+{
+  "id": "physics-energy",
+  "title": "Physics — Energy & Work",
+  "description": "Work–energy theorem, conservation, and problem flowchart.",
+  "subjects": ["physics"],
+  "outline": {
+    "title": "Physics — Energy & Work",
+    "notes": "Topic pack: physics-energy",
+    "autoLayout": true,
+    "blocks": [
+      { "type": "heading", "title": "Work and energy" },
+      {
+        "type": "equation",
+        "title": "Work (constant force)",
+        "latex": "W = \\vec{F}\\cdot\\vec{d} = Fd\\cos\\theta"
+      },
+      {
+        "type": "equation",
+        "title": "Kinetic energy",
+        "latex": "K = \\tfrac{1}{2} mv^2"
+      },
+      {
+        "type": "equation",
+        "title": "Work–energy theorem",
+        "latex": "W_{\\mathrm{net}} = \\Delta K = K_f - K_i"
+      },
+      {
+        "type": "equation",
+        "title": "Mechanical energy (conservative)",
+        "latex": "K_i + U_i = K_f + U_f"
+      },
+      {
+        "type": "process",
+        "title": "Energy problem",
+        "kind": "flowchart",
+        "mermaid": "flowchart TD\n  A[Identify system] --> B{Conservative forces only?}\n  B -->|Yes| C[Use K+U conserved]\n  B -->|No| D[W_nc = ΔE_mech]\n  C --> E[Solve for unknown]\n  D --> E"
+      }
+    ]
+  }
+}

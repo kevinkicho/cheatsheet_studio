@@ -376,18 +376,25 @@ async function run() {
       const file = args[1]
       if (!file) {
         console.error(
-          'Usage: push <sheet.json> --uid <ownerUid> --sa <serviceAccount.json> [--sheet-id id]',
+          'Usage: push <sheet.json> [--uid UID] [--sa sa.json] [--sheet-id id]\n' +
+            'Auth env: CHEATSHEET_SA_PATH, CHEATSHEET_UID, CHEATSHEET_PROJECT_ID',
         )
         process.exit(1)
       }
-      const uid = requireArg(args, '--uid', 'Firebase owner uid')
-      const sa = requireArg(args, '--sa', 'service account JSON path')
-      const sheetId = argValue(args, '--sheet-id')
+      const { resolveCloudAuth, requireOwnerUid } = await import('./auth')
+      const auth = resolveCloudAuth({
+        sa: argValue(args, '--sa'),
+        uid: argValue(args, '--uid'),
+        sheetId: argValue(args, '--sheet-id'),
+        projectId: argValue(args, '--project'),
+      })
+      const uid = requireOwnerUid(auth)
       const doc = readSheetFile(file)
       void pushSheetToFirestore(doc, {
         ownerId: uid,
-        serviceAccountPath: sa,
-        sheetId,
+        serviceAccountPath: auth.serviceAccountPath,
+        sheetId: auth.defaultSheetId,
+        projectId: auth.projectId,
       })
         .then((r) => {
           console.log(
@@ -407,8 +414,19 @@ async function run() {
     }
 
     if (cmd === 'pull') {
-      const sheetId = requireArg(args, '--sheet-id', 'Firestore sheet id')
-      const sa = requireArg(args, '--sa', 'service account JSON path')
+      const { resolveCloudAuth } = await import('./auth')
+      const auth = resolveCloudAuth({
+        sa: argValue(args, '--sa'),
+        sheetId: argValue(args, '--sheet-id'),
+        projectId: argValue(args, '--project'),
+      })
+      const sheetId = auth.defaultSheetId
+      if (!sheetId) {
+        console.error(
+          'Missing sheet id. Pass --sheet-id or set CHEATSHEET_SHEET_ID',
+        )
+        process.exit(1)
+      }
       const out = argValue(args, '-o') ?? argValue(args, '--out')
       if (!out) {
         console.error('Missing -o / --out path')
@@ -416,7 +434,8 @@ async function run() {
       }
       void pullSheetFromFirestore({
         sheetId,
-        serviceAccountPath: sa,
+        serviceAccountPath: auth.serviceAccountPath,
+        projectId: auth.projectId,
       })
         .then((doc) => {
           writeSheetFile(out, doc)

@@ -1,10 +1,11 @@
 /**
- * Search / resolve items from the Studio seed catalog (monorepo).
- * Loads src/data/seedLibrary.ts when run from the repo root via tsx.
- * Never bundled into the web app.
+ * Search / resolve items from the Studio seed catalog.
+ * 1) Monorepo: live import of src/data/seedLibrary.ts
+ * 2) Published package: data/seed-catalog.json snapshot
  */
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 export type CatalogItem = {
   id: string
@@ -21,10 +22,14 @@ export type CatalogItem = {
 
 let cache: CatalogItem[] | null = null
 
-function repoRootFromHere(): string {
-  // packages/cheatsheet-sdk/src → monorepo root
+function pkgRoot(): string {
   const here = path.dirname(fileURLToPath(import.meta.url))
-  return path.resolve(here, '../../..')
+  // src/ or dist/
+  return path.resolve(here, '..')
+}
+
+function monorepoRoot(): string {
+  return path.resolve(pkgRoot(), '../..')
 }
 
 function mapSeed(
@@ -60,30 +65,55 @@ function mapSeed(
     }))
 }
 
+function loadBundledSnapshot(): CatalogItem[] | null {
+  const candidates = [
+    path.join(pkgRoot(), 'data', 'seed-catalog.json'),
+    path.join(monorepoRoot(), 'packages/cheatsheet-sdk/data/seed-catalog.json'),
+  ]
+  for (const p of candidates) {
+    if (!existsSync(p)) continue
+    try {
+      const raw = JSON.parse(readFileSync(p, 'utf8')) as {
+        items?: Parameters<typeof mapSeed>[0]
+      }
+      if (Array.isArray(raw.items) && raw.items.length > 0) {
+        return mapSeed(raw.items)
+      }
+    } catch {
+      /* try next */
+    }
+  }
+  return null
+}
+
 export async function loadSeedCatalog(): Promise<CatalogItem[]> {
   if (cache) return cache
 
-  const candidates = [
-    path.join(repoRootFromHere(), 'src', 'data', 'seedLibrary.ts'),
+  const liveCandidates = [
+    path.join(monorepoRoot(), 'src', 'data', 'seedLibrary.ts'),
     path.resolve(process.cwd(), 'src', 'data', 'seedLibrary.ts'),
   ]
 
-  const errors: string[] = []
-  for (const seedPath of candidates) {
+  for (const seedPath of liveCandidates) {
+    if (!existsSync(seedPath)) continue
     try {
       const mod = await import(pathToFileURL(seedPath).href)
       const list = (mod.SEED_LIBRARY ?? []) as Parameters<typeof mapSeed>[0]
       cache = mapSeed(list)
       if (cache.length > 0) return cache
-    } catch (e) {
-      errors.push(
-        `${seedPath}: ${e instanceof Error ? e.message : String(e)}`,
-      )
+    } catch {
+      /* try snapshot */
     }
   }
 
+  const snap = loadBundledSnapshot()
+  if (snap && snap.length > 0) {
+    cache = snap
+    return cache
+  }
+
   throw new Error(
-    `Could not load seed catalog. Run CLI from monorepo root.\n${errors.join('\n')}`,
+    'Could not load seed catalog. Run from monorepo root, or rebuild package data with npm run sdk:export-catalog.',
   )
 }
 
@@ -123,7 +153,6 @@ export async function searchCatalog(
         .toLowerCase()
       return hay.includes(q)
     })
-    // Prefer title prefix matches
     list.sort((a, b) => {
       const at = a.title.toLowerCase().startsWith(q) ? 0 : 1
       const bt = b.title.toLowerCase().startsWith(q) ? 0 : 1

@@ -61,12 +61,37 @@ Outline shape:
 
 ### Cloud push / pull (Admin)
 
+**Never commit service account JSON.** Use env vars (also for MCP):
+
 ```bash
-npm run cheatsheet -- push out/sheet.json --uid UID --sa ./sa.json
-npm run cheatsheet -- pull --sheet-id ID --sa ./sa.json -o out/pulled.json
+export CHEATSHEET_SA_PATH=./path-to-sa.json   # or GOOGLE_APPLICATION_CREDENTIALS
+export CHEATSHEET_UID=your_firebase_uid
+# optional: CHEATSHEET_PROJECT_ID, CHEATSHEET_SHEET_ID
+
+npm run cheatsheet -- push out/sheet.json
+npm run cheatsheet -- pull --sheet-id ID -o out/pulled.json
+# flags still work: --uid --sa --sheet-id --project
 ```
 
+MCP tools `cheatsheet_push` / `cheatsheet_pull` read the same env.
+
 > Prefer Admin only in trusted environments. Do not embed service accounts in client apps or agent prompts.
+
+## Publishing the SDK (npm)
+
+Package: `@cheatsheet-studio/sdk` under `packages/cheatsheet-sdk/`.
+
+```bash
+# From monorepo root
+npm run sdk:export-catalog   # snapshot seed catalog into package data/
+npm run sdk:build            # tsc → dist/
+npm run sdk:pack             # npm pack dry artifact
+
+# When ready (requires npm login + public scope):
+cd packages/cheatsheet-sdk && npm publish --access public
+```
+
+The React app does **not** depend on the published package; monorepo continues to use `tsx` sources.
 
 ## Seed catalog (agents)
 
@@ -113,12 +138,16 @@ Premade outlines under `packages/cheatsheet-sdk/topic-packs/`:
 | Pack id | Theme |
 |---------|--------|
 | `calc-derivatives` | Calculus derivatives |
+| `calc-integrals` | FTC, substitution, parts |
 | `lin-algebra` | Linear algebra essentials |
-| `finance-capm` | CAPM |
-| `physics-kinematics` | 1D kinematics |
-| `chem-stoichiometry` | Stoichiometry / limiting reagent |
 | `stats-bayes` | Bayes theorem |
+| `finance-capm` | CAPM |
+| `finance-npv` | NPV & IRR |
 | `econ-elasticity` | Price elasticity of demand |
+| `physics-kinematics` | 1D kinematics |
+| `physics-energy` | Work & energy |
+| `chem-stoichiometry` | Stoichiometry / limiting reagent |
+| `bio-genetics` | Hardy–Weinberg / monohybrid |
 
 ```bash
 npm run cheatsheet -- packs

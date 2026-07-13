@@ -1,0 +1,40 @@
+{
+  "id": "calc-integrals",
+  "title": "Calculus — Integrals",
+  "description": "FTC, substitution, parts, and a short integration flowchart.",
+  "subjects": ["mathematics"],
+  "outline": {
+    "title": "Calculus — Integrals",
+    "notes": "Topic pack: calc-integrals",
+    "autoLayout": true,
+    "blocks": [
+      { "type": "heading", "title": "Fundamental theorem" },
+      {
+        "type": "equation",
+        "title": "FTC I",
+        "latex": "\\frac{d}{dx}\\int_{a}^{x} f(t)\\,dt = f(x)"
+      },
+      {
+        "type": "equation",
+        "title": "FTC II",
+        "latex": "\\int_{a}^{b} f(x)\\,dx = F(b) - F(a)"
+      },
+      {
+        "type": "equation",
+        "title": "Integration by parts",
+        "latex": "\\int u\\,dv = uv - \\int v\\,du"
+      },
+      {
+        "type": "equation",
+        "title": "Substitution",
+        "latex": "\\int f(g(x)) g'(x)\\,dx = \\int f(u)\\,du"
+      },
+      {
+        "type": "process",
+        "title": "Pick a technique",
+        "kind": "flowchart",
+        "mermaid": "flowchart TD\n  A[Look at integrand] --> B{Composition?}\n  B -->|Yes| C[u-sub]\n  B -->|Product| D[Parts]\n  B -->|Rational| E[Partial fractions]\n  C --> F[Evaluate +C]\n  D --> F\n  E --> F"
+      }
+    ]
+  }
+}
