@@ -16,7 +16,10 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
-    include: ['src/**/*.{test,spec}.{ts,tsx}'],
+    include: [
+      'src/**/*.{test,spec}.{ts,tsx}',
+      'packages/cheatsheet-sdk/src/**/*.{test,spec}.{ts,tsx}',
+    ],
     globals: false,
     css: false,
   },

@@ -84,6 +84,19 @@ interface SheetsState {
   ensureDefaultSheet: (uid: string) => Promise<void>
   /** Force another cloud bootstrap attempt (clears sticky local mode). */
   retryCloudSync: (uid: string) => Promise<void>
+  /**
+   * Import an agent/CLI SheetDocument into a new cloud (or local) sheet and
+   * open it in the workspace. Does not modify existing sheets.
+   */
+  importSheetDocument: (
+    uid: string,
+    sheet: {
+      title: string
+      canvas: SheetCanvas
+      items: CanvasItem[]
+      folders?: OutlinerFolder[]
+    },
+  ) => Promise<string>
 }
 
 function openLocalSheet(title = 'Local sheet (offline)') {
@@ -621,6 +634,68 @@ export const useSheetsStore = create<SheetsState>((set, get) => ({
         useCanvasStore.setState({ sheetId: null })
       }
       await get().ensureDefaultSheet(uid)
+    }
+  },
+
+  importSheetDocument: async (uid, sheet) => {
+    const now = Date.now()
+    const title = sheet.title?.trim() || 'Imported sheet'
+    const canvas = sheet.canvas ?? { ...DEFAULT_CANVAS }
+    const items = sheet.items ?? []
+    const folders = sheet.folders ?? []
+    const payload = buildSheetPayload(
+      uid,
+      title,
+      canvas,
+      items,
+      now,
+      true,
+      folders,
+    )
+
+    try {
+      const ref = await addDoc(collection(db, 'sheets'), payload)
+      set((s) => ({
+        sheets: [
+          { id: ref.id, title, updatedAt: now },
+          ...s.sheets.filter((sh) => !sh.localOnly),
+        ],
+        activeSheetId: ref.id,
+        cloudAvailable: true,
+        saveStatus: 'saved',
+        lastSavedAt: now,
+        lastCloudError: null,
+      }))
+      useCanvasStore.getState().loadSheet({
+        sheetId: ref.id,
+        title,
+        canvas,
+        items,
+        folders,
+      })
+      return ref.id
+    } catch (e) {
+      const msg = formatFirestoreError(e)
+      console.warn('[sheets] import failed — local sheet:', e)
+      const id = `local_${createId()}`
+      useCanvasStore.getState().loadSheet({
+        sheetId: id,
+        title,
+        canvas,
+        items,
+        folders,
+      })
+      set((s) => ({
+        sheets: [
+          { id, title, updatedAt: now, localOnly: true },
+          ...s.sheets,
+        ],
+        activeSheetId: id,
+        cloudAvailable: false,
+        saveStatus: 'local',
+        lastCloudError: msg,
+      }))
+      return id
     }
   },
 }))

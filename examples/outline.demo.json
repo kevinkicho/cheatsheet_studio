@@ -1,0 +1,32 @@
+{
+  "title": "Calculus quick sheet (agent outline)",
+  "notes": "High-level outline — use: npm run cheatsheet -- compose examples/outline.demo.json -o examples/from-outline.sheet.json",
+  "autoLayout": true,
+  "blocks": [
+    {
+      "type": "heading",
+      "title": "Derivatives"
+    },
+    {
+      "type": "equation",
+      "title": "Chain rule",
+      "latex": "\\frac{dy}{dx} = \\frac{dy}{du}\\,\\frac{du}{dx}"
+    },
+    {
+      "type": "equation",
+      "title": "Product rule",
+      "latex": "(uv)' = u'v + uv'"
+    },
+    {
+      "type": "table",
+      "title": "Common derivatives",
+      "markdown": "| f | f' |\n|---|----|\n| x^n | n x^{n-1} |\n| e^x | e^x |\n| \\ln x | 1/x |"
+    },
+    {
+      "type": "process",
+      "title": "Solve strategy",
+      "kind": "flowchart",
+      "mermaid": "flowchart TD\n  A[Read problem] --> B[Identify rule]\n  B --> C[Differentiate]\n  C --> D[Simplify]"
+    }
+  ]
+}

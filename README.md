@@ -66,7 +66,8 @@ serves **last `npm run build`** only. Rebuild before testing Hosting-style ports
 
 **Docs:** [docs/README.md](./docs/README.md) ·
 Process: [docs/process-charts.md](./docs/process-charts.md) ·
-Vector: [docs/vector-graphics.md](./docs/vector-graphics.md)
+Vector: [docs/vector-graphics.md](./docs/vector-graphics.md) ·
+Agent SDK/CLI: [docs/agent-sdk.md](./docs/agent-sdk.md) (`packages/cheatsheet-sdk` — **does not alter the web UI**)
 
 ---
 
@@ -300,6 +301,8 @@ firebase serve    # http://localhost:5000 — must rebuild to see latest code
 | `npm run emulators` / `emulators:auth` | Start Firebase emulators |
 | `npm run dev:emulators` | Vite with emulator env flags |
 | `npm run seed` | Seed `libraryItems` via Admin SDK |
+| `npm run cheatsheet -- …` | Headless sheet CLI (agents) — see [docs/agent-sdk.md](./docs/agent-sdk.md) |
+| `npm run test:sdk` | Unit tests for `@cheatsheet-studio/sdk` |
 
 ---
 
@@ -338,9 +341,28 @@ CI (`.github/workflows/ci.yml`) runs, in order:
 
 ---
 
+## Agent SDK & CLI (headless)
+
+Agents and scripts can **compose sheet JSON** without opening the React app. The package lives in `packages/cheatsheet-sdk/` and is **not** bundled into the web client — your current Workspace look and behavior are unchanged.
+
+```bash
+# Outline → sheet (best for agents)
+npm run cheatsheet -- compose examples/outline.demo.json -o examples/from-outline.sheet.json
+npm run cheatsheet -- validate examples/from-outline.sheet.json
+```
+
+In the app: **My Sheets → Import JSON** to open an agent sheet in Workspace (UI look/behavior unchanged).
+
+TypeScript: `composeFromOutline({ title, blocks })` or `createSheet().addEquation(…).autoLayout().build()`.  
+Full notes: [docs/agent-sdk.md](./docs/agent-sdk.md) · [packages/cheatsheet-sdk/README.md](./packages/cheatsheet-sdk/README.md).
+
+---
+
 ## Architecture notes
 
 - **State:** Zustand stores (`canvasStore`, `sheetsStore`, `authStore`, `libraryStore`, `uiStore`, `flowchartLibraryStore`)  
+- **Agent authoring (optional):** `packages/cheatsheet-sdk` — portable `SheetDocument` v1 + CLI; isolated from Vite/React  
+
 - **Shared card body:** `CanvasCardBody` — equations (KaTeX + FitContent fontSize), figures (FigureView SVG), process (MermaidView fillContainer); used by canvas + export  
 - **Free-transform:** `src/lib/resizeHandles.ts`, `CanvasItemView`, `MultiSelectFrame`  
 - **Vector policy:** [docs/vector-graphics.md](./docs/vector-graphics.md)  

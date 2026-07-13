@@ -18,6 +18,7 @@ import {
   GitBranch,
   Table2,
   FunctionSquare,
+  Upload,
   X,
 } from 'lucide-react'
 import { useAuthStore } from '@/stores/authStore'
@@ -26,6 +27,7 @@ import {
   type SheetPreview,
 } from '@/stores/sheetsStore'
 import { useUiStore } from '@/stores/uiStore'
+import { readSheetFileFromBrowserFile } from '@/lib/sheetDocumentImport'
 import {
   formatPageSizeLabel,
   multiPageLayoutBounds,
@@ -1137,6 +1139,7 @@ export function SheetsView() {
   const createSheet = useSheetsStore((s) => s.createSheet)
   const openSheet = useSheetsStore((s) => s.openSheet)
   const deleteSheet = useSheetsStore((s) => s.deleteSheet)
+  const importSheetDocument = useSheetsStore((s) => s.importSheetDocument)
   const fetchSheetPreview = useSheetsStore((s) => s.fetchSheetPreview)
   const activeSheetId = useSheetsStore((s) => s.activeSheetId)
   const setView = useUiStore((s) => s.setView)
@@ -1151,6 +1154,32 @@ export function SheetsView() {
     () => new Set(),
   )
   const [deleteConfirm, setDeleteConfirm] = useState(false)
+  const [importBusy, setImportBusy] = useState(false)
+  const [importError, setImportError] = useState<string | null>(null)
+  const importInputRef = useRef<HTMLInputElement>(null)
+
+  const handleImportJson = useCallback(
+    async (file: File | null) => {
+      if (!file || !user) return
+      setImportBusy(true)
+      setImportError(null)
+      try {
+        const parsed = await readSheetFileFromBrowserFile(file)
+        if (!parsed.ok) {
+          setImportError(parsed.error)
+          return
+        }
+        await importSheetDocument(user.uid, parsed.sheet)
+        setView('workspace')
+      } catch (e) {
+        setImportError(e instanceof Error ? e.message : 'Import failed')
+      } finally {
+        setImportBusy(false)
+        if (importInputRef.current) importInputRef.current.value = ''
+      }
+    },
+    [user, importSheetDocument, setView],
+  )
 
   const toggleKindHighlight = useCallback((kind: CardKind) => {
     setHighlightKinds((prev) => {
@@ -1273,6 +1302,31 @@ export function SheetsView() {
           <FilePlus2 className="h-3.5 w-3.5" />
           New sheet
         </button>
+        <button
+          type="button"
+          disabled={!user || importBusy}
+          title="Import a sheet JSON produced by the agent CLI/SDK (does not change existing sheets)"
+          onClick={() => importInputRef.current?.click()}
+          className="inline-flex items-center gap-1.5 rounded-md border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 text-xs font-medium text-zinc-200 hover:border-indigo-500/40 hover:text-indigo-100 disabled:opacity-50"
+          data-testid="sheets-import-json"
+        >
+          <Upload className="h-3.5 w-3.5" />
+          {importBusy ? 'Importing…' : 'Import JSON'}
+        </button>
+        <input
+          ref={importInputRef}
+          type="file"
+          accept="application/json,.json,.sheet.json"
+          className="hidden"
+          onChange={(e) => {
+            void handleImportJson(e.target.files?.[0] ?? null)
+          }}
+        />
+        {importError && (
+          <span className="max-w-xs truncate text-[11px] text-rose-400" title={importError}>
+            {importError}
+          </span>
+        )}
         <button
           type="button"
           onClick={() => setView('workspace')}
