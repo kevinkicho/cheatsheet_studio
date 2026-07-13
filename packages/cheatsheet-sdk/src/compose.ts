@@ -122,13 +122,16 @@ async function applyBlock(
       })
       return
     case 'heading':
+      // Banner only: latex carries the section label — do NOT also show card title
+      // (that duplicated "1. Time value of money" as title + body).
       builder.addEquation({
         title: block.title,
         latex: block.note
-          ? `\\text{${escapeLatexText(block.note)}}`
-          : `\\text{${escapeLatexText(block.title)}}`,
-        height: 56,
-        width: 520,
+          ? `\\textbf{\\text{${escapeLatexText(block.note)}}}`
+          : `\\textbf{\\text{${escapeLatexText(block.title)}}}`,
+        height: 28,
+        width: 720,
+        showTitle: false,
       })
       return
     default:

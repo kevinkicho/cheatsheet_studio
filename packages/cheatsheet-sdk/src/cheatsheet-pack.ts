@@ -81,12 +81,12 @@ export function estimateBlockSize(
   if (isProcess(it)) {
     const mind =
       it.mermaidKind === 'mindmap' || it.mermaidSource?.includes('mindmap')
-    // Leave room for rendered Mermaid SVG (export scales down if still large)
-    const w = Math.min(maxW, Math.round((mind ? 220 : 190) * s))
+    // Process charts need real space — too-small boxes look "empty" after scale-to-fit
+    const w = Math.min(maxW, Math.round((mind ? 260 : 230) * Math.max(s, 0.9)))
     const lines = (it.mermaidSource ?? '').split('\n').filter(Boolean).length
     const h = Math.min(
-      260,
-      Math.max(mind ? 140 : 120, Math.round((90 + lines * 12) * s)),
+      300,
+      Math.max(mind ? 170 : 150, Math.round((110 + lines * 14) * Math.max(s, 0.9))),
     )
     return { w, h }
   }

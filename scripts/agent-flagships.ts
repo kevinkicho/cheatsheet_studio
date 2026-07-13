@@ -289,6 +289,8 @@ async function aiRefineLayout(
       id: it.id,
       type: it.type,
       title: (it.title || '').slice(0, 40),
+      showTitle: it.showTitle !== false,
+      hasMermaid: Boolean(it.mermaidSource),
       w: it.width,
       h: it.height,
     }))
@@ -301,14 +303,14 @@ async function aiRefineLayout(
       {
         role: 'system',
         content:
-          'You pack exam cheatsheets. Reply JSON only: {"density":"xs|sm|md|lg","gap":number,"columns":1|2|3,"rationale":"short"}',
+          'You QA exam cheatsheets. Reply JSON only: {"density":"xs|sm|md|lg","gap":number,"processMinHeight":number,"rationale":"short"}. Prefer sm if process/mermaid cards are cramped. Never invent card content.',
       },
       {
         role: 'user',
         content: JSON.stringify({
           currentDensity: density,
           cards: summary,
-          goal: 'tight readable multi-column print letter page',
+          goal: 'letter page; process charts large enough to read; no wasted space',
         }),
       },
     ],
@@ -330,14 +332,14 @@ async function aiRefineLayout(
     }
     const data = (await res.json()) as { message?: { content?: string } }
     let text = data.message?.content ?? ''
-    text = text.replace(/```(?:json)?/gi, '').trim()
+    text = text.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim()
     const m = text.match(/\{[\s\S]*\}/)
     if (!m) return null
     const parsed = JSON.parse(m[0]) as {
       density?: Density
       gap?: number
-      columns?: number
       rationale?: string
+      processMinHeight?: number
     }
     const dens =
       parsed.density === 'xs' ||
@@ -346,11 +348,27 @@ async function aiRefineLayout(
       parsed.density === 'lg'
         ? parsed.density
         : density
-    const next = applyAutoLayout(sheet, dens, 'auto', parsed.gap, 'letter')
+    let next = applyAutoLayout(sheet, dens, 'auto', parsed.gap, 'letter')
+    const minProcH =
+      typeof parsed.processMinHeight === 'number'
+        ? Math.max(140, Math.min(280, parsed.processMinHeight))
+        : 150
+    next = {
+      ...next,
+      items: next.items.map((it) => {
+        if (it.type !== 'process-chart' && !it.mermaidSource) return it
+        return {
+          ...it,
+          height: Math.max(it.height, minProcH),
+          width: Math.max(it.width, 180),
+        }
+      }),
+    }
+    next = applyAutoLayout(next, dens, 'auto', parsed.gap ?? 6, 'letter')
     return {
       sheet: next,
       note: `AI ${model}: density=${dens}${
-        parsed.rationale ? ` — ${parsed.rationale.slice(0, 80)}` : ''
+        parsed.rationale ? ` — ${parsed.rationale.slice(0, 100)}` : ''
       }`,
     }
   } catch (e) {
@@ -652,6 +670,13 @@ async function main() {
   const nonInteractive = Boolean(flags.yes) || !process.stdin.isTTY
 
   if (nonInteractive) {
+    const hasKey = Boolean(
+      process.env.OLLAMA_API_KEY &&
+        !process.env.OLLAMA_API_KEY.includes('your_ollama'),
+    )
+    // Use AI by default when key is present (layout refine + density). --no-ai to skip.
+    const ai =
+      flags.ai === false ? false : flags.ai === true ? true : hasKey
     const cfg: RunConfig = {
       packs: flags.packs?.length
         ? flags.packs
@@ -660,13 +685,18 @@ async function main() {
       density: flags.density ?? 'sm',
       columns: flags.columns ?? 'auto',
       gap: flags.gap,
-      ai: flags.ai === true,
+      ai,
       yes: true,
     }
     console.log('Flagships (non-interactive)')
     console.log(
-      `  packs=${cfg.packs.join(',')} formats=${cfg.formats.join(',')} density=${cfg.density} ai=${cfg.ai}`,
+      `  packs=${cfg.packs.join(',')} formats=${cfg.formats.join(',')} density=${cfg.density} ai=${cfg.ai}${hasKey && ai ? ' (OLLAMA_API_KEY)' : ''}`,
     )
+    if (!ai && !hasKey) {
+      console.log(
+        '  tip: set OLLAMA_API_KEY for AI layout refine, or pass --ai',
+      )
+    }
     await runBatch(cfg)
     return
   }

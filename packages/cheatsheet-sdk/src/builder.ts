@@ -23,6 +23,8 @@ export type AddEquationInput = {
   width?: number
   height?: number
   libraryItemId?: string
+  /** Section banners set false so title text is not duplicated in the body. */
+  showTitle?: boolean
 }
 
 export type AddTableInput = {
@@ -132,7 +134,7 @@ export class SheetBuilder {
       autoFit: true,
       contentFill: true,
       keepAspectRatio: true,
-      showTitle: true,
+      showTitle: input.showTitle !== false,
       style: { ...DEFAULT_ITEM_STYLE, fontSize: 14, titleFontSize: 9 },
     }
     this.items.push(item)

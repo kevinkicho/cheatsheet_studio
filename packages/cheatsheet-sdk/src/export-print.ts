@@ -153,8 +153,9 @@ export function sheetToPrintHtml(
   if (layout === 'stack') {
     cards = sorted
       .map((it) => {
-        const title = it.title
-          ? `<div class="card-title">${escapeHtml(it.title)}</div>`
+        const showTitle = it.showTitle !== false && Boolean(it.title)
+        const title = showTitle
+          ? `<div class="card-title">${escapeHtml(it.title!)}</div>`
           : ''
         return `<article class="card stack" data-type="${escapeHtml(it.type)}">
   ${title}
@@ -167,10 +168,14 @@ export function sheetToPrintHtml(
       .map((it) => {
         const fs = it.style?.fontSize ?? 11
         const tfs = it.style?.titleFontSize ?? 8
-        const title = it.title
-          ? `<div class="card-title" style="font-size:${tfs}px">${escapeHtml(it.title)}</div>`
+        // Section banners use latex body only (showTitle false) — avoid duplicate label
+        const showTitle = it.showTitle !== false && Boolean(it.title)
+        const title = showTitle
+          ? `<div class="card-title" style="font-size:${tfs}px">${escapeHtml(it.title!)}</div>`
           : ''
-        return `<article class="card abs" data-type="${escapeHtml(it.type)}"
+        const isProc =
+          it.type === 'process-chart' || Boolean(it.mermaidSource)
+        return `<article class="card abs" data-type="${escapeHtml(it.type)}"${isProc ? ' data-process="1"' : ''}${!showTitle ? ' data-banner="1"' : ''}
   style="left:${Math.round(it.x)}px;top:${Math.round(it.y)}px;width:${Math.round(it.width)}px;height:${Math.round(it.height)}px;font-size:${fs}px">
   ${title}
   <div class="card-body">${itemBodyHtml(it, rich)}</div>
@@ -190,7 +195,8 @@ export function sheetToPrintHtml(
       theme: '${mermaidTheme}',
       securityLevel: 'loose',
       fontFamily: 'ui-sans-serif, system-ui, sans-serif',
-      flowchart: { nodeSpacing: 12, rankSpacing: 18, padding: 4 },
+      flowchart: { nodeSpacing: 18, rankSpacing: 22, padding: 6, useMaxWidth: true, htmlLabels: true },
+      mindmap: { useMaxWidth: true, padding: 6 },
     });
   </script>
   <script>
@@ -339,14 +345,33 @@ export function sheetToPrintHtml(
     th { color: ${muted}; font-weight: 600; }
     pre.mermaid {
       margin: 0;
-      font-size: 8px;
+      font-size: 9px;
       white-space: pre-wrap;
       max-width: 100%;
       max-height: 100%;
-      overflow: hidden;
+      overflow: visible;
       background: transparent;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
-    pre.mermaid svg { max-width: 100% !important; height: auto !important; }
+    pre.mermaid svg {
+      max-width: 100% !important;
+      max-height: 100% !important;
+      width: auto !important;
+      height: auto !important;
+    }
+    .card.abs[data-process="1"] .card-body {
+      align-items: stretch;
+      justify-content: stretch;
+    }
+    .card.abs[data-banner="1"] {
+      background: ${dark ? 'rgba(49,46,129,0.35)' : 'rgba(99,102,241,0.08)'};
+      border-color: ${dark ? 'rgba(129,140,248,0.55)' : 'rgba(99,102,241,0.35)'};
+    }
+    .card.abs[data-banner="1"] .card-body {
+      justify-content: flex-start;
+    }
     img.fig {
       max-width: 100%;
       max-height: 100%;
@@ -446,6 +471,7 @@ type PlaywrightPage = {
 /**
  * Scale each card's body so KaTeX / Mermaid / tables are fully visible
  * (dense pack often under-sizes height; overflow:hidden was clipping content).
+ * Process charts get a slightly lower min scale so diagrams stay readable.
  */
 async function fitCardContents(page: PlaywrightPage): Promise<void> {
   await page.evaluate(() => {
@@ -454,6 +480,7 @@ async function fitCardContents(page: PlaywrightPage): Promise<void> {
       const body = card.querySelector('.card-body') as HTMLElement | null
       if (!body) return
       const title = card.querySelector('.card-title') as HTMLElement | null
+      const isProcess = card.getAttribute('data-process') === '1'
 
       body.style.transform = ''
       body.style.maxWidth = 'none'
@@ -461,32 +488,65 @@ async function fitCardContents(page: PlaywrightPage): Promise<void> {
       body.style.overflow = 'visible'
       card.style.overflow = 'visible'
 
-      const pad = 8
+      const pad = isProcess ? 4 : 8
       const availW = Math.max(8, card.clientWidth - pad)
       const availH = Math.max(
         8,
         card.clientHeight - (title ? title.offsetHeight + 4 : 0) - pad,
       )
 
+      const mermaidSvg = body.querySelector(
+        'pre.mermaid svg, .mermaid svg',
+      ) as SVGSVGElement | null
       const target =
+        mermaidSvg ||
         (body.querySelector(
-          '.katex-display, .katex, pre.mermaid svg, pre.mermaid, table, img.fig, img',
-        ) as HTMLElement | null) || body
+          '.katex-display, .katex, pre.mermaid, table, img.fig, img',
+        ) as HTMLElement | null) ||
+        body
 
-      const rect = target.getBoundingClientRect()
-      const tw = Math.max(target.scrollWidth || 0, rect.width || 0, 1)
-      const th = Math.max(target.scrollHeight || 0, rect.height || 0, 1)
+      let tw = 1
+      let th = 1
+      if (mermaidSvg) {
+        const vb = mermaidSvg.viewBox?.baseVal
+        tw = Math.max(
+          mermaidSvg.getBoundingClientRect().width || 0,
+          vb?.width || 0,
+          mermaidSvg.clientWidth || 0,
+          1,
+        )
+        th = Math.max(
+          mermaidSvg.getBoundingClientRect().height || 0,
+          vb?.height || 0,
+          mermaidSvg.clientHeight || 0,
+          1,
+        )
+      } else {
+        const rect = target.getBoundingClientRect()
+        tw = Math.max(
+          (target as HTMLElement).scrollWidth || 0,
+          rect.width || 0,
+          1,
+        )
+        th = Math.max(
+          (target as HTMLElement).scrollHeight || 0,
+          rect.height || 0,
+          1,
+        )
+      }
+
       const scale = Math.min(1, availW / tw, availH / th)
-
+      // Process: never shrink below 0.42 or diagrams vanish; equations min 0.4
+      const minScale = isProcess ? 0.42 : 0.4
       body.style.transformOrigin = 'center center'
       if (scale < 0.995) {
-        body.style.transform = `scale(${Math.max(0.35, scale)})`
+        body.style.transform = `scale(${Math.max(minScale, scale)})`
       }
       body.style.overflow = 'hidden'
       card.style.overflow = 'hidden'
     })
   })
-  await page.waitForTimeout(50)
+  await page.waitForTimeout(80)
 }
 
 async function withPlaywrightPage(
