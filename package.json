@@ -33,7 +33,8 @@
     "agent:pdf-demo": "tsx packages/cheatsheet-sdk/src/cli.ts pack calc-derivatives -o examples/agent-out/calc.sheet.json && tsx packages/cheatsheet-sdk/src/cli.ts export-pdf examples/agent-out/calc.sheet.json -o examples/agent-out/calc.pdf --keep-html",
     "agent:flagship": "tsx packages/cheatsheet-sdk/src/cli.ts pack finance-midterm -o examples/agent-out/finance-midterm.sheet.json",
     "agent:flagship:pdf": "npm run agent:flagship && tsx packages/cheatsheet-sdk/src/cli.ts export-pdf examples/agent-out/finance-midterm.sheet.json -o examples/agent-out/finance-midterm.pdf --keep-html",
-    "agent:flagship:validate": "npm run agent:flagship && tsx packages/cheatsheet-sdk/src/cli.ts validate examples/agent-out/finance-midterm.sheet.json && tsx packages/cheatsheet-sdk/src/cli.ts summarize examples/agent-out/finance-midterm.sheet.json --verbose"
+    "agent:flagship:validate": "npm run agent:flagship && tsx packages/cheatsheet-sdk/src/cli.ts validate examples/agent-out/finance-midterm.sheet.json && tsx packages/cheatsheet-sdk/src/cli.ts summarize examples/agent-out/finance-midterm.sheet.json --verbose",
+    "agent:flagships": "npm run agent:flagship && tsx packages/cheatsheet-sdk/src/cli.ts pack calc-final -o examples/agent-out/calc-final.sheet.json && tsx packages/cheatsheet-sdk/src/cli.ts pack stats-midterm -o examples/agent-out/stats-midterm.sheet.json && tsx packages/cheatsheet-sdk/src/cli.ts pack micro-midterm -o examples/agent-out/micro-midterm.sheet.json"
   },
   "dependencies": {
     "@dagrejs/dagre": "^3.0.0",

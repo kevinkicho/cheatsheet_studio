@@ -6,6 +6,7 @@ import {
   readSheetFileFromBrowserFile,
   type ImportedSheetDocument,
 } from '@/lib/sheetDocumentImport'
+import { pushImportHistory } from '@/lib/importHistory'
 
 export type ImportFeedback = {
   kind: 'success' | 'error' | 'info'
@@ -13,18 +14,25 @@ export type ImportFeedback = {
   detail?: string
 }
 
+export type ImportMode = 'new' | 'replace' | 'append'
+
 /**
- * Shared import pipeline for TopBar + My Sheets.
- * Creates a new sheet from agent/CLI JSON and opens Workspace.
+ * Shared import pipeline for TopBar + My Sheets + drop overlay.
+ * Creates / replaces / appends agent sheet JSON and opens Workspace.
+ * After success, requests fit-print so the midterm sheet is in view.
  */
 export function useSheetJsonImport(onFeedback?: (fb: ImportFeedback) => void) {
   const user = useAuthStore((s) => s.user)
   const importSheetDocument = useSheetsStore((s) => s.importSheetDocument)
   const setView = useUiStore((s) => s.setView)
   const [busy, setBusy] = useState(false)
+  const [mode, setMode] = useState<ImportMode>('new')
 
   const importFile = useCallback(
-    async (file: File | null | undefined) => {
+    async (
+      file: File | null | undefined,
+      modeOverride?: ImportMode,
+    ) => {
       if (!file) return
       if (!user) {
         onFeedback?.({
@@ -43,6 +51,7 @@ export function useSheetJsonImport(onFeedback?: (fb: ImportFeedback) => void) {
         return
       }
 
+      const importMode = modeOverride ?? mode
       setBusy(true)
       try {
         const parsed = await readSheetFileFromBrowserFile(file)
@@ -55,16 +64,37 @@ export function useSheetJsonImport(onFeedback?: (fb: ImportFeedback) => void) {
           return
         }
         const sheet: ImportedSheetDocument = parsed.sheet
-        await importSheetDocument(user.uid, sheet)
+        await importSheetDocument(user.uid, sheet, { mode: importMode })
         setView('workspace')
+        pushImportHistory({
+          title: sheet.title,
+          cardCount: sheet.items.length,
+          mode: importMode,
+          fileName: file.name,
+        })
+        // Ask MainCanvas to fit print layout after paint
+        window.setTimeout(() => {
+          window.dispatchEvent(
+            new CustomEvent('cheatsheet:fit-print-layout', {
+              detail: { reason: 'import' },
+            }),
+          )
+        }, 80)
+
         const n = sheet.items.length
+        const modeLabel =
+          importMode === 'replace'
+            ? 'Replaced open sheet'
+            : importMode === 'append'
+              ? 'Appended to open sheet'
+              : 'Imported'
         onFeedback?.({
           kind: 'success',
-          title: `Imported “${sheet.title}”`,
+          title: `${modeLabel} “${sheet.title}”`,
           detail:
             n === 0
-              ? 'Empty sheet opened in Workspace — add cards or drag library items.'
-              : `${n} card${n === 1 ? '' : 's'} loaded. Polish layout, then Export JSON / PDF via agents.`,
+              ? 'Empty sheet in Workspace — add cards or drag library items. Use Export → PDF for print pages (Studio WYSIWYG).'
+              : `${n} card${n === 1 ? '' : 's'}. Layout fitted to print frame — polish, then Export → PDF (Studio) or CLI export-pdf (agent print).`,
         })
       } catch (e) {
         onFeedback?.({
@@ -76,8 +106,8 @@ export function useSheetJsonImport(onFeedback?: (fb: ImportFeedback) => void) {
         setBusy(false)
       }
     },
-    [user, importSheetDocument, setView, onFeedback],
+    [user, importSheetDocument, setView, onFeedback, mode],
   )
 
-  return { importFile, busy, user }
+  return { importFile, busy, user, mode, setMode }
 }

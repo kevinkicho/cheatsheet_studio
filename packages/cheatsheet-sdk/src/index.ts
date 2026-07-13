@@ -40,8 +40,8 @@ export type { CatalogItem, CatalogSearchOpts } from './catalog'
 export { validateSheetDocument } from './validate'
 export type { ValidateIssue, ValidateResult } from './validate'
 
-export { autoLayoutItems } from './layout'
-export type { LayoutOptions } from './layout'
+export { autoLayoutItems, layoutSheet } from './layout'
+export type { LayoutOptions, LayoutResult } from './layout'
 
 export { readSheetFile, writeSheetFile, summarizeSheet } from './io'
 export { defaultCanvas, DEFAULT_ITEM_STYLE, LETTER_PX } from './defaults'

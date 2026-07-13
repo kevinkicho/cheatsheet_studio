@@ -28,6 +28,16 @@ jobs:
           npm run test:sdk
           npm run cheatsheet -- doctor
 
+      - name: Flagship packs smoke (agent → sheet JSON)
+        run: |
+          npm run agent:flagship:validate
+          npm run cheatsheet -- pack calc-final -o examples/agent-out/calc-final.sheet.json
+          npm run cheatsheet -- validate examples/agent-out/calc-final.sheet.json
+          npm run cheatsheet -- pack stats-midterm -o examples/agent-out/stats-midterm.sheet.json
+          npm run cheatsheet -- validate examples/agent-out/stats-midterm.sheet.json
+          npm run cheatsheet -- pack micro-midterm -o examples/agent-out/micro-midterm.sheet.json
+          npm run cheatsheet -- validate examples/agent-out/micro-midterm.sheet.json
+
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
 

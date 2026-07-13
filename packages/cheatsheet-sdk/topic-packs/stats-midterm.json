@@ -1,0 +1,74 @@
+{
+  "id": "stats-midterm",
+  "title": "Statistics — Midterm Review",
+  "description": "Flagship stats: probability, Bayes, CI/hypothesis testing, exam checklist.",
+  "subjects": ["mathematics"],
+  "outline": {
+    "title": "Statistics Midterm — Cheat Sheet",
+    "notes": "Topic pack: stats-midterm",
+    "autoLayout": true,
+    "printSizeId": "letter",
+    "orientation": "portrait",
+    "blocks": [
+      { "type": "heading", "title": "1. Probability" },
+      {
+        "type": "equation",
+        "title": "Conditional probability",
+        "latex": "P(A\\mid B) = \\frac{P(A\\cap B)}{P(B)}"
+      },
+      {
+        "type": "equation",
+        "title": "Bayes theorem",
+        "latex": "P(H\\mid D) = \\frac{P(D\\mid H)P(H)}{P(D)}"
+      },
+      {
+        "type": "equation",
+        "title": "Law of total probability",
+        "latex": "P(D)=\\sum_{i} P(D\\mid H_i)P(H_i)"
+      },
+      {
+        "type": "table",
+        "title": "Bayes terms",
+        "markdown": "| Term | Meaning |\n|------|--------|\n| P(H) | Prior |\n| P(D\\|H) | Likelihood |\n| P(H\\|D) | Posterior |\n| P(D) | Evidence / marginal |"
+      },
+      { "type": "heading", "title": "2. Sampling & CI" },
+      {
+        "type": "equation",
+        "title": "Sample mean SE",
+        "latex": "\\mathrm{SE}_{\\bar{x}} = \\frac{s}{\\sqrt{n}}"
+      },
+      {
+        "type": "equation",
+        "title": "CI for mean (known σ approx)",
+        "latex": "\\bar{x} \\pm z^{*}\\frac{\\sigma}{\\sqrt{n}}"
+      },
+      {
+        "type": "equation",
+        "title": "t interval",
+        "latex": "\\bar{x} \\pm t^{*}_{n-1}\\frac{s}{\\sqrt{n}}"
+      },
+      { "type": "heading", "title": "3. Hypothesis tests" },
+      {
+        "type": "equation",
+        "title": "z / t statistic (mean)",
+        "latex": "z=\\frac{\\bar{x}-\\mu_0}{\\sigma/\\sqrt{n}}\\quad t=\\frac{\\bar{x}-\\mu_0}{s/\\sqrt{n}}"
+      },
+      {
+        "type": "table",
+        "title": "Decision rules",
+        "markdown": "| Approach | Reject H0 if |\n|----------|--------------|\n| p-value | p ≤ α |\n| Critical | |stat| ≥ critical |\n| CI | μ0 outside CI (two-sided) |"
+      },
+      {
+        "type": "process",
+        "title": "Test workflow",
+        "kind": "flowchart",
+        "mermaid": "flowchart TD\n  A[State H0 / Ha] --> B[Choose α and test]\n  B --> C[Compute statistic]\n  C --> D[p-value or critical]\n  D --> E{Reject H0?}\n  E -->|Yes| F[Significant at α]\n  E -->|No| G[Fail to reject]\n  F --> H[Context sentence]\n  G --> H"
+      },
+      {
+        "type": "table",
+        "title": "Exam tips",
+        "markdown": "| Pitfall | Fix |\n|---------|-----|\n| p vs α | Compare carefully |\n| One vs two sided | Match Ha |\n| σ vs s | z vs t |\n| Independent samples | Check design |"
+      }
+    ]
+  }
+}

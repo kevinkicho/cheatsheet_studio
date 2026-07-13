@@ -7,15 +7,18 @@ import {
 import { validateSheetDocument } from './validate'
 
 describe('topic packs', () => {
-  it('lists premade packs', () => {
+  it('lists premade packs including flagships', () => {
     const packs = listTopicPacks()
-    expect(packs.length).toBeGreaterThanOrEqual(16)
+    expect(packs.length).toBeGreaterThanOrEqual(19)
     expect(packs.some((p) => p.id === 'calc-derivatives')).toBe(true)
     expect(packs.some((p) => p.id === 'lin-algebra')).toBe(true)
     expect(packs.some((p) => p.id === 'econ-elasticity')).toBe(true)
     expect(packs.some((p) => p.id === 'bio-genetics')).toBe(true)
     expect(packs.some((p) => p.id === 'finance-npv')).toBe(true)
     expect(packs.some((p) => p.id === 'finance-midterm')).toBe(true)
+    expect(packs.some((p) => p.id === 'calc-final')).toBe(true)
+    expect(packs.some((p) => p.id === 'stats-midterm')).toBe(true)
+    expect(packs.some((p) => p.id === 'micro-midterm')).toBe(true)
   })
 
   it('loads and composes calc-derivatives', async () => {

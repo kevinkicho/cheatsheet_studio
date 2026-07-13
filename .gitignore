@@ -46,6 +46,19 @@ examples/agent-out/
 packages/cheatsheet-sdk/*.tgz
 *.pdf
 
+# Local debug / probe scripts & temp mermaid dumps (not product code)
+tmp-mermaid-*
+tmp-*
+public/mermaid-dump.html
+scripts/probe-*.mjs
+scripts/debug-*.mjs
+scripts/diagnose-*.mjs
+scripts/dump-*.mjs
+scripts/verify-app-chrome-profile.mjs
+scripts/verify-dark-paint.mjs
+scripts/verify-mermaid-render.mjs
+scripts/proof-*.mjs
+
 # Editor
 .vscode/*
 !.vscode/extensions.json

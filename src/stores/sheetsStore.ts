@@ -85,8 +85,10 @@ interface SheetsState {
   /** Force another cloud bootstrap attempt (clears sticky local mode). */
   retryCloudSync: (uid: string) => Promise<void>
   /**
-   * Import an agent/CLI SheetDocument into a new cloud (or local) sheet and
-   * open it in the workspace. Does not modify existing sheets.
+   * Import an agent/CLI SheetDocument and open it in the workspace.
+   * - new (default): create a new sheet
+   * - replace: overwrite the currently open sheet (or create if none)
+   * - append: add imported cards to the open sheet (ids remapped)
    */
   importSheetDocument: (
     uid: string,
@@ -96,6 +98,7 @@ interface SheetsState {
       items: CanvasItem[]
       folders?: OutlinerFolder[]
     },
+    opts?: { mode?: 'new' | 'replace' | 'append' },
   ) => Promise<string>
 }
 
@@ -637,12 +640,119 @@ export const useSheetsStore = create<SheetsState>((set, get) => ({
     }
   },
 
-  importSheetDocument: async (uid, sheet) => {
+  importSheetDocument: async (uid, sheet, opts) => {
+    const mode = opts?.mode ?? 'new'
     const now = Date.now()
     const title = sheet.title?.trim() || 'Imported sheet'
     const canvas = sheet.canvas ?? { ...DEFAULT_CANVAS }
     const items = sheet.items ?? []
     const folders = sheet.folders ?? []
+
+    const activeId = get().activeSheetId ?? useCanvasStore.getState().sheetId
+    const canvasState = useCanvasStore.getState()
+
+    // --- append: merge cards into open sheet ---
+    if (mode === 'append' && activeId) {
+      const remapped = items.map((it) => ({
+        ...it,
+        id: createId('imp'),
+      }))
+      const maxZ = canvasState.items.reduce(
+        (m, i) => Math.max(m, i.zIndex ?? 0),
+        0,
+      )
+      const withZ = remapped.map((it, i) => ({
+        ...it,
+        zIndex: maxZ + i + 1,
+      }))
+      const mergedItems = [...canvasState.items, ...withZ]
+      const mergedFolders = [
+        ...(canvasState.folders ?? []),
+        ...(folders ?? []).map((f) => ({
+          ...f,
+          id: createId('fld'),
+        })),
+      ]
+      const keepTitle = canvasState.title || title
+      const keepCanvas = { ...canvasState.canvas }
+      useCanvasStore.getState().loadSheet({
+        sheetId: activeId,
+        title: keepTitle,
+        canvas: keepCanvas,
+        items: mergedItems,
+        folders: mergedFolders,
+      })
+      // Mark dirty so auto-save / manual save picks up
+      useCanvasStore.setState({ dirty: true })
+      set({
+        activeSheetId: activeId,
+        saveStatus: activeId.startsWith('local_') ? 'local' : 'idle',
+      })
+      try {
+        await get().saveActiveSheet(uid)
+      } catch {
+        /* local already has content */
+      }
+      return activeId
+    }
+
+    // --- replace: overwrite open sheet (or fall through to new) ---
+    if (mode === 'replace' && activeId && !activeId.startsWith('local_')) {
+      try {
+        const payload = buildSheetPayload(
+          uid,
+          title,
+          canvas,
+          items,
+          now,
+          false,
+          folders,
+        )
+        await updateDoc(doc(db, 'sheets', activeId), payload as Record<string, unknown>)
+        set((s) => ({
+          sheets: s.sheets.map((sh) =>
+            sh.id === activeId ? { ...sh, title, updatedAt: now } : sh,
+          ),
+          activeSheetId: activeId,
+          cloudAvailable: true,
+          saveStatus: 'saved',
+          lastSavedAt: now,
+          lastCloudError: null,
+        }))
+        useCanvasStore.getState().loadSheet({
+          sheetId: activeId,
+          title,
+          canvas,
+          items,
+          folders,
+        })
+        return activeId
+      } catch (e) {
+        console.warn('[sheets] replace import failed, creating new:', e)
+        // fall through to new
+      }
+    }
+
+    if (mode === 'replace' && activeId?.startsWith('local_')) {
+      useCanvasStore.getState().loadSheet({
+        sheetId: activeId,
+        title,
+        canvas,
+        items,
+        folders,
+      })
+      useCanvasStore.setState({ dirty: true })
+      set((s) => ({
+        sheets: s.sheets.map((sh) =>
+          sh.id === activeId ? { ...sh, title, updatedAt: now } : sh,
+        ),
+        activeSheetId: activeId,
+        saveStatus: 'local',
+      }))
+      return activeId
+    }
+
+    // --- new sheet (default) ---
     const payload = buildSheetPayload(
       uid,
       title,

@@ -36,7 +36,8 @@ export function exportWorkspaceSheetDocument(): ExportedSheetDocument {
       source: 'CheatSheet Studio',
       sheetId: s.sheetId,
       exportedAt: new Date().toISOString(),
-      notes: 'Exported from Workspace — re-open via My Sheets → Import JSON',
+      notes:
+        'Exported from Workspace — re-open via Import JSON (new/replace/append). Process cards keep mermaidSource + processFlow for round-trip fidelity.',
     },
   }
 }

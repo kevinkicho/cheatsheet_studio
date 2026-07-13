@@ -375,17 +375,27 @@ async function run() {
     if (cmd === 'layout') {
       const file = args[1]
       if (!file) {
-        console.error('Usage: layout <sheet.json> [--columns 1|2|3]')
+        console.error(
+          'Usage: layout <sheet.json> [--columns 1|2|3] [--dense] [--mode columns|single|sections]',
+        )
         process.exit(1)
       }
       const colsRaw = argValue(args, '--columns')
       const columns = colsRaw ? Number(colsRaw) : undefined
+      const modeRaw = argValue(args, '--mode') as
+        | 'columns'
+        | 'single'
+        | 'sections'
+        | undefined
+      const dense = args.includes('--dense')
       const next = SheetBuilder.fromDocument(readSheetFile(file))
-        .autoLayout(
-          columns && Number.isFinite(columns)
-            ? { columns, mode: 'columns' }
-            : undefined,
-        )
+        .autoLayout({
+          ...(columns && Number.isFinite(columns)
+            ? { columns, mode: 'columns' as const }
+            : {}),
+          ...(modeRaw ? { mode: modeRaw } : {}),
+          ...(dense ? { dense: true } : {}),
+        })
         .build()
       writeSheetFile(file, next)
       console.log('Laid out', summarizeSheet(next))

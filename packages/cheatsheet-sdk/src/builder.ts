@@ -1,7 +1,7 @@
 import { findCatalogItem, type CatalogItem } from './catalog'
 import { DEFAULT_ITEM_STYLE, defaultCanvas } from './defaults'
 import { createId } from './ids'
-import { autoLayoutItems, type LayoutOptions } from './layout'
+import { layoutSheet, type LayoutOptions } from './layout'
 import {
   SHEET_DOC_VERSION,
   type CanvasItem,
@@ -267,10 +267,20 @@ export class SheetBuilder {
     )
   }
 
-  /** Pack all items into the printable page area (multi-column when tall). */
+  /**
+   * Pack all items into the printable area (dense multi-column / sections when tall).
+   * May raise canvas.printPageCount when content overflows one page.
+   */
   autoLayout(opts?: LayoutOptions): this {
-    this.items = autoLayoutItems(this.items, this.canvas, opts)
-    // Refresh cursor after layout for further appends
+    const result = layoutSheet(this.items, this.canvas, opts)
+    this.items = result.items
+    if (result.printPageCount > (this.canvas.printPageCount ?? 1)) {
+      this.canvas = {
+        ...this.canvas,
+        printPageCount: result.printPageCount,
+        showPrintArea: this.canvas.showPrintArea !== false,
+      }
+    }
     if (this.items.length > 0) {
       const last = this.items[this.items.length - 1]!
       this.cursorX = last.x

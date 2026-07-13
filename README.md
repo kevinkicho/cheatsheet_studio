@@ -356,10 +356,13 @@ Agents and scripts can **compose sheet JSON** without opening the React app. The
 # Agent builds finance midterm sheet
 npm run agent:flagship
 # → examples/agent-out/finance-midterm.sheet.json
+
+# Also: calc-final, stats-midterm, micro-midterm
+npm run agent:flagships
 ```
 
-Then in the Studio: **Import JSON** (or drop the file) → polish → **Export PDF**.  
-That is the full story: headless authoring + polished UI + print delivery.
+Then in the Studio: **Import JSON** (new / replace / append) or **drop** the file → auto fit-print → polish → **Export PDF** (Studio WYSIWYG).  
+CLI `export-pdf` is a separate agent print path (not pixel-identical).
 
 ```bash
 # Outline → sheet (also fine for agents)

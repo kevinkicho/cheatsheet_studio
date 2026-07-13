@@ -39,21 +39,27 @@ One story that exercises the full product:
 npm run agent:flagship
 # → examples/agent-out/finance-midterm.sheet.json
 
+# All flagships: finance + calc-final + stats-midterm + micro-midterm
+npm run agent:flagships
+
 # Optional: agent-side print PDF (Playwright; not Studio WYSIWYG)
 npm run agent:flagship:pdf
 ```
 
 Then in the Studio (signed in):
 
-1. **My Sheets → Import JSON** (or drag the `.sheet.json` onto the window)  
-2. Workspace opens with TVM / NPV / CAPM / WACC cards  
-3. Polish layout if needed → top bar **Export → PDF** (print-page capture)
+1. **Import JSON** (TopBar or My Sheets) — mode: **new** / **replace open** / **append cards**  
+   Or **drop** the `.sheet.json` onto the window  
+2. Workspace opens; view **fits print frame**; toast confirms  
+3. Polish layout if needed → top bar **Export → PDF** (Studio WYSIWYG print pages)
 
-Toast feedback confirms success; invalid JSON shows a friendly error (not a silent fail).
+**Export parity:** Studio PDF = canvas capture. CLI `export-pdf` = clean agent print layout (not pixel-identical).
 
 ```bash
 npm run agent:flagship:validate   # pack + validate + summarize
 ```
+
+**Process charts:** agents write `mermaidSource`. Workspace **Export JSON** keeps both `mermaidSource` and `processFlow` (editor snapshot) for round-trip polish.
 
 ### Local file + Import JSON (recommended)
 
@@ -174,6 +180,9 @@ Premade outlines under `packages/cheatsheet-sdk/topic-packs/`:
 | Pack id | Theme |
 |---------|--------|
 | **`finance-midterm`** | **Flagship** — TVM, NPV/IRR, CAPM, WACC midterm sheet |
+| **`calc-final`** | **Flagship** — derivatives, integrals, series final |
+| **`stats-midterm`** | **Flagship** — Bayes, CI, hypothesis tests |
+| **`micro-midterm`** | **Flagship** — S&D, elasticity, surplus |
 | `calc-derivatives` | Calculus derivatives |
 | `calc-integrals` | FTC, substitution, parts |
 | `lin-algebra` | Linear algebra essentials |

@@ -29,24 +29,22 @@ Sheets produced here use the **same document shape** the app already loads (`can
 
 ## Flagship story (one path)
 
-**Agent builds a finance midterm → Import JSON → Export PDF**
+**Agent builds a midterm → Import JSON → Export PDF**
 
 ```bash
 # From monorepo root
-npm run agent:flagship
-# writes examples/agent-out/finance-midterm.sheet.json
-
-# Optional agent-side PDF (Playwright print layout)
-npm run agent:flagship:pdf
+npm run agent:flagship          # finance-midterm
+npm run agent:flagships         # + calc-final, stats-midterm, micro-midterm
+npm run agent:flagship:pdf      # agent Playwright PDF (not Studio WYSIWYG)
 ```
 
 In the Studio (signed in):
 
-1. **My Sheets → Import JSON** or **drop** the `.sheet.json` onto the window  
-2. Toast confirms import; Workspace opens with TVM / NPV / CAPM / WACC  
-3. Polish if needed → top bar **Export → PDF**
+1. **Import JSON** (mode: new / replace / append) or **drop** `.sheet.json`  
+2. Toast + fit-print; Workspace shows the sheet  
+3. Polish → **Export → PDF** (Studio WYSIWYG print pages)
 
-That is the whole product loop: headless authoring + polished UI + print delivery.
+Layout denser packs: `cheatsheet layout sheet.json --dense --mode sections`.
 
 ## Quick start (from monorepo root)
 

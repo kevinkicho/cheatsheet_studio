@@ -32,6 +32,10 @@ import {
   type ImportFeedback,
 } from '@/hooks/useSheetJsonImport'
 import {
+  clearImportHistory,
+  loadImportHistory,
+} from '@/lib/importHistory'
+import {
   formatPageSizeLabel,
   multiPageLayoutBounds,
   normalizePrintPageLayout,
@@ -1162,12 +1166,21 @@ export function SheetsView({ onImportFeedback }: SheetsViewProps = {}) {
   )
   const [deleteConfirm, setDeleteConfirm] = useState(false)
   const importInputRef = useRef<HTMLInputElement>(null)
-  const { importFile, busy: importBusy } = useSheetJsonImport(onImportFeedback)
+  const {
+    importFile,
+    busy: importBusy,
+    mode: importMode,
+    setMode: setImportMode,
+  } = useSheetJsonImport(onImportFeedback)
+  const [importHistory, setImportHistory] = useState(() =>
+    typeof localStorage !== 'undefined' ? loadImportHistory() : [],
+  )
 
   const handleImportJson = useCallback(
     async (file: File | null) => {
       await importFile(file)
       if (importInputRef.current) importInputRef.current.value = ''
+      setImportHistory(loadImportHistory())
     },
     [importFile],
   )
@@ -1293,10 +1306,25 @@ export function SheetsView({ onImportFeedback }: SheetsViewProps = {}) {
           <FilePlus2 className="h-3.5 w-3.5" />
           New sheet
         </button>
+        <select
+          value={importMode}
+          onChange={(e) =>
+            setImportMode(e.target.value as 'new' | 'replace' | 'append')
+          }
+          disabled={!user || importBusy}
+          title="New sheet · replace open · append cards to open"
+          aria-label="Import mode"
+          data-testid="sheets-import-mode"
+          className="field-input w-auto max-w-[9rem] py-1 text-[11px]"
+        >
+          <option value="new">New sheet</option>
+          <option value="replace">Replace open</option>
+          <option value="append">Append cards</option>
+        </select>
         <button
           type="button"
           disabled={!user || importBusy}
-          title="Import a sheet JSON produced by the agent CLI/SDK (does not change existing sheets)"
+          title="Import agent/CLI sheet JSON (or drop a .sheet.json on the window)"
           onClick={() => importInputRef.current?.click()}
           className="inline-flex items-center gap-1.5 rounded-md border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 text-xs font-medium text-zinc-200 hover:border-indigo-500/40 hover:text-indigo-100 disabled:opacity-50"
           data-testid="sheets-import-json"
@@ -1322,6 +1350,37 @@ export function SheetsView({ onImportFeedback }: SheetsViewProps = {}) {
           Back to workspace
         </button>
       </div>
+
+      {importHistory.length > 0 && (
+        <div
+          className="flex flex-wrap items-center gap-1.5 border-b border-zinc-800/80 px-4 py-1.5"
+          data-testid="import-history-bar"
+        >
+          <span className="text-[9px] font-medium uppercase tracking-wide text-zinc-600">
+            Recent imports
+          </span>
+          {importHistory.slice(0, 6).map((h) => (
+            <span
+              key={h.id}
+              className="inline-flex max-w-[10rem] items-center gap-1 truncate rounded-full border border-zinc-800 bg-zinc-900/80 px-2 py-0.5 text-[10px] text-zinc-400"
+              title={`${h.title} · ${h.cardCount} cards · ${h.mode} · ${h.fileName ?? ''}`}
+            >
+              <span className="truncate text-zinc-300">{h.title}</span>
+              <span className="text-zinc-600">{h.cardCount}</span>
+            </span>
+          ))}
+          <button
+            type="button"
+            className="text-[9px] text-zinc-600 hover:text-zinc-400"
+            onClick={() => {
+              clearImportHistory()
+              setImportHistory([])
+            }}
+          >
+            Clear
+          </button>
+        </div>
+      )}
 
       <div className="flex min-h-0 flex-1">
         {/* Sheet list */}

@@ -65,6 +65,27 @@
       "subjects": ["finance", "economics"]
     },
     {
+      "id": "calc-final",
+      "file": "calc-final.json",
+      "title": "Calculus — Final Review",
+      "description": "Flagship math: derivatives, integrals, series exam sheet.",
+      "subjects": ["mathematics"]
+    },
+    {
+      "id": "stats-midterm",
+      "file": "stats-midterm.json",
+      "title": "Statistics — Midterm Review",
+      "description": "Flagship stats: Bayes, CI, hypothesis tests.",
+      "subjects": ["mathematics"]
+    },
+    {
+      "id": "micro-midterm",
+      "file": "micro-midterm.json",
+      "title": "Microeconomics — Midterm Review",
+      "description": "Flagship micro: S&D, elasticity, surplus, profit.",
+      "subjects": ["economics"]
+    },
+    {
       "id": "accounting-basics",
       "file": "accounting-basics.json",
       "title": "Accounting — Core Identity",

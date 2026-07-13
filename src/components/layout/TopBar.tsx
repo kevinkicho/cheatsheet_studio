@@ -63,7 +63,12 @@ export function TopBar({ onImportFeedback }: TopBarProps = {}) {
   const setView = useUiStore((s) => s.setView)
   const importInputRef = useRef<HTMLInputElement>(null)
 
-  const { importFile, busy: importBusy } = useSheetJsonImport(onImportFeedback)
+  const {
+    importFile,
+    busy: importBusy,
+    mode: importMode,
+    setMode: setImportMode,
+  } = useSheetJsonImport(onImportFeedback)
 
   useEffect(() => {
     const open = () => {
@@ -201,6 +206,21 @@ export function TopBar({ onImportFeedback }: TopBarProps = {}) {
             <span className="hidden lg:inline">Export JSON</span>
           </button>
 
+          <select
+            value={importMode}
+            onChange={(e) =>
+              setImportMode(e.target.value as 'new' | 'replace' | 'append')
+            }
+            disabled={!user || importBusy}
+            title="Import mode: new sheet, replace open sheet, or append cards"
+            aria-label="Import mode"
+            data-testid="import-mode-select"
+            className="hidden max-w-[6.5rem] appearance-none truncate rounded-md border border-zinc-800 bg-zinc-900 py-1 pl-1.5 pr-1 text-[10px] text-zinc-400 outline-none focus:border-indigo-500 disabled:opacity-40 sm:block"
+          >
+            <option value="new">Import → new</option>
+            <option value="replace">Import → replace</option>
+            <option value="append">Import → append</option>
+          </select>
           <button
             type="button"
             title="Import agent sheet JSON (Ctrl+Shift+I) — or drop a .json file on the window"
@@ -219,6 +239,7 @@ export function TopBar({ onImportFeedback }: TopBarProps = {}) {
             type="file"
             accept="application/json,.json,.sheet.json"
             className="hidden"
+            data-testid="import-sheet-json-input"
             onChange={(e) => {
               const file = e.target.files?.[0]
               void importFile(file)

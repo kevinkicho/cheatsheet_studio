@@ -707,6 +707,15 @@ export function MainCanvas() {
 
   // Default zoom is 100%. Fit print page / content only via toolbar buttons
   // (auto fit-to-letter was landing at ~40–45% and felt like a zoom-out on drop).
+  // Agent Import JSON dispatches this after load.
+  useEffect(() => {
+    const onFit = () => {
+      window.requestAnimationFrame(() => zoomFitViewport())
+    }
+    window.addEventListener('cheatsheet:fit-print-layout', onFit)
+    return () =>
+      window.removeEventListener('cheatsheet:fit-print-layout', onFit)
+  }, [zoomFitViewport])
 
   // Ctrl/Cmd + wheel: zoom around viewport center (same as toolbar)
   useEffect(() => {

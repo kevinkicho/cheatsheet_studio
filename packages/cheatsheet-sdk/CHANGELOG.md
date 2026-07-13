@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.2
+
+- Layout v2: dense multi-column, **sections** mode (headings as bands), multi-page pageCount hint
+- Flagship packs: **`finance-midterm`**, **`calc-final`**, **`stats-midterm`**, **`micro-midterm`**
+- CLI `layout --dense` / `--mode sections|columns|single`
+- App import modes: new / replace / append + recent-import history + fit-print after import
+- CI smoke for flagship packs; export PDF parity note (Studio vs CLI)
+
 ## 0.3.1
 
 - Flagship pack **`finance-midterm`** (TVM, NPV/IRR, CAPM, WACC + decision flows)

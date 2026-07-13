@@ -23,12 +23,15 @@ description: >
 ```bash
 npm run agent:flagship
 # → examples/agent-out/finance-midterm.sheet.json
+npm run agent:flagships   # + calc-final, stats-midterm, micro-midterm
 npm run agent:flagship:validate
-# optional agent PDF:
+# optional agent PDF (not Studio WYSIWYG):
 npm run agent:flagship:pdf
+# denser layout pass:
+npm run cheatsheet -- layout out/sheet.json --dense --mode sections
 ```
 
-User: **My Sheets → Import JSON** (or **drop** the file) → polish → **Export PDF**.
+User: **Import JSON** (new / replace / append) or **drop** → fit-print → polish → **Export PDF** (Studio).
 
 ### 1. Topic pack (fastest)
 

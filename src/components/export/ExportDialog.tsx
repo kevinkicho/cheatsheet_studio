@@ -748,6 +748,17 @@ export function ExportDialog({
                   pages export as blank paper.
                 </p>
               </fieldset>
+
+              <p
+                className="rounded-md border border-zinc-800/80 bg-zinc-900/50 px-2.5 py-2 text-[10px] leading-snug text-zinc-500"
+                data-testid="export-parity-note"
+              >
+                <span className="font-medium text-zinc-400">Studio PDF</span> =
+                WYSIWYG print-page capture (this dialog).{' '}
+                <span className="font-medium text-zinc-400">CLI export-pdf</span>{' '}
+                = clean agent print layout — not pixel-identical. Prefer Studio
+                after Import when fidelity matters; use CLI for automation.
+              </p>
             </div>
           </div>
 
