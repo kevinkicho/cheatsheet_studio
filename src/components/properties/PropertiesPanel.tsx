@@ -14,7 +14,6 @@ import {
   percentToGridOpacity,
 } from '@/types'
 import { useCanvasStore } from '@/stores/canvasStore'
-import { useUiStore } from '@/stores/uiStore'
 import { LatexView } from '@/components/math/LatexView'
 import { ColorPicker } from '@/components/ui/ColorPicker'
 
@@ -67,12 +66,6 @@ export function PropertiesPanel() {
   const selected = items.filter((i) => selectedIds.includes(i.id))
   const multi = selected.length > 1
   const single = selected.length === 1 ? selected[0] : null
-  const editingProcessChartId = useUiStore((s) => s.editingProcessChartId)
-  /** Mermaid source is read-only (copyable) unless this card is in Process edit mode */
-  const mermaidEditable =
-    Boolean(single) &&
-    editingProcessChartId != null &&
-    single?.id === editingProcessChartId
 
   const [sheetPropsOpen, setSheetPropsOpen] = useState(false)
   const [gridSettingsOpen, setGridSettingsOpen] = useState(false)
@@ -80,7 +73,6 @@ export function PropertiesPanel() {
   const [titleOpen, setTitleOpen] = useState(false)
   const [sizeOpen, setSizeOpen] = useState(false)
   const [contentOpen, setContentOpen] = useState(false)
-  const [mermaidCopied, setMermaidCopied] = useState(false)
 
   if (selected.length === 0) {
     return (
@@ -754,70 +746,6 @@ export function PropertiesPanel() {
                   </p>
                   <LatexView latex={single.latex ?? ''} className="text-sm" />
                 </div>
-              </>
-            )}
-
-          {!multi &&
-            single &&
-            (single.type === 'process-chart' ||
-              single.mermaidSource !== undefined) && (
-              <>
-                <Field label="Mermaid source">
-                  <div className="flex flex-col gap-1.5">
-                    <textarea
-                      value={single.mermaidSource ?? ''}
-                      readOnly={!mermaidEditable}
-                      onChange={
-                        mermaidEditable
-                          ? (e) => patch({ mermaidSource: e.target.value })
-                          : undefined
-                      }
-                      rows={6}
-                      className={`field-input font-mono text-[11px] ${
-                        mermaidEditable
-                          ? ''
-                          : 'cursor-text select-all opacity-90'
-                      }`}
-                      spellCheck={false}
-                      title={
-                        mermaidEditable
-                          ? 'Edit Mermaid while Process edit mode is active'
-                          : 'Select text to copy — use Edit on the card to change the diagram'
-                      }
-                    />
-                    {!mermaidEditable && (
-                      <button
-                        type="button"
-                        className="self-start rounded border border-zinc-700 px-2 py-1 text-[10px] font-medium text-zinc-300 hover:bg-zinc-900 hover:text-white"
-                        onClick={() => {
-                          const text = single.mermaidSource ?? ''
-                          void navigator.clipboard.writeText(text).then(() => {
-                            setMermaidCopied(true)
-                            window.setTimeout(
-                              () => setMermaidCopied(false),
-                              1500,
-                            )
-                          })
-                        }}
-                      >
-                        {mermaidCopied ? 'Copied' : 'Copy Mermaid'}
-                      </button>
-                    )}
-                  </div>
-                </Field>
-                <p className="text-[10px] text-zinc-500">
-                  {mermaidEditable ? (
-                    <>
-                      Editing via Process panel — source updates as you edit.
-                    </>
-                  ) : (
-                    <>
-                      Read-only here. Select and copy, or click{' '}
-                      <strong className="text-zinc-400">Edit</strong> on the
-                      canvas card to open the interactive editor.
-                    </>
-                  )}
-                </p>
               </>
             )}
 

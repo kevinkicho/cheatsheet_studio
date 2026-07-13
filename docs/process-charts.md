@@ -38,7 +38,8 @@ tool and placed as canvas cards.
    still use Mermaid SVG. Both stay vector at card size — see
    [vector-graphics.md](./vector-graphics.md).
 9. **Layers:** click a process card row to **zoom-fit** it on the board.
-   Properties (when not editing that card): readonly Mermaid source + **Copy**.
+   Mermaid source / **Copy** live in Process **Inspector → Chart settings**
+   (not left Item properties).
 
 At insert/update:
 

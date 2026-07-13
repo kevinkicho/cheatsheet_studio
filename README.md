@@ -123,7 +123,7 @@ Vector: [docs/vector-graphics.md](./docs/vector-graphics.md)
 - **Edge labels (Yes/No):** default on the **longest shaft midpoint** (not a short stub); **drag** to reposition; double-click to edit text  
 - **Editor → canvas fidelity:** **Add to canvas** / **Update** / **Done** bake a `processFlow` snapshot (nodes, ports, live pipe paths + label positions). Cards and print export paint that snapshot so the board matches the editor  
 - **Edit mode:** **Add to canvas** only places the card (no auto-edit). Open the diagram with the card’s bottom-right **Edit** badge; **Done** saves and exits. Layers click **zoom-fits** the card  
-- Mermaid source is still saved for re-open / library; **mind maps** still paint via Mermaid SVG on cards. Properties shows **readonly Mermaid + Copy** when a process card is selected and not in edit mode  
+- Mermaid source is still saved for re-open / library; **mind maps** still paint via Mermaid SVG on cards. View / copy Mermaid from the Process editor **Inspector → Chart settings** (not Item properties)  
 - Toolbar chrome: **example template**, **Auto Layout** (dagre ranks), **Organize Connections** (re-route pipes, keep label offsets); Shift+drag pan; drop a link on empty → new rectangle  
 - **Delete** in the process editor removes flowchart nodes/edges only (does not delete the canvas card while editing)  
 - Cloud library (signed in): save / load / update with `mermaidSource` + `processFlow`  
