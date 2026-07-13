@@ -135,14 +135,66 @@ cd packages/cheatsheet-sdk && npm publish --access public
 
 The React app does **not** depend on the published package; monorepo continues to use `tsx` sources.
 
-## Seed catalog (agents)
+## Studio blocks (equations · process charts · figures)
+
+Agents should prefer **Studio blocks** over inventing LaTeX/Mermaid when a match exists.
+
+| Type | Source | Examples |
+|------|--------|----------|
+| `equation` | Seed library (~140) | `math-quad`, chain rule, CAPM, … |
+| `table` | Seed library | derivatives table, SI prefixes, … |
+| `figure` | Seed library (SVG) | `fig-unit-circle`, parabola, … |
+| `process` | Curated SDK blocks | `proc-npv-screen`, `proc-differentiate`, mind maps |
 
 ```bash
-npm run cheatsheet -- catalog-search --query quadratic --limit 5
-npm run cheatsheet -- add-catalog out/sheet.json --id math-quad
+# Browse
+npm run cheatsheet -- blocks --stats
+npm run cheatsheet -- blocks --type equation --query quadratic
+npm run cheatsheet -- blocks --type process --kind flowchart --subject finance
+npm run cheatsheet -- blocks --type figure --limit 20
+
+# Compose a sheet from blocks only
+npm run cheatsheet -- init -o out/from-blocks.sheet.json --title "My sheet"
+npm run cheatsheet -- add-blocks out/from-blocks.sheet.json \
+  --id math-quad --id proc-npv-screen --id fig-unit-circle
 ```
 
-Outline blocks can use `{ "type": "catalog", "id": "math-quad" }` (id or title).
+Outline (prefer blocks for quality):
+
+```json
+{
+  "title": "Agent sheet from Studio blocks",
+  "blocks": [
+    { "type": "heading", "title": "Formulas" },
+    { "type": "catalog", "id": "math-quad" },
+    { "type": "catalog", "ids": ["proc-differentiate", "fig-unit-circle"] },
+    {
+      "type": "blocks",
+      "query": "bayes",
+      "blockType": "process",
+      "limit": 1
+    }
+  ]
+}
+```
+
+TypeScript:
+
+```ts
+import {
+  createSheet,
+  searchBlocks,
+  listBlocksByType,
+} from './packages/cheatsheet-sdk/src/index.ts'
+
+const eqs = await searchBlocks({ type: 'equation', query: 'derivative', limit: 5 })
+const procs = await listBlocksByType('process', { processKind: 'flowchart' })
+const sheet = await createSheet({ title: 'From blocks' })
+  .addBlocks(['math-quad', 'proc-npv-screen'])
+  .then((b) => b.autoLayout().build())
+```
+
+`catalog-search` / `add-catalog` remain as aliases of `blocks` / `add-blocks`.
 
 ## MCP server (coding agents)
 

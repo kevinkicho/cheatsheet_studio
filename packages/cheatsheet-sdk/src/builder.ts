@@ -38,6 +38,7 @@ export type AddFigureInput = {
   title?: string
   imageUrl: string
   imagePath?: string
+  libraryItemId?: string
   x?: number
   y?: number
   width?: number
@@ -176,6 +177,7 @@ export class SheetBuilder {
       zIndex: this.nextZ++,
       imageUrl: input.imageUrl,
       imagePath: input.imagePath,
+      libraryItemId: input.libraryItemId,
       autoFit: false,
       contentFill: true,
       keepAspectRatio: true,
@@ -187,7 +189,7 @@ export class SheetBuilder {
     return this
   }
 
-  addProcess(input: AddProcessInput): this {
+  addProcess(input: AddProcessInput & { libraryItemId?: string }): this {
     const width = input.width ?? 480
     const height = input.height ?? 360
     const kind = input.mermaidKind ?? 'flowchart'
@@ -205,6 +207,7 @@ export class SheetBuilder {
       mermaidKind: kind,
       mermaidDirection: input.mermaidDirection ?? 'TD',
       mermaidTheme: input.mermaidTheme ?? 'dark',
+      libraryItemId: input.libraryItemId,
       autoFit: false,
       contentFill: true,
       keepAspectRatio: true,
@@ -235,13 +238,28 @@ export class SheetBuilder {
   async addFromCatalog(idOrTitle: string): Promise<this> {
     const item = await findCatalogItem(idOrTitle)
     if (!item) {
-      throw new Error(`Catalog item not found: "${idOrTitle}"`)
+      throw new Error(
+        `Block/catalog item not found: "${idOrTitle}". Try: cheatsheet blocks --type equation|process|figure`,
+      )
     }
     this.appendCatalogItem(item)
     return this
   }
 
-  /** Sync append when you already have a CatalogItem. */
+  /** Append many Studio blocks by id/title (equations, figures, process charts, …). */
+  async addBlocks(idsOrTitles: string[]): Promise<this> {
+    for (const id of idsOrTitles) {
+      await this.addFromCatalog(id)
+    }
+    return this
+  }
+
+  /** Alias for addFromCatalog — agent-facing “use our blocks”. */
+  async addBlock(idOrTitle: string): Promise<this> {
+    return this.addFromCatalog(idOrTitle)
+  }
+
+  /** Sync append when you already have a CatalogItem / StudioBlock. */
   appendCatalogItem(item: CatalogItem): this {
     if (item.type === 'equation' && item.latex) {
       return this.addEquation({
@@ -260,10 +278,23 @@ export class SheetBuilder {
       return this.addFigure({
         title: item.title,
         imageUrl: item.imageUrl,
+        libraryItemId: item.id,
+      })
+    }
+    if (
+      (item.type === 'process' || item.mermaidSource) &&
+      item.mermaidSource
+    ) {
+      return this.addProcess({
+        title: item.title,
+        mermaidSource: item.mermaidSource,
+        mermaidKind: item.mermaidKind ?? 'flowchart',
+        mermaidDirection: item.mermaidDirection ?? 'TD',
+        libraryItemId: item.id,
       })
     }
     throw new Error(
-      `Catalog item "${item.id}" (${item.type}) is missing content fields`,
+      `Block "${item.id}" (${item.type}) is missing content fields`,
     )
   }
 

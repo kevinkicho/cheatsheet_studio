@@ -1,7 +1,7 @@
 {
   "name": "@cheatsheet-studio/sdk",
-  "version": "0.3.2",
-  "description": "Headless SDK + CLI for agent-authored CheatSheet Studio sheets (HTML/PDF export, packs, MCP)",
+  "version": "0.4.0",
+  "description": "Headless SDK + CLI for agent-authored CheatSheet Studio sheets (blocks, packs, HTML/PDF, MCP)",
   "type": "module",
   "license": "MIT",
   "author": "CheatSheet Studio",

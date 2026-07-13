@@ -1,6 +1,9 @@
 /**
  * High-level outline agents write — composed into a full SheetDocument.
  * Prefer this over hand-placing x/y for each card.
+ *
+ * Prefer Studio blocks via `catalog` / `blocks` so equations, figures, and
+ * process charts match the app library quality.
  */
 export type OutlineBlock =
   | {
@@ -32,10 +35,32 @@ export type OutlineBlock =
       note?: string
     }
   | {
-      /** Pull from Studio seed catalog by id or title */
+      /** Pull one Studio block (equation/table/figure/process) by id or title */
       type: 'catalog'
       /** Catalog id (preferred) or title */
       id: string
+    }
+  | {
+      /** Pull several Studio blocks by id/title */
+      type: 'catalog'
+      ids: string[]
+    }
+  | {
+      /**
+       * Alias for catalog — agent-facing “use our blocks”.
+       * Either a single `id`, many `ids`, or a search pick.
+       */
+      type: 'blocks'
+      id?: string
+      ids?: string[]
+      /** Search query when id/ids omitted */
+      query?: string
+      /** equation | table | figure | process */
+      blockType?: 'equation' | 'table' | 'figure' | 'process' | 'all'
+      subject?: string
+      processKind?: 'flowchart' | 'mindmap' | 'all'
+      /** How many search hits to append (default 3, max 12) */
+      limit?: number
     }
 
 export type SheetOutline = {

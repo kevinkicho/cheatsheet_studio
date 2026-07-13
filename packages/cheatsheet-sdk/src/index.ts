@@ -33,9 +33,24 @@ export type { SheetOutline, OutlineBlock } from './outline'
 export {
   loadSeedCatalog,
   searchCatalog,
+  searchBlocks,
+  listBlocks,
+  listBlocksByType,
   findCatalogItem,
+  getBlock,
+  catalogStats,
+  clearCatalogCache,
+  listProcessBlocks,
+  findProcessBlock,
+  PROCESS_BLOCKS,
 } from './catalog'
-export type { CatalogItem, CatalogSearchOpts } from './catalog'
+export type {
+  CatalogItem,
+  CatalogBlockType,
+  CatalogSearchOpts,
+  StudioBlock,
+  ProcessBlock,
+} from './catalog'
 
 export { validateSheetDocument } from './validate'
 export type { ValidateIssue, ValidateResult } from './validate'

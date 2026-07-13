@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.0
+
+- **Studio blocks API**: browse/add equations, tables, figures, and process charts
+- Curated **process blocks** (`proc-*`): flowcharts + mind maps for agents
+- CLI: `blocks` (list/search), `add-blocks` (multi-id); `--type process --kind flowchart|mindmap`
+- Outline: `catalog` multi-`ids`, `blocks` search pick
+- TS: `searchBlocks`, `listBlocks`, `listBlocksByType`, `getBlock`, `addBlocks`
+- MCP: `cheatsheet_list_blocks`; catalog search includes process type
+- Catalog snapshot v2 merges process blocks into `seed-catalog.json`
+
 ## 0.3.2
 
 - Layout v2: dense multi-column, **sections** mode (headings as bands), multi-page pageCount hint

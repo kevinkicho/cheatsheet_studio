@@ -56,29 +56,65 @@ const TOOLS: ToolDef[] = [
   },
   {
     name: 'cheatsheet_catalog_search',
-    description: 'Search Studio seed catalog for equations/tables/figures',
+    description:
+      'Search Studio blocks: equations, tables, figures, process charts (flowchart/mindmap)',
     inputSchema: {
       type: 'object',
       properties: {
         query: { type: 'string' },
         type: {
           type: 'string',
-          enum: ['all', 'equation', 'table', 'figure'],
+          enum: ['all', 'equation', 'table', 'figure', 'process'],
         },
+        processKind: {
+          type: 'string',
+          enum: ['all', 'flowchart', 'mindmap'],
+        },
+        subject: { type: 'string' },
+        limit: { type: 'number' },
+      },
+    },
+  },
+  {
+    name: 'cheatsheet_list_blocks',
+    description:
+      'List Studio blocks filtered by type (equation|table|figure|process)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        type: {
+          type: 'string',
+          enum: ['all', 'equation', 'table', 'figure', 'process'],
+        },
+        processKind: {
+          type: 'string',
+          enum: ['all', 'flowchart', 'mindmap'],
+        },
+        subject: { type: 'string' },
+        query: { type: 'string' },
         limit: { type: 'number' },
       },
     },
   },
   {
     name: 'cheatsheet_add_catalog',
-    description: 'Append a seed catalog item to an existing sheet file',
+    description:
+      'Append one or more Studio blocks (equation/figure/process id) to a sheet file',
     inputSchema: {
       type: 'object',
       properties: {
         path: { type: 'string' },
-        idOrTitle: { type: 'string' },
+        idOrTitle: {
+          type: 'string',
+          description: 'Single block id, e.g. math-quad or proc-npv-screen',
+        },
+        ids: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Multiple block ids',
+        },
       },
-      required: ['path', 'idOrTitle'],
+      required: ['path'],
     },
   },
   {
@@ -290,16 +326,25 @@ async function callTool(
         ? { ok: true, summary: summarizeSheet(v.sheet) }
         : { ok: false, issues: v.issues }
     }
-    case 'cheatsheet_catalog_search': {
+    case 'cheatsheet_catalog_search':
+    case 'cheatsheet_list_blocks': {
+      const typeArg = args.type
+      const type =
+        typeArg === 'equation' ||
+        typeArg === 'table' ||
+        typeArg === 'figure' ||
+        typeArg === 'process'
+          ? typeArg
+          : 'all'
+      const pk = args.processKind
+      const processKind =
+        pk === 'flowchart' || pk === 'mindmap' ? pk : 'all'
       const hits = await searchCatalog({
         query: args.query ? String(args.query) : '',
-        type:
-          args.type === 'equation' ||
-          args.type === 'table' ||
-          args.type === 'figure'
-            ? args.type
-            : 'all',
-        limit: typeof args.limit === 'number' ? args.limit : 15,
+        type,
+        processKind,
+        subject: args.subject ? String(args.subject) : undefined,
+        limit: typeof args.limit === 'number' ? args.limit : 25,
       })
       return {
         ok: true,
@@ -309,22 +354,34 @@ async function callTool(
           title: h.title,
           topic: h.topic,
           subject: h.subject,
+          mermaidKind: h.mermaidKind,
+          tags: h.tags,
         })),
       }
     }
     case 'cheatsheet_add_catalog': {
       const path = String(args.path ?? '')
-      const idOrTitle = String(args.idOrTitle ?? '')
-      const item = await findCatalogItem(idOrTitle)
-      if (!item) throw new Error(`Catalog not found: ${idOrTitle}`)
-      const next = await SheetBuilder.fromDocument(readSheetFile(path))
-        .addFromCatalog(idOrTitle)
-        .then((b) => b.build())
+      const ids: string[] = []
+      if (args.idOrTitle) ids.push(String(args.idOrTitle))
+      if (Array.isArray(args.ids)) {
+        for (const x of args.ids) ids.push(String(x))
+      }
+      if (ids.length === 0) {
+        throw new Error('idOrTitle or ids required')
+      }
+      let builder = SheetBuilder.fromDocument(readSheetFile(path))
+      const added: { id: string; type: string; title: string }[] = []
+      for (const id of ids) {
+        const item = await findCatalogItem(id)
+        if (!item) throw new Error(`Block not found: ${id}`)
+        builder = await builder.addFromCatalog(id)
+        added.push({ id: item.id, type: item.type, title: item.title })
+      }
+      const next = builder.autoLayout().build()
       writeSheetFile(path, next)
       return {
         ok: true,
-        added: item.id,
-        title: item.title,
+        added,
         summary: summarizeSheet(next),
       }
     }

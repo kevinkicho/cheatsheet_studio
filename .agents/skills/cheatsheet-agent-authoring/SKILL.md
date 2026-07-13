@@ -76,12 +76,19 @@ npm run cheatsheet -- compose outline.json -o out/sheet.json
 npm run cheatsheet -- validate out/sheet.json
 ```
 
-### 3. Seed catalog
+### 3. Studio blocks (preferred content)
+
+Use curated equations / figures / process charts instead of inventing content:
 
 ```bash
-npm run cheatsheet -- catalog-search --query quadratic --limit 8
-npm run cheatsheet -- add-catalog out/sheet.json --id math-quad
+npm run cheatsheet -- blocks --type equation --query quadratic
+npm run cheatsheet -- blocks --type process --kind flowchart
+npm run cheatsheet -- blocks --type figure
+npm run cheatsheet -- add-blocks out/sheet.json --id math-quad --id proc-npv-screen --id fig-unit-circle
 ```
+
+Outline: `{ "type": "catalog", "id": "math-quad" }` or `{ "type": "catalog", "ids": ["…"] }`  
+or `{ "type": "blocks", "query": "npv", "blockType": "process", "limit": 1 }`.
 
 ### 4. Append more content
 
@@ -137,7 +144,8 @@ import {
 
 ## Rules of thumb
 
-- Prefer **catalog** / topic packs for real Studio formulas over inventing LaTeX
+- Prefer **Studio blocks** (`blocks` / `catalog`) for equations, figures, and process charts
+- Use topic packs for full midterm sheets; use blocks to customize
 - Always `validate` before telling the user to import
 - Layout is automatic; humans refine free-transform in the app
 - Never commit Firebase service account JSON; `push` is optional Admin only

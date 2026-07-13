@@ -1,0 +1,20 @@
+{
+  "title": "Demo — Studio blocks only",
+  "notes": "Equations + process + figure from catalog (no freehand LaTeX)",
+  "autoLayout": true,
+  "blocks": [
+    { "type": "heading", "title": "Equations from library" },
+    { "type": "catalog", "ids": ["math-quad", "math-binom"] },
+    { "type": "heading", "title": "Process charts" },
+    {
+      "type": "catalog",
+      "ids": ["proc-problem-solve", "proc-npv-screen"]
+    },
+    { "type": "heading", "title": "Figures" },
+    {
+      "type": "blocks",
+      "blockType": "figure",
+      "limit": 2
+    }
+  ]
+}

@@ -1,10 +1,11 @@
 import { createSheet, SheetBuilder } from './builder'
+import { searchCatalog } from './catalog'
 import type { SheetOutline } from './outline'
 import type { SheetDocument } from './types'
 
 /**
  * Compose a portable sheet from a high-level outline (agent-friendly).
- * Supports `catalog` blocks that resolve Studio seed items by id/title.
+ * Supports `catalog` / `blocks` that resolve Studio seed + process items.
  */
 export async function composeFromOutline(
   outline: SheetOutline,
@@ -61,9 +62,40 @@ async function applyBlock(
   block: SheetOutline['blocks'][number],
 ) {
   switch (block.type) {
-    case 'catalog':
-      await builder.addFromCatalog(block.id)
+    case 'catalog': {
+      const ids =
+        'ids' in block && Array.isArray(block.ids)
+          ? block.ids
+          : 'id' in block && block.id
+            ? [block.id]
+            : []
+      for (const id of ids) {
+        await builder.addFromCatalog(id)
+      }
       return
+    }
+    case 'blocks': {
+      if (block.id) {
+        await builder.addFromCatalog(block.id)
+      }
+      if (block.ids?.length) {
+        await builder.addBlocks(block.ids)
+      }
+      if (!block.id && !block.ids?.length) {
+        const limit = Math.min(12, Math.max(1, block.limit ?? 3))
+        const hits = await searchCatalog({
+          query: block.query,
+          type: block.blockType === 'all' ? 'all' : (block.blockType ?? 'all'),
+          subject: block.subject,
+          processKind: block.processKind,
+          limit,
+        })
+        for (const hit of hits) {
+          builder.appendCatalogItem(hit)
+        }
+      }
+      return
+    }
     case 'equation':
       builder.addEquation({
         title: block.title ?? 'Equation',

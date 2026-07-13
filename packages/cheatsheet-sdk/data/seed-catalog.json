@@ -1,7 +1,13 @@
 {
-  "version": 1,
-  "exportedAt": "2026-07-13T18:35:05.559Z",
-  "count": 165,
+  "version": 2,
+  "exportedAt": "2026-07-13T18:47:01.003Z",
+  "count": 184,
+  "types": {
+    "equation": 143,
+    "table": 13,
+    "figure": 9,
+    "process": 19
+  },
   "items": [
     {
       "id": "math-quad",
@@ -2017,6 +2023,294 @@
       ],
       "imageUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22260%22%20height%3D%22100%22%20viewBox%3D%220%200%20260%20100%22%3E%0A%20%20%20%20%20%20%3Cline%20x1%3D%2220%22%20y1%3D%2255%22%20x2%3D%22240%22%20y2%3D%2255%22%20stroke%3D%22%236b7280%22%20stroke-width%3D%222%22%2F%3E%0A%20%20%20%20%20%20%3Ccircle%20cx%3D%2240%22%20cy%3D%2255%22%20r%3D%224%22%20fill%3D%22%23818cf8%22%2F%3E%0A%20%20%20%20%20%20%3Ccircle%20cx%3D%22100%22%20cy%3D%2255%22%20r%3D%224%22%20fill%3D%22%23818cf8%22%2F%3E%0A%20%20%20%20%20%20%3Ccircle%20cx%3D%22160%22%20cy%3D%2255%22%20r%3D%224%22%20fill%3D%22%23818cf8%22%2F%3E%0A%20%20%20%20%20%20%3Ccircle%20cx%3D%22220%22%20cy%3D%2255%22%20r%3D%224%22%20fill%3D%22%23818cf8%22%2F%3E%0A%20%20%20%20%20%20%3Cline%20x1%3D%2240%22%20y1%3D%2255%22%20x2%3D%2240%22%20y2%3D%2225%22%20stroke%3D%22%23f87171%22%20stroke-width%3D%222%22%2F%3E%0A%20%20%20%20%20%20%3Cline%20x1%3D%22100%22%20y1%3D%2255%22%20x2%3D%22100%22%20y2%3D%2235%22%20stroke%3D%22%2334d399%22%20stroke-width%3D%222%22%2F%3E%0A%20%20%20%20%20%20%3Cline%20x1%3D%22160%22%20y1%3D%2255%22%20x2%3D%22160%22%20y2%3D%2230%22%20stroke%3D%22%2334d399%22%20stroke-width%3D%222%22%2F%3E%0A%20%20%20%20%20%20%3Cline%20x1%3D%22220%22%20y1%3D%2255%22%20x2%3D%22220%22%20y2%3D%2228%22%20stroke%3D%22%2334d399%22%20stroke-width%3D%222%22%2F%3E%0A%20%20%20%20%20%20%3Ctext%20x%3D%2234%22%20y%3D%2218%22%20fill%3D%22%23fca5a5%22%20font-size%3D%2210%22%20font-family%3D%22sans-serif%22%3E%E2%88%92PV%3C%2Ftext%3E%0A%20%20%20%20%20%20%3Ctext%20x%3D%2295%22%20y%3D%2228%22%20fill%3D%22%2386efac%22%20font-size%3D%2210%22%20font-family%3D%22sans-serif%22%3EC%3C%2Ftext%3E%0A%20%20%20%20%20%20%3Ctext%20x%3D%22155%22%20y%3D%2224%22%20fill%3D%22%2386efac%22%20font-size%3D%2210%22%20font-family%3D%22sans-serif%22%3EC%3C%2Ftext%3E%0A%20%20%20%20%20%20%3Ctext%20x%3D%22215%22%20y%3D%2222%22%20fill%3D%22%2386efac%22%20font-size%3D%2210%22%20font-family%3D%22sans-serif%22%3EC%3C%2Ftext%3E%0A%20%20%20%20%20%20%3Ctext%20x%3D%2235%22%20y%3D%2275%22%20fill%3D%22%239ca3af%22%20font-size%3D%2210%22%20font-family%3D%22sans-serif%22%3E0%3C%2Ftext%3E%0A%20%20%20%20%20%20%3Ctext%20x%3D%2295%22%20y%3D%2275%22%20fill%3D%22%239ca3af%22%20font-size%3D%2210%22%20font-family%3D%22sans-serif%22%3E1%3C%2Ftext%3E%0A%20%20%20%20%20%20%3Ctext%20x%3D%22155%22%20y%3D%2275%22%20fill%3D%22%239ca3af%22%20font-size%3D%2210%22%20font-family%3D%22sans-serif%22%3E2%3C%2Ftext%3E%0A%20%20%20%20%20%20%3Ctext%20x%3D%22215%22%20y%3D%2275%22%20fill%3D%22%239ca3af%22%20font-size%3D%2210%22%20font-family%3D%22sans-serif%22%3En%3C%2Ftext%3E%0A%20%20%20%20%3C%2Fsvg%3E",
       "description": "Annuity cash-flow timeline."
+    },
+    {
+      "id": "proc-problem-solve",
+      "type": "process",
+      "title": "Problem-solving flow",
+      "subject": "mathematics",
+      "topic": "General",
+      "tags": [
+        "exam",
+        "workflow",
+        "flowchart"
+      ],
+      "description": "Generic exam problem workflow.",
+      "mermaidSource": "flowchart TD\n  A[Read problem] --> B[Identify givens / unknown]\n  B --> C[Pick formula or method]\n  C --> D[Compute carefully]\n  D --> E[Check units / reasonableness]\n  E --> F[State answer]",
+      "mermaidKind": "flowchart",
+      "mermaidDirection": "TD"
+    },
+    {
+      "id": "proc-differentiate",
+      "type": "process",
+      "title": "Differentiate workflow",
+      "subject": "mathematics",
+      "topic": "Calculus",
+      "tags": [
+        "derivatives",
+        "flowchart"
+      ],
+      "description": "Chain / product / quotient decision tree.",
+      "mermaidSource": "flowchart TD\n  A[Identify f] --> B{Product / chain / quotient?}\n  B -->|Chain| C[Inner then outer]\n  B -->|Product| D[u'v + uv']\n  B -->|Quotient| E[(u'v - uv') / v²]\n  C --> F[Simplify]\n  D --> F\n  E --> F",
+      "mermaidKind": "flowchart",
+      "mermaidDirection": "TD"
+    },
+    {
+      "id": "proc-integrate",
+      "type": "process",
+      "title": "Integration technique picker",
+      "subject": "mathematics",
+      "topic": "Calculus",
+      "tags": [
+        "integrals",
+        "flowchart"
+      ],
+      "description": "Choose u-sub, parts, or partial fractions.",
+      "mermaidSource": "flowchart TD\n  A[Look at integrand] --> B{f(g) g' form?}\n  B -->|Yes| C[u-substitution]\n  B -->|No| D{Product of unlike?}\n  D -->|Yes| E[Integration by parts]\n  D -->|No| F{Rational?}\n  F -->|Yes| G[Partial fractions]\n  F -->|No| H[Table / rewrite]\n  C --> I[Simplify + +C]\n  E --> I\n  G --> I\n  H --> I",
+      "mermaidKind": "flowchart",
+      "mermaidDirection": "TD"
+    },
+    {
+      "id": "proc-hypothesis-test",
+      "type": "process",
+      "title": "Hypothesis test workflow",
+      "subject": "mathematics",
+      "topic": "Statistics",
+      "tags": [
+        "stats",
+        "p-value",
+        "flowchart"
+      ],
+      "description": "H0/Ha → statistic → decision.",
+      "mermaidSource": "flowchart TD\n  A[State H0 / Ha] --> B[Choose α and test]\n  B --> C[Compute statistic]\n  C --> D[p-value or critical region]\n  D --> E{Reject H0?}\n  E -->|Yes| F[Significant at α]\n  E -->|No| G[Fail to reject]\n  F --> H[Context sentence]\n  G --> H",
+      "mermaidKind": "flowchart",
+      "mermaidDirection": "TD"
+    },
+    {
+      "id": "proc-bayes-update",
+      "type": "process",
+      "title": "Bayes update flow",
+      "subject": "mathematics",
+      "topic": "Probability",
+      "tags": [
+        "bayes",
+        "flowchart"
+      ],
+      "description": "Prior → likelihood → posterior.",
+      "mermaidSource": "flowchart LR\n  A[Prior P(H)] --> B[Likelihood P(D|H)]\n  B --> C[Evidence P(D)]\n  C --> D[Posterior P(H|D)]\n  D --> E[Decision / next data]",
+      "mermaidKind": "flowchart",
+      "mermaidDirection": "LR"
+    },
+    {
+      "id": "proc-npv-screen",
+      "type": "process",
+      "title": "NPV project screen",
+      "subject": "finance",
+      "topic": "Capital budgeting",
+      "tags": [
+        "npv",
+        "irr",
+        "flowchart"
+      ],
+      "description": "Estimate CF → discount → accept/reject.",
+      "mermaidSource": "flowchart TD\n  A[Estimate free cash flows] --> B[Choose discount rate r]\n  B --> C[Compute NPV / IRR / PI]\n  C --> D{NPV > 0?}\n  D -->|Yes| E[Rank and fund]\n  D -->|No| F[Reject or rework CF]\n  E --> G[Sensitivity / scenarios]",
+      "mermaidKind": "flowchart",
+      "mermaidDirection": "TD"
+    },
+    {
+      "id": "proc-capm-apply",
+      "type": "process",
+      "title": "Apply CAPM",
+      "subject": "finance",
+      "topic": "Asset pricing",
+      "tags": [
+        "capm",
+        "beta",
+        "flowchart"
+      ],
+      "description": "Rf, beta, market premium → required return.",
+      "mermaidSource": "flowchart LR\n  A[Get Rf] --> B[Estimate beta]\n  B --> C[Estimate E Rm]\n  C --> D[Compute E Ri]\n  D --> E[Compare to forecast]",
+      "mermaidKind": "flowchart",
+      "mermaidDirection": "LR"
+    },
+    {
+      "id": "proc-supply-demand-shock",
+      "type": "process",
+      "title": "Supply/demand shock analysis",
+      "subject": "economics",
+      "topic": "Microeconomics",
+      "tags": [
+        "elasticity",
+        "equilibrium",
+        "flowchart"
+      ],
+      "description": "Identify shock → shift → new equilibrium.",
+      "mermaidSource": "flowchart TD\n  A[Identify shock] --> B{Demand or supply?}\n  B -->|Demand| C[Shift D]\n  B -->|Supply| D[Shift S]\n  C --> E[New eq P*, Q*]\n  D --> E\n  E --> F[Surplus / shortage transition]",
+      "mermaidKind": "flowchart",
+      "mermaidDirection": "TD"
+    },
+    {
+      "id": "proc-lab-method",
+      "type": "process",
+      "title": "Lab method overview",
+      "subject": "chemistry",
+      "topic": "General",
+      "tags": [
+        "lab",
+        "flowchart"
+      ],
+      "description": "Plan → measure → analyze → report.",
+      "mermaidSource": "flowchart TD\n  A[Hypothesis] --> B[Design procedure]\n  B --> C[Measure data]\n  C --> D[Analyze / error]\n  D --> E[Conclusion]\n  E --> F[Report]",
+      "mermaidKind": "flowchart",
+      "mermaidDirection": "TD"
+    },
+    {
+      "id": "proc-kinematics-1d",
+      "type": "process",
+      "title": "1D kinematics approach",
+      "subject": "physics",
+      "topic": "Mechanics",
+      "tags": [
+        "kinematics",
+        "flowchart"
+      ],
+      "description": "List knowns → pick equation → solve.",
+      "mermaidSource": "flowchart TD\n  A[List knowns / unknown] --> B{Constant a?}\n  B -->|Yes| C[Pick kinematic equation]\n  B -->|No| D[Use calculus / energy]\n  C --> E[Solve algebraically]\n  D --> E\n  E --> F[Check units & sign]",
+      "mermaidKind": "flowchart",
+      "mermaidDirection": "TD"
+    },
+    {
+      "id": "proc-energy-conservation",
+      "type": "process",
+      "title": "Energy conservation flow",
+      "subject": "physics",
+      "topic": "Mechanics",
+      "tags": [
+        "energy",
+        "work",
+        "flowchart"
+      ],
+      "description": "System → energy types → solve.",
+      "mermaidSource": "flowchart TD\n  A[Define system] --> B[Initial energy]\n  B --> C[Final energy]\n  C --> D{Non-conservative work?}\n  D -->|Yes| E[ΔE_mech = W_nc]\n  D -->|No| F[E_i = E_f]\n  E --> G[Solve for unknown]\n  F --> G",
+      "mermaidKind": "flowchart",
+      "mermaidDirection": "TD"
+    },
+    {
+      "id": "proc-limiting-reagent",
+      "type": "process",
+      "title": "Limiting reagent workflow",
+      "subject": "chemistry",
+      "topic": "Stoichiometry",
+      "tags": [
+        "moles",
+        "flowchart"
+      ],
+      "description": "Balance → moles → limiting → product.",
+      "mermaidSource": "flowchart TD\n  A[Balance equation] --> B[Convert to moles]\n  B --> C[Compare mole ratios]\n  C --> D[Identify limiting reagent]\n  D --> E[Compute product moles]\n  E --> F[Mass / yield if needed]",
+      "mermaidKind": "flowchart",
+      "mermaidDirection": "TD"
+    },
+    {
+      "id": "proc-monohybrid",
+      "type": "process",
+      "title": "Monohybrid cross flow",
+      "subject": "biology",
+      "topic": "Genetics",
+      "tags": [
+        "mendel",
+        "punnett",
+        "flowchart"
+      ],
+      "description": "Parents → gametes → Punnett → ratios.",
+      "mermaidSource": "flowchart TD\n  A[Parental genotypes] --> B[Gametes]\n  B --> C[Punnett square]\n  C --> D[Offspring genotypes]\n  D --> E[Phenotype ratios]",
+      "mermaidKind": "flowchart",
+      "mermaidDirection": "TD"
+    },
+    {
+      "id": "proc-exam-checklist",
+      "type": "process",
+      "title": "Exam problem checklist",
+      "subject": "general",
+      "topic": "Study skills",
+      "tags": [
+        "exam",
+        "flowchart"
+      ],
+      "description": "Fast midterm checklist.",
+      "mermaidSource": "flowchart LR\n  A[Read carefully] --> B[Identify topic]\n  B --> C[Pick formula]\n  C --> D[Plug numbers]\n  D --> E[Units / sanity]\n  E --> F[Box answer]",
+      "mermaidKind": "flowchart",
+      "mermaidDirection": "LR"
+    },
+    {
+      "id": "proc-mind-calc-topics",
+      "type": "process",
+      "title": "Calculus topics mind map",
+      "subject": "mathematics",
+      "topic": "Calculus",
+      "tags": [
+        "mindmap",
+        "overview"
+      ],
+      "description": "High-level calc topic map.",
+      "mermaidSource": "mindmap\n  root((Calculus))\n    Limits\n      Continuity\n      L'Hôpital\n    Derivatives\n      Rules\n      Applications\n    Integrals\n      FTC\n      Techniques\n    Series\n      Taylor\n      Convergence",
+      "mermaidKind": "mindmap"
+    },
+    {
+      "id": "proc-mind-finance-topics",
+      "type": "process",
+      "title": "Finance midterm mind map",
+      "subject": "finance",
+      "topic": "Corporate finance",
+      "tags": [
+        "mindmap",
+        "midterm"
+      ],
+      "description": "TVM / risk / capital map.",
+      "mermaidSource": "mindmap\n  root((Finance))\n    TVM\n      PV FV\n      Annuities\n    Projects\n      NPV\n      IRR\n    Risk\n      CAPM\n      Beta\n    Capital\n      WACC\n      Leverage",
+      "mermaidKind": "mindmap"
+    },
+    {
+      "id": "proc-mind-micro-topics",
+      "type": "process",
+      "title": "Microeconomics mind map",
+      "subject": "economics",
+      "topic": "Microeconomics",
+      "tags": [
+        "mindmap",
+        "overview"
+      ],
+      "description": "S&D, elasticity, surplus map.",
+      "mermaidSource": "mindmap\n  root((Micro))\n    Markets\n      Supply\n      Demand\n      Equilibrium\n    Elasticity\n      PED\n      Revenue\n    Welfare\n      CS PS\n      DWL\n    Firm\n      Cost\n      Profit",
+      "mermaidKind": "mindmap"
+    },
+    {
+      "id": "proc-generic-start",
+      "type": "process",
+      "title": "Generic process starter",
+      "subject": "general",
+      "topic": "Templates",
+      "tags": [
+        "template",
+        "flowchart"
+      ],
+      "description": "Blank-ish starter flowchart (edit after import).",
+      "mermaidSource": "flowchart TD\n  Start([Start]) --> Input[Collect input]\n  Input --> Check{Valid?}\n  Check -->|Yes| Process[Process data]\n  Check -->|No| Input\n  Process --> Done([Done])",
+      "mermaidKind": "flowchart",
+      "mermaidDirection": "TD"
+    },
+    {
+      "id": "proc-mind-generic",
+      "type": "process",
+      "title": "Generic mind map starter",
+      "subject": "general",
+      "topic": "Templates",
+      "tags": [
+        "template",
+        "mindmap"
+      ],
+      "description": "Starter mind map (edit after import).",
+      "mermaidSource": "mindmap\n  root((Topic))\n    Branch A\n      Detail 1\n      Detail 2\n    Branch B\n      Detail 3\n    Branch C",
+      "mermaidKind": "mindmap"
     }
   ]
 }

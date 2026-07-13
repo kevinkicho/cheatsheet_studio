@@ -119,6 +119,20 @@ Then sign in as that user in the Studio and open **My Sheets**.
 
 See [mcp.example.json](./mcp.example.json) and monorepo [`.mcp.json.example`](../../.mcp.json.example).
 
+### Studio blocks (equations · process · figures)
+
+```bash
+npm run cheatsheet -- blocks --stats
+npm run cheatsheet -- blocks --type equation --query quadratic
+npm run cheatsheet -- blocks --type process --kind flowchart
+npm run cheatsheet -- blocks --type figure
+
+npm run cheatsheet -- init -o out/sheet.json --title "From blocks"
+npm run cheatsheet -- add-blocks out/sheet.json --id math-quad --id proc-npv-screen --id fig-unit-circle
+```
+
+Outline demo: `examples/outline.blocks-demo.json` → `{ "type": "catalog", "ids": [...] }` or `{ "type": "blocks", "query": "…", "blockType": "process" }`.
+
 ### Topic packs
 
 ```bash

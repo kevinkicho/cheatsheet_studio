@@ -4,7 +4,12 @@
  */
 import { readFileSync } from 'node:fs'
 import { createSheet, SheetBuilder } from './builder'
-import { findCatalogItem, searchCatalog } from './catalog'
+import {
+  catalogStats,
+  findCatalogItem,
+  searchCatalog,
+  searchBlocks,
+} from './catalog'
 import { appendOutlineToSheet, composeFromOutline } from './compose'
 import { pushSheetToFirestore } from './firebase-push'
 import { pullSheetFromFirestore } from './firebase-pull'
@@ -21,13 +26,14 @@ CheatSheet Studio CLI (headless SDK) — does not start the web app
 Commands:
   init           Create a new empty sheet JSON
   compose        Build a sheet from an outline JSON file (agent-friendly)
-  catalog-search Search seed library (equations/tables/figures)
-  add-catalog    Append a seed catalog item by id or title
+  blocks         List/search Studio blocks (equation|table|figure|process)
+  catalog-search Alias of blocks (seed library + process charts)
+  add-blocks     Append Studio blocks by id (eq / figure / process…)
+  add-catalog    Same as add-blocks
   packs          List packs (--json, --subject mathematics)
   pack           Compose pack → sheet (or --all -o dir/)
   merge          Merge multiple sheet JSON files into one
   append-outline Append outline blocks onto an existing sheet
-  add-catalog    Append one or more seed items (--id a --id b)
   doctor         Health-check SDK (catalog, packs, cloud env)
   add-equation | add-table | add-process | add-figure
   layout         Auto-pack items (multi-column when tall)
@@ -39,9 +45,10 @@ Commands:
   mcp            Stdio MCP server for coding agents
 
 Examples:
+  npm run cheatsheet -- blocks --type process --kind flowchart
+  npm run cheatsheet -- blocks --type equation --query quadratic
+  npm run cheatsheet -- add-blocks out/sheet.json --id math-quad --id proc-npv-screen --id fig-unit-circle
   npm run cheatsheet -- pack calc-derivatives -o out/calc.sheet.json
-  npm run cheatsheet -- export-pdf out/calc.sheet.json -o out/calc.pdf
-  npm run cheatsheet -- export-html out/calc.sheet.json -o out/calc.html
   npm run cheatsheet -- doctor
   npm run cheatsheet -- mcp
 
@@ -138,37 +145,62 @@ async function run() {
       return
     }
 
-    if (cmd === 'catalog-search') {
-      const query = argValue(args, '--query') ?? args[1] ?? ''
+    if (cmd === 'blocks' || cmd === 'catalog-search') {
+      const query = argValue(args, '--query') ?? (args[1]?.startsWith('-') ? '' : args[1] ?? '')
       const typeRaw = argValue(args, '--type')
       const type =
         typeRaw === 'equation' ||
         typeRaw === 'table' ||
-        typeRaw === 'figure'
+        typeRaw === 'figure' ||
+        typeRaw === 'process'
           ? typeRaw
           : 'all'
-      const limit = Number(argValue(args, '--limit') ?? '15')
-      const hits = await searchCatalog({ query, type, limit })
+      const kindRaw = argValue(args, '--kind')
+      const processKind =
+        kindRaw === 'flowchart' || kindRaw === 'mindmap' ? kindRaw : 'all'
+      const subject = argValue(args, '--subject')
+      const limit = Number(argValue(args, '--limit') ?? '25')
+      const asJson = args.includes('--json')
+      if (args.includes('--stats')) {
+        const stats = await catalogStats()
+        console.log(JSON.stringify(stats, null, 2))
+        return
+      }
+      const hits = await searchBlocks({
+        query,
+        type,
+        processKind,
+        subject,
+        limit,
+      })
+      if (asJson) {
+        console.log(JSON.stringify(hits, null, 2))
+        return
+      }
       if (hits.length === 0) {
-        console.log('No catalog matches')
+        console.log('No blocks match. Try --type equation|table|figure|process')
         return
       }
       for (const h of hits) {
+        const extra =
+          h.type === 'process'
+            ? ` · ${h.mermaidKind ?? 'flowchart'}`
+            : h.topic
+              ? ` · ${h.topic}`
+              : ''
         console.log(
-          `${h.id.padEnd(22)} ${h.type.padEnd(9)} ${h.title}${
-            h.topic ? ` · ${h.topic}` : ''
-          }`,
+          `${h.id.padEnd(26)} ${h.type.padEnd(9)} ${h.title}${extra}`,
         )
       }
-      console.log(`(${hits.length} result(s))`)
+      console.log(`(${hits.length} block(s))`)
       return
     }
 
-    if (cmd === 'add-catalog') {
+    if (cmd === 'add-blocks' || cmd === 'add-catalog') {
       const file = args[1]
       if (!file) {
         console.error(
-          'Usage: add-catalog <sheet.json> --id <id> [--id <id2> ...]',
+          'Usage: add-blocks <sheet.json> --id <id> [--id <id2> ...]',
         )
         process.exit(1)
       }
@@ -176,7 +208,9 @@ async function run() {
       const titleOnce = argValue(args, '--title')
       if (titleOnce) ids = [...ids, titleOnce]
       if (ids.length === 0) {
-        console.error('Pass one or more --id <catalogId|title>')
+        console.error(
+          'Pass one or more --id <blockId|title>  (math-quad, proc-npv-screen, fig-unit-circle, …)',
+        )
         process.exit(1)
       }
       let builder = SheetBuilder.fromDocument(readSheetFile(file))
@@ -184,11 +218,11 @@ async function run() {
       for (const id of ids) {
         const found = await findCatalogItem(id)
         if (!found) {
-          console.error(`Not found in seed catalog: ${id}`)
+          console.error(`Block not found: ${id}`)
           process.exit(1)
         }
         builder = await builder.addFromCatalog(id)
-        added.push(`${found.id} (${found.title})`)
+        added.push(`${found.id} [${found.type}] (${found.title})`)
       }
       const next = builder.autoLayout().build()
       writeSheetFile(file, next)
