@@ -300,6 +300,11 @@ interface LabelProps {
   onKeyDown: (e: React.KeyboardEvent) => void
   inputRef: React.RefObject<HTMLInputElement | null>
   color?: string
+  /**
+   * Mind maps: allow multi-line wrap inside auto-sized circles.
+   * Flowcharts: single-line (Mermaid layout sizes boxes for one line).
+   */
+  allowWrap?: boolean
 }
 
 function NodeLabel({
@@ -311,6 +316,7 @@ function NodeLabel({
   onKeyDown,
   inputRef,
   color,
+  allowWrap = false,
 }: LabelProps) {
   if (editing) {
     return (
@@ -328,13 +334,17 @@ function NodeLabel({
   }
   return (
     <span
-      className="select-none text-center font-medium leading-snug break-words whitespace-pre-wrap px-1"
+      className={
+        allowWrap
+          ? 'select-none text-center font-medium leading-snug break-words whitespace-pre-wrap px-1'
+          : 'select-none text-center font-medium leading-snug whitespace-nowrap px-1'
+      }
       style={{
         color: color || 'var(--node-text, #f4f4f5)',
         fontFamily: 'var(--node-font, trebuchet ms, verdana, arial, sans-serif)',
         // Inherit mindmap/flowchart size from the node shell
         fontSize: 'inherit',
-        maxWidth: '100%',
+        maxWidth: allowWrap ? '100%' : undefined,
       }}
     >
       {value}
@@ -441,13 +451,14 @@ export function FlowNode({ id, data, selected }: NodeProps) {
     nodeData.portOnPerimeter,
   ])
 
-  // Mindmap: same line breaks as auto-size / card SVG so text stays inside
+  // Mindmap only: same line breaks as auto-size / card SVG so text stays inside.
+  // Flowchart: never force wrap — Mermaid/layout boxes assume single-line labels.
   const displayLabel = isMindmap
     ? wrapMindmapLabelLines(
         nodeData.label,
-        (typeof nodeData.label === 'string' && nodeData.label.length > 18
+        typeof nodeData.label === 'string' && nodeData.label.length > 18
           ? 16
-          : 13),
+          : 13,
       ).join('\n')
     : nodeData.label
 
@@ -460,6 +471,7 @@ export function FlowNode({ id, data, selected }: NodeProps) {
     onKeyDown: handleKeyDown,
     inputRef,
     color: textColor,
+    allowWrap: isMindmap,
   }
 
   const handDrawnClass = handDrawn ? 'rf-hand-drawn' : ''

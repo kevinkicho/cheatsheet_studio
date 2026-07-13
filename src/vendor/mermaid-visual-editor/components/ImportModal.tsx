@@ -3,20 +3,36 @@ import { createPortal } from 'react-dom'
 import { parseMermaidFlowchart } from '../lib/parser'
 import type { ParseResult } from '../lib/parser'
 import { useFlowStore } from '../lib/store'
+import { serialize } from '../lib/serializer'
+import { serializeMindmap } from '../lib/mindmap'
 
 interface ImportModalProps {
   onClose: () => void
+  /** Prefill textarea (defaults to current editor Mermaid syntax). */
+  initialValue?: string
 }
 
-export function ImportModal({ onClose }: ImportModalProps) {
+function currentMermaidSyntax(): string {
+  const { nodes, edges, direction, theme, look, curveStyle, diagramKind } =
+    useFlowStore.getState()
+  if (nodes.length === 0) return ''
+  if (diagramKind === 'mindmap') return serializeMindmap(nodes, edges)
+  return serialize(nodes, edges, { direction, theme, look, curveStyle })
+}
+
+export function ImportModal({ onClose, initialValue }: ImportModalProps) {
   const importDiagram = useFlowStore((s) => s.importDiagram)
-  const [value, setValue] = useState('')
+  const [value, setValue] = useState(
+    () => initialValue ?? currentMermaidSyntax(),
+  )
   const [result, setResult] = useState<ParseResult | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     textareaRef.current?.focus()
+    // Select all so user can replace or edit current source quickly
+    textareaRef.current?.select()
   }, [])
 
   // Live parse feedback with 300ms debounce
@@ -99,7 +115,8 @@ export function ImportModal({ onClose }: ImportModalProps) {
               Import Mermaid Syntax
             </h2>
             <p id="import-modal-desc" className="mt-0.5 text-xs text-zinc-500">
-              Paste a flowchart definition to load it onto the canvas
+              Edit the current Mermaid source or paste a new definition, then
+              import onto the canvas
             </p>
           </div>
           <button

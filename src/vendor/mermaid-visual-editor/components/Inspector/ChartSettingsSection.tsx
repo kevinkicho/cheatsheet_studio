@@ -70,7 +70,12 @@ export function ChartSettingsSection() {
 
   return (
     <div onMouseDown={(e) => e.stopPropagation()}>
-      {importOpen && <ImportModal onClose={() => setImportOpen(false)} />}
+      {importOpen && (
+        <ImportModal
+          onClose={() => setImportOpen(false)}
+          initialValue={currentMermaidSyntax()}
+        />
+      )}
 
       <div
         style={{
@@ -103,7 +108,7 @@ export function ChartSettingsSection() {
                 textAlign: 'left',
               }}
             >
-              Import Mermaid syntax…
+              Import Mermaid syntax
             </button>
             <button
               type="button"
