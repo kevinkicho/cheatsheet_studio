@@ -41,8 +41,10 @@ skills-lock.json
 
 # Generated agent pack dumps / npm packs
 examples/packs-all/
+examples/agent-out/
 *.tgz
 packages/cheatsheet-sdk/*.tgz
+*.pdf
 
 # Editor
 .vscode/*

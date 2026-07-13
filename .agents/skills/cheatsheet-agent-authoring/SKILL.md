@@ -73,7 +73,15 @@ npm run cheatsheet -- add-catalog out/sheet.json --id math-quad
 npm run cheatsheet -- append-outline out/sheet.json extra.outline.json
 ```
 
-### 5. Cloud (trusted only)
+### 5. Print PDF / HTML
+
+```bash
+npx playwright install chromium   # once
+npm run cheatsheet -- export-pdf out/sheet.json -o out/sheet.pdf
+npm run cheatsheet -- export-html out/sheet.json -o out/sheet.html
+```
+
+### 6. Cloud (trusted only)
 
 ```bash
 export CHEATSHEET_SA_PATH=./sa.json

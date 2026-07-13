@@ -33,18 +33,19 @@ Commands:
   layout         Auto-pack items (multi-column when tall)
   validate       Check sheet JSON shape
   summarize      Print summary (--verbose lists items)
+  export-html    Sheet JSON → print HTML
+  export-pdf     Sheet JSON → PDF (Playwright Chromium)
   push / pull    Firestore (CHEATSHEET_SA_PATH + CHEATSHEET_UID)
   mcp            Stdio MCP server for coding agents
 
 Examples:
+  npm run cheatsheet -- pack calc-derivatives -o out/calc.sheet.json
+  npm run cheatsheet -- export-pdf out/calc.sheet.json -o out/calc.pdf
+  npm run cheatsheet -- export-html out/calc.sheet.json -o out/calc.html
   npm run cheatsheet -- doctor
-  npm run cheatsheet -- packs --subject finance
-  npm run cheatsheet -- pack --all -o out/packs/
-  npm run cheatsheet -- merge a.sheet.json b.sheet.json -o combined.sheet.json
-  npm run cheatsheet -- add-catalog sheet.json --id math-quad --id math-binom
   npm run cheatsheet -- mcp
 
-Web: Import/Export JSON · Ctrl+Shift+E export · Ctrl+Shift+I import
+Web: Import/Export JSON · Ctrl+Shift+E / Ctrl+Shift+I
 
 Sheet schema version: v=${SHEET_DOC_VERSION}
 `.trim(),
@@ -388,6 +389,51 @@ async function run() {
         .build()
       writeSheetFile(file, next)
       console.log('Laid out', summarizeSheet(next))
+      return
+    }
+
+    if (cmd === 'export-html') {
+      const file = args[1]
+      if (!file) {
+        console.error('Usage: export-html <sheet.json> -o <out.html> [--light]')
+        process.exit(1)
+      }
+      const out = argValue(args, '-o') ?? argValue(args, '--out')
+      if (!out) {
+        console.error('Missing -o / --out path')
+        process.exit(1)
+      }
+      const { writeSheetHtml } = await import('./export-print')
+      const sheet = readSheetFile(file)
+      const abs = writeSheetHtml(sheet, out, {
+        dark: !args.includes('--light'),
+      })
+      console.log(`HTML → ${abs}`)
+      return
+    }
+
+    if (cmd === 'export-pdf') {
+      const file = args[1]
+      if (!file) {
+        console.error(
+          'Usage: export-pdf <sheet.json> -o <out.pdf> [--keep-html] [--light]\n' +
+            'Requires: npx playwright install chromium',
+        )
+        process.exit(1)
+      }
+      const out = argValue(args, '-o') ?? argValue(args, '--out')
+      if (!out) {
+        console.error('Missing -o / --out path')
+        process.exit(1)
+      }
+      const { exportSheetPdf } = await import('./export-print')
+      const sheet = readSheetFile(file)
+      const result = await exportSheetPdf(sheet, out, {
+        dark: !args.includes('--light'),
+        keepHtml: args.includes('--keep-html'),
+      })
+      console.log(`PDF → ${result.pdfPath} (${result.engine})`)
+      if (result.htmlPath) console.log(`HTML kept → ${result.htmlPath}`)
       return
     }
 

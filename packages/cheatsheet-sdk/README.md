@@ -89,6 +89,7 @@ Then sign in as that user in the Studio and open **My Sheets**.
 | `pull` | Download Firestore sheet → JSON |
 | `packs` | List premade topic packs |
 | `pack <id> -o file` | Compose a topic pack |
+| `export-html` / `export-pdf` | Print HTML or PDF (Playwright) |
 | `mcp` | Stdio MCP server for coding agents |
 
 ### MCP config

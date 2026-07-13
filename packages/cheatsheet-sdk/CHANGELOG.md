@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0
+
+- `export-html` / `export-pdf` (Playwright) for agent delivery
+- MCP export tools · PUBLISH.md for npm
+- 16+ topic packs maintained
+
 ## 0.2.2
 
 - 16 topic packs (+ series, accounting)

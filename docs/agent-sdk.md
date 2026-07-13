@@ -77,17 +77,28 @@ MCP tools `cheatsheet_push` / `cheatsheet_pull` read the same env.
 
 > Prefer Admin only in trusted environments. Do not embed service accounts in client apps or agent prompts.
 
+## Print export (HTML / PDF)
+
+```bash
+npm run cheatsheet -- pack calc-derivatives -o out/calc.sheet.json
+npm run cheatsheet -- export-html out/calc.sheet.json -o out/calc.html
+# PDF needs Chromium once:
+npx playwright install chromium
+npm run cheatsheet -- export-pdf out/calc.sheet.json -o out/calc.pdf
+# optional: --keep-html --light
+```
+
+HTML always works. PDF uses Playwright (already used for app E2E in this monorepo).  
+Not a pixel clone of the Studio canvas — a clean print layout for sharing.
+
 ## Publishing the SDK (npm)
 
 Package: `@cheatsheet-studio/sdk` under `packages/cheatsheet-sdk/`.
 
 ```bash
-# From monorepo root
-npm run sdk:export-catalog   # snapshot seed catalog into package data/
-npm run sdk:build            # tsc → dist/
-npm run sdk:pack             # npm pack dry artifact
-
-# When ready (requires npm login + public scope):
+# From monorepo root — see packages/cheatsheet-sdk/PUBLISH.md
+npm run sdk:build
+npm run sdk:pack
 cd packages/cheatsheet-sdk && npm publish --access public
 ```
 

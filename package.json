@@ -29,7 +29,8 @@
     "sdk:build": "npm run sdk:export-catalog && npm run build --prefix packages/cheatsheet-sdk",
     "sdk:pack": "npm run sdk:build && npm pack --dry-run --workspace=false -C packages/cheatsheet-sdk",
     "sdk:publish:dry": "npm run sdk:pack",
-    "agent:demo": "tsx packages/cheatsheet-sdk/src/cli.ts pack calc-derivatives -o examples/agent-out/calc-derivatives.sheet.json"
+    "agent:demo": "tsx packages/cheatsheet-sdk/src/cli.ts pack calc-derivatives -o examples/agent-out/calc-derivatives.sheet.json",
+    "agent:pdf-demo": "tsx packages/cheatsheet-sdk/src/cli.ts pack calc-derivatives -o examples/agent-out/calc.sheet.json && tsx packages/cheatsheet-sdk/src/cli.ts export-pdf examples/agent-out/calc.sheet.json -o examples/agent-out/calc.pdf --keep-html"
   },
   "dependencies": {
     "@dagrejs/dagre": "^3.0.0",

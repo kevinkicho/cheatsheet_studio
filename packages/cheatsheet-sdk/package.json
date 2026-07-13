@@ -1,7 +1,7 @@
 {
   "name": "@cheatsheet-studio/sdk",
-  "version": "0.2.2",
-  "description": "Headless SDK + CLI for agent-authored CheatSheet Studio sheets",
+  "version": "0.3.0",
+  "description": "Headless SDK + CLI for agent-authored CheatSheet Studio sheets (HTML/PDF export, packs, MCP)",
   "type": "module",
   "license": "MIT",
   "author": "CheatSheet Studio",
@@ -18,7 +18,8 @@
     "mermaid",
     "agents",
     "cli",
-    "mcp"
+    "mcp",
+    "pdf"
   ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -37,6 +38,7 @@
     "topic-packs",
     "data",
     "README.md",
+    "PUBLISH.md",
     "mcp.example.json",
     "CHANGELOG.md"
   ],
@@ -44,7 +46,7 @@
     "build": "tsc -p tsconfig.json",
     "prepack": "npm run build",
     "cli": "tsx src/cli.ts",
-    "export-catalog": "tsx ../../src/../packages/cheatsheet-sdk/scripts/export-seed-catalog.mjs",
+    "export-catalog": "tsx scripts/export-seed-catalog.ts",
     "test": "vitest run --config ../../vitest.config.ts src",
     "pack:dry": "npm pack --dry-run"
   },
@@ -52,10 +54,14 @@
     "node": ">=20"
   },
   "peerDependencies": {
-    "firebase-admin": ">=12"
+    "firebase-admin": ">=12",
+    "playwright": ">=1.40"
   },
   "peerDependenciesMeta": {
     "firebase-admin": {
+      "optional": true
+    },
+    "playwright": {
       "optional": true
     }
   },

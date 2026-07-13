@@ -68,3 +68,10 @@ export type { DoctorCheck, DoctorReport } from './doctor'
 
 export { mergeSheets } from './merge'
 export type { MergeOptions } from './merge'
+
+export {
+  sheetToPrintHtml,
+  writeSheetHtml,
+  exportSheetPdf,
+} from './export-print'
+export type { ExportHtmlOptions, ExportPdfResult } from './export-print'

@@ -204,6 +204,34 @@ const TOOLS: ToolDef[] = [
       required: ['paths', 'outPath'],
     },
   },
+  {
+    name: 'cheatsheet_export_html',
+    description: 'Export sheet JSON to print HTML',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string' },
+        outPath: { type: 'string' },
+        light: { type: 'boolean' },
+      },
+      required: ['path', 'outPath'],
+    },
+  },
+  {
+    name: 'cheatsheet_export_pdf',
+    description:
+      'Export sheet JSON to PDF via Playwright (npx playwright install chromium)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string' },
+        outPath: { type: 'string' },
+        light: { type: 'boolean' },
+        keepHtml: { type: 'boolean' },
+      },
+      required: ['path', 'outPath'],
+    },
+  },
 ]
 
 function respond(id: string | number | null | undefined, result: unknown) {
@@ -390,6 +418,25 @@ async function callTool(
       })
       writeSheetFile(outPath, merged)
       return { ok: true, path: outPath, summary: summarizeSheet(merged) }
+    }
+    case 'cheatsheet_export_html': {
+      const { writeSheetHtml } = await import('./export-print')
+      const path = String(args.path ?? '')
+      const outPath = String(args.outPath ?? '')
+      const abs = writeSheetHtml(readSheetFile(path), outPath, {
+        dark: args.light !== true,
+      })
+      return { ok: true, path: abs }
+    }
+    case 'cheatsheet_export_pdf': {
+      const { exportSheetPdf } = await import('./export-print')
+      const path = String(args.path ?? '')
+      const outPath = String(args.outPath ?? '')
+      const r = await exportSheetPdf(readSheetFile(path), outPath, {
+        dark: args.light !== true,
+        keepHtml: args.keepHtml === true,
+      })
+      return { ok: true, ...r }
     }
     default:
       throw new Error(`Unknown tool: ${name}`)
