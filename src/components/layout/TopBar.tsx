@@ -3,6 +3,7 @@ import {
   BookOpen,
   ChevronDown,
   Cloud,
+  Download,
   FilePlus2,
   LayoutGrid,
   Layers,
@@ -18,6 +19,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useCanvasStore } from '@/stores/canvasStore'
 import { useSheetsStore } from '@/stores/sheetsStore'
 import { useUiStore, type AppView } from '@/stores/uiStore'
+import { downloadWorkspaceSheetJson } from '@/lib/exportSheetDocument'
 import { PrintSizeMenu } from './PrintSizeMenu'
 import { ExportMenu, type ExportStatusKind } from './ExportMenu'
 
@@ -163,6 +165,17 @@ export function TopBar() {
             <span className="hidden sm:inline">
               {isLocalSheet ? 'Sync' : 'Save'}
             </span>
+          </button>
+
+          <button
+            type="button"
+            title="Download this sheet as agent-compatible JSON (re-open via My Sheets → Import JSON)"
+            data-testid="export-sheet-json"
+            onClick={() => downloadWorkspaceSheetJson()}
+            className="inline-flex items-center gap-1 rounded-md border border-zinc-800 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-900"
+          >
+            <Download className="h-3.5 w-3.5" />
+            <span className="hidden lg:inline">Export JSON</span>
           </button>
 
           <div className="ml-0.5 flex items-center gap-0.5">

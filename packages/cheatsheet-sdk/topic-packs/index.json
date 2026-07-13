@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "packs": [
+    {
+      "id": "calc-derivatives",
+      "file": "calc-derivatives.json",
+      "title": "Calculus — Derivatives",
+      "description": "Chain/product rules, derivatives table, solve flowchart.",
+      "subjects": ["mathematics"]
+    },
+    {
+      "id": "finance-capm",
+      "file": "finance-capm.json",
+      "title": "Finance — CAPM",
+      "description": "CAPM formula, symbols table, apply process.",
+      "subjects": ["finance", "economics"]
+    },
+    {
+      "id": "physics-kinematics",
+      "file": "physics-kinematics.json",
+      "title": "Physics — 1D Kinematics",
+      "description": "Constant-acceleration equations and approach flowchart.",
+      "subjects": ["physics"]
+    },
+    {
+      "id": "stats-bayes",
+      "file": "stats-bayes.json",
+      "title": "Statistics — Bayes",
+      "description": "Bayes theorem, terms table, update flowchart.",
+      "subjects": ["mathematics"]
+    }
+  ]
+}

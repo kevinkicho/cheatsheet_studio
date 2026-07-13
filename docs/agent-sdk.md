@@ -85,11 +85,53 @@ Minimal stdio JSON-RPC tools (no extra MCP npm dependency):
 npm run cheatsheet:mcp
 ```
 
-Tools: `cheatsheet_compose`, `cheatsheet_validate`, `cheatsheet_catalog_search`,
-`cheatsheet_add_catalog`, `cheatsheet_init`, `cheatsheet_summarize`.
+**Cursor / Claude Desktop example** — copy [`.mcp.json.example`](../.mcp.json.example)
+to your client config (or merge `mcpServers`):
 
-Point your agent’s MCP config at: `npx tsx packages/cheatsheet-sdk/src/cli.ts mcp`
-(from the monorepo root).
+```json
+{
+  "mcpServers": {
+    "cheatsheet-studio": {
+      "command": "npx",
+      "args": ["tsx", "packages/cheatsheet-sdk/src/cli.ts", "mcp"],
+      "cwd": "${workspaceFolder}"
+    }
+  }
+}
+```
+
+Also: `packages/cheatsheet-sdk/mcp.example.json`.
+
+Tools: `cheatsheet_compose`, `cheatsheet_compose_pack`, `cheatsheet_list_packs`,
+`cheatsheet_validate`, `cheatsheet_catalog_search`, `cheatsheet_add_catalog`,
+`cheatsheet_init`, `cheatsheet_summarize`.
+
+## Topic packs
+
+Premade outlines under `packages/cheatsheet-sdk/topic-packs/`:
+
+| Pack id | Theme |
+|---------|--------|
+| `calc-derivatives` | Calculus derivatives |
+| `finance-capm` | CAPM |
+| `physics-kinematics` | 1D kinematics |
+| `stats-bayes` | Bayes theorem |
+
+```bash
+npm run cheatsheet -- packs
+npm run cheatsheet -- pack finance-capm -o out/capm.sheet.json
+```
+
+Then **My Sheets → Import JSON** in the app.
+
+## Workspace export / import loop
+
+| Direction | Where |
+|-----------|--------|
+| Out | Workspace top bar → **Export JSON** |
+| In | My Sheets → **Import JSON** |
+
+Round-trip: polish in UI → Export JSON → agent edits / re-composes → Import JSON.
 
 ## Extending safely
 

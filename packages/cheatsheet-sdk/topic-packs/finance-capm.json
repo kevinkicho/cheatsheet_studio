@@ -1,0 +1,35 @@
+{
+  "id": "finance-capm",
+  "title": "Finance — CAPM",
+  "description": "Capital Asset Pricing Model formula, interpretation table, and process diagram.",
+  "subjects": ["finance", "economics"],
+  "outline": {
+    "title": "Finance — CAPM",
+    "notes": "Topic pack: finance-capm",
+    "autoLayout": true,
+    "blocks": [
+      { "type": "heading", "title": "CAPM" },
+      {
+        "type": "equation",
+        "title": "Expected return",
+        "latex": "E[R_i] = R_f + \\beta_i\\bigl(E[R_m] - R_f\\bigr)"
+      },
+      {
+        "type": "equation",
+        "title": "Market risk premium",
+        "latex": "\\text{MRP} = E[R_m] - R_f"
+      },
+      {
+        "type": "table",
+        "title": "Symbols",
+        "markdown": "| Symbol | Meaning |\n|--------|--------|\n| R_f | Risk-free rate |\n| \\beta_i | Asset beta vs market |\n| E[R_m] | Expected market return |\n| E[R_i] | Required / expected return |"
+      },
+      {
+        "type": "process",
+        "title": "Apply CAPM",
+        "kind": "flowchart",
+        "mermaid": "flowchart LR\n  A[Get Rf] --> B[Estimate beta]\n  B --> C[Estimate E Rm]\n  C --> D[Compute E Ri]\n  D --> E[Compare to forecast]"
+      }
+    ]
+  }
+}

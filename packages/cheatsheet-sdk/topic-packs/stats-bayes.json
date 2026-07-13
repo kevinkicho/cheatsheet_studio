@@ -1,0 +1,35 @@
+{
+  "id": "stats-bayes",
+  "title": "Statistics — Bayes",
+  "description": "Bayes theorem, odds form, and inference flowchart.",
+  "subjects": ["mathematics"],
+  "outline": {
+    "title": "Statistics — Bayes",
+    "notes": "Topic pack: stats-bayes",
+    "autoLayout": true,
+    "blocks": [
+      { "type": "heading", "title": "Bayes theorem" },
+      {
+        "type": "equation",
+        "title": "Posterior",
+        "latex": "P(H\\mid D) = \\frac{P(D\\mid H)\\,P(H)}{P(D)}"
+      },
+      {
+        "type": "equation",
+        "title": "Law of total probability",
+        "latex": "P(D) = \\sum_i P(D\\mid H_i)\\,P(H_i)"
+      },
+      {
+        "type": "table",
+        "title": "Terms",
+        "markdown": "| Term | Name |\n|------|------|\n| P(H) | Prior |\n| P(D\\|H) | Likelihood |\n| P(H\\|D) | Posterior |\n| P(D) | Evidence |"
+      },
+      {
+        "type": "process",
+        "title": "Bayesian update",
+        "kind": "flowchart",
+        "mermaid": "flowchart TD\n  A[Prior P H] --> B[Likelihood P D given H]\n  B --> C[Normalize by P D]\n  C --> D[Posterior P H given D]"
+      }
+    ]
+  }
+}

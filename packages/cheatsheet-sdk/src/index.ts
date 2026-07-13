@@ -52,3 +52,10 @@ export type { PushOptions, PushResult } from './firebase-push'
 
 export { pullSheetFromFirestore } from './firebase-pull'
 export type { PullOptions } from './firebase-pull'
+
+export {
+  listTopicPacks,
+  loadTopicPack,
+  composeTopicPack,
+} from './topic-packs'
+export type { TopicPack, TopicPackMeta } from './topic-packs'

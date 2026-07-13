@@ -102,6 +102,27 @@ const TOOLS: ToolDef[] = [
       required: ['path'],
     },
   },
+  {
+    name: 'cheatsheet_list_packs',
+    description: 'List premade topic packs (calc, finance, physics, stats, …)',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'cheatsheet_compose_pack',
+    description: 'Compose a premade topic pack into a sheet JSON file',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        packId: {
+          type: 'string',
+          description:
+            'e.g. calc-derivatives, finance-capm, physics-kinematics, stats-bayes',
+        },
+        outPath: { type: 'string' },
+      },
+      required: ['packId', 'outPath'],
+    },
+  },
 ]
 
 function respond(id: string | number | null | undefined, result: unknown) {
@@ -201,6 +222,18 @@ async function callTool(
     case 'cheatsheet_summarize': {
       const path = String(args.path ?? '')
       return { ok: true, summary: summarizeSheet(readSheetFile(path)) }
+    }
+    case 'cheatsheet_list_packs': {
+      const { listTopicPacks } = await import('./topic-packs')
+      return { ok: true, packs: listTopicPacks() }
+    }
+    case 'cheatsheet_compose_pack': {
+      const packId = String(args.packId ?? '')
+      const outPath = String(args.outPath ?? '')
+      const { composeTopicPack } = await import('./topic-packs')
+      const sheet = await composeTopicPack(packId)
+      writeSheetFile(outPath, sheet)
+      return { ok: true, path: outPath, summary: summarizeSheet(sheet) }
     }
     default:
       throw new Error(`Unknown tool: ${name}`)

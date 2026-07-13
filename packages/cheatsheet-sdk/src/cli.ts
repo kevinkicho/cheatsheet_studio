@@ -23,20 +23,24 @@ Commands:
   compose        Build a sheet from an outline JSON file (agent-friendly)
   catalog-search Search seed library (equations/tables/figures)
   add-catalog    Append a seed catalog item by id or title
+  packs          List premade topic packs
+  pack           Compose a topic pack → sheet JSON
   add-equation | add-table | add-process | add-figure
   layout         Auto-pack items (multi-column when tall)
   validate       Check sheet JSON shape
   summarize      Print a one-line summary
   push           Upload to Firestore (firebase-admin)
   pull           Download a Firestore sheet to JSON
+  mcp            Stdio MCP server for coding agents
 
 Examples:
+  npm run cheatsheet -- packs
+  npm run cheatsheet -- pack calc-derivatives -o out/calc.sheet.json
   npm run cheatsheet -- compose examples/outline.demo.json -o out/from-outline.json
   npm run cheatsheet -- catalog-search --query quadratic --limit 5
-  npm run cheatsheet -- add-catalog out/sheet.json --id math-quad
-  npm run cheatsheet -- mcp   # stdio MCP server for coding agents
+  npm run cheatsheet -- mcp
 
-In the web app: My Sheets → Import JSON
+In the web app: My Sheets → Import JSON · Workspace → Export JSON
 
 Sheet schema version: v=${SHEET_DOC_VERSION}
 `.trim(),
@@ -165,6 +169,44 @@ async function run() {
         .then((b) => b.build())
       writeSheetFile(file, next)
       console.log(`Added catalog ${found.id} (${found.title}) ·`, summarizeSheet(next))
+      return
+    }
+
+    if (cmd === 'packs') {
+      const { listTopicPacks } = await import('./topic-packs')
+      const packs = listTopicPacks()
+      if (packs.length === 0) {
+        console.log('No topic packs found')
+        return
+      }
+      for (const p of packs) {
+        console.log(
+          `${p.id.padEnd(22)} ${p.title}${
+            p.description ? `\n  ${p.description}` : ''
+          }`,
+        )
+      }
+      console.log(`\nCompose: npm run cheatsheet -- pack <id> -o out.sheet.json`)
+      return
+    }
+
+    if (cmd === 'pack') {
+      const id = args[1]
+      if (!id) {
+        console.error('Usage: pack <packId> -o <sheet.json>')
+        process.exit(1)
+      }
+      const out = argValue(args, '-o') ?? argValue(args, '--out')
+      if (!out) {
+        console.error('Missing -o / --out path')
+        process.exit(1)
+      }
+      const { composeTopicPack, loadTopicPack } = await import('./topic-packs')
+      const meta = loadTopicPack(id)
+      const sheet = await composeTopicPack(id)
+      writeSheetFile(out, sheet)
+      console.log(`Pack ${meta.id} → ${out}`)
+      console.log(summarizeSheet(sheet))
       return
     }
 

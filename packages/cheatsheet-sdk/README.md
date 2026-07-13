@@ -74,6 +74,20 @@ Then sign in as that user in the Studio and open **My Sheets**.
 | `summarize` | One-line summary |
 | `push` | Create/update Firestore `sheets` doc |
 | `pull` | Download Firestore sheet → JSON |
+| `packs` | List premade topic packs |
+| `pack <id> -o file` | Compose a topic pack |
+| `mcp` | Stdio MCP server for coding agents |
+
+### MCP config
+
+See [mcp.example.json](./mcp.example.json) and monorepo [`.mcp.json.example`](../../.mcp.json.example).
+
+### Topic packs
+
+```bash
+npm run cheatsheet -- packs
+npm run cheatsheet -- pack stats-bayes -o examples/bayes.sheet.json
+```
 
 ## Design notes
 

@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "cheatsheet-studio": {
+      "command": "npx",
+      "args": [
+        "tsx",
+        "packages/cheatsheet-sdk/src/cli.ts",
+        "mcp"
+      ],
+      "cwd": "${workspaceFolder}",
+      "env": {}
+    }
+  }
+}

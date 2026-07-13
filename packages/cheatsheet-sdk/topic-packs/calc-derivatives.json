@@ -1,0 +1,41 @@
+{
+  "id": "calc-derivatives",
+  "title": "Calculus — Derivatives",
+  "description": "Chain/product rules, common derivatives table, and a short solve flowchart.",
+  "subjects": ["mathematics"],
+  "outline": {
+    "title": "Calculus — Derivatives",
+    "notes": "Topic pack: calc-derivatives",
+    "autoLayout": true,
+    "blocks": [
+      { "type": "heading", "title": "Core rules" },
+      {
+        "type": "equation",
+        "title": "Chain rule",
+        "latex": "\\frac{dy}{dx} = \\frac{dy}{du}\\,\\frac{du}{dx}"
+      },
+      {
+        "type": "equation",
+        "title": "Product rule",
+        "latex": "(uv)' = u'v + uv'"
+      },
+      {
+        "type": "equation",
+        "title": "Quotient rule",
+        "latex": "\\left(\\frac{u}{v}\\right)' = \\frac{u'v - uv'}{v^2}"
+      },
+      {
+        "type": "table",
+        "title": "Common derivatives",
+        "markdown": "| f | f' |\n|---|----|\n| x^n | n x^{n-1} |\n| e^x | e^x |\n| \\ln x | 1/x |\n| \\sin x | \\cos x |\n| \\cos x | -\\sin x |"
+      },
+      {
+        "type": "process",
+        "title": "Differentiate workflow",
+        "kind": "flowchart",
+        "mermaid": "flowchart TD\n  A[Identify f] --> B{Product / chain / quotient?}\n  B -->|Chain| C[Inner then outer]\n  B -->|Product| D[u'v + uv']\n  B -->|Quotient| E[(u'v-uv')/v^2]\n  C --> F[Simplify]\n  D --> F\n  E --> F"
+      },
+      { "type": "catalog", "id": "math-quad" }
+    ]
+  }
+}

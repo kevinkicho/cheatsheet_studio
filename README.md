@@ -351,9 +351,15 @@ npm run cheatsheet -- compose examples/outline.demo.json -o examples/from-outlin
 npm run cheatsheet -- validate examples/from-outline.sheet.json
 ```
 
-In the app: **My Sheets → Import JSON** to open an agent sheet in Workspace (UI look/behavior unchanged).
+In the app:
 
-TypeScript: `composeFromOutline({ title, blocks })` or `createSheet().addEquation(…).autoLayout().build()`.  
+- **My Sheets → Import JSON** — open an agent sheet in Workspace  
+- **Workspace → Export JSON** — download the current sheet for agents  
+
+Topic packs: `npm run cheatsheet -- packs` then `pack calc-derivatives -o out.json`.  
+MCP: see [`.mcp.json.example`](./.mcp.json.example) · `npm run cheatsheet:mcp`.  
+
+TypeScript: `composeFromOutline` / `composeTopicPack` / `createSheet()`.  
 Full notes: [docs/agent-sdk.md](./docs/agent-sdk.md) · [packages/cheatsheet-sdk/README.md](./packages/cheatsheet-sdk/README.md).
 
 ---

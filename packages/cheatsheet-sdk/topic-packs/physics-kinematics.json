@@ -1,0 +1,40 @@
+{
+  "id": "physics-kinematics",
+  "title": "Physics — 1D Kinematics",
+  "description": "Constant-acceleration equations and a short problem flowchart.",
+  "subjects": ["physics"],
+  "outline": {
+    "title": "Physics — 1D Kinematics",
+    "notes": "Topic pack: physics-kinematics",
+    "autoLayout": true,
+    "blocks": [
+      { "type": "heading", "title": "Constant acceleration" },
+      {
+        "type": "equation",
+        "title": "Velocity",
+        "latex": "v = v_0 + at"
+      },
+      {
+        "type": "equation",
+        "title": "Displacement",
+        "latex": "x = x_0 + v_0 t + \\tfrac{1}{2} a t^2"
+      },
+      {
+        "type": "equation",
+        "title": "Timeless",
+        "latex": "v^2 = v_0^2 + 2a(x - x_0)"
+      },
+      {
+        "type": "table",
+        "title": "Variables",
+        "markdown": "| Symbol | Meaning |\n|--------|--------|\n| x, x_0 | Position, initial |\n| v, v_0 | Velocity, initial |\n| a | Acceleration |\n| t | Time |"
+      },
+      {
+        "type": "process",
+        "title": "Problem approach",
+        "kind": "flowchart",
+        "mermaid": "flowchart TD\n  A[List knowns] --> B[Pick equation]\n  B --> C[Solve algebraically]\n  C --> D[Check units / sign]"
+      }
+    ]
+  }
+}
