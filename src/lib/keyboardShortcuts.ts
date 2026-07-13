@@ -8,6 +8,8 @@ export type ShortcutActions = {
   redo: () => void
   removeItems: (ids: string[]) => void
   select: (id: string | null) => void
+  /** Select all visible canvas cards (Ctrl/Cmd+A). */
+  selectAll: () => void
   setCanvasTool: (tool: 'select' | 'pan') => void
   pastLength: number
   futureLength: number
@@ -84,6 +86,11 @@ export function handleCanvasKeyDown(
     if ((key === 'z' && e.shiftKey) || key === 'y') {
       if (actions.futureLength > 0) actions.redo()
       return { handled: true, action: 'redo' }
+    }
+    // Select all cards currently on the main canvas (respects show-hidden filter)
+    if (key === 'a' && !e.shiftKey && !e.altKey) {
+      actions.selectAll()
+      return { handled: true, action: 'select-all' }
     }
   }
 

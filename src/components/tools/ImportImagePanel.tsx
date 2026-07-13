@@ -23,6 +23,8 @@ import { useCanvasStore } from '@/stores/canvasStore'
 
 const MAX_BYTES = 10 * 1024 * 1024
 
+// Prefer SVG for diagrams (vector, sharp resize). Raster formats for photos.
+// See docs/vector-graphics.md — new schematic figures should be SVG, not PNG.
 const ACCEPT =
   'image/png,image/jpeg,image/jpg,image/gif,image/webp,image/svg+xml,.png,.jpg,.jpeg,.gif,.webp,.svg'
 

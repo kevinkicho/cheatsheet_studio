@@ -35,8 +35,9 @@ export function parsePipeTable(markdown: string): string[][] {
 /**
  * Pipe-table renderer for library/canvas tables.
  *
- * Uses em-based type and padding so FitContent’s fontSize scaling actually
- * grows/shrinks the table (fixed `text-xs` used to ignore parent font-size).
+ * VECTOR TYPE: uses em-based font/padding so FitContent `fontSize` fit grows
+ * real text (not a CSS-scaled bitmap of a small table). Prefer this over
+ * transform scale for canvas tables (see docs/vector-graphics.md).
  */
 export function MarkdownTable({
   markdown,

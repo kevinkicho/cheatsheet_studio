@@ -7,8 +7,13 @@ import {
 
 export type FitMode = 'scale' | 'scroll' | 'clip'
 /**
- * transform — CSS scale() (smooth while dragging; stretch / non-uniform)
- * fontSize  — change font-size so KaTeX reflows as vector type (uniform; equations)
+ * transform — CSS scale() (fast while dragging; stretch / non-uniform; soft when
+ *   enlarging bitmap-like content)
+ * fontSize  — grow/shrink via font-size so KaTeX + HTML tables reflow as **vector
+ *   type** (stays sharp on resize). Prefer this for equations and pipe tables.
+ *
+ * VECTOR POLICY: new block content should be authored as vector (LaTeX, SVG,
+ * processFlow, em-based HTML tables) so either path stays crisp when possible.
  * See docs/vector-graphics.md
  */
 export type FitMethod = 'transform' | 'fontSize'
@@ -166,9 +171,9 @@ export function FitContent({
       if (!el) return
       const base = Math.max(1, baseFontSize)
       const stretch = fillMode === 'stretch'
-      const hasTable = el.querySelector('table') != null
-      const useTransform =
-        preferTransform || (fitMethod === 'fontSize' && hasTable)
+      // Tables used to force transform, which pixelated text on enlarge.
+      // MarkdownTable uses em sizing so fontSize fit stays sharp (vector type).
+      const useTransform = preferTransform
       const { w: nw, h: nh } = naturalRef.current
       const b = boxRef.current
       // client* includes padding — never put padding on this element

@@ -46,6 +46,11 @@ export function BottomLibraryPanel() {
   const libraryTypeFilter = useUiStore((s) => s.libraryTypeFilter)
   const setLibraryTypeFilter = useUiStore((s) => s.setLibraryTypeFilter)
   const clearLibraryFilters = useUiStore((s) => s.clearLibraryFilters)
+  const libraryFavoriteIds = useUiStore((s) => s.libraryFavoriteIds)
+  const libraryFavoritesOnly = useUiStore((s) => s.libraryFavoritesOnly)
+  const toggleLibraryFavoritesOnly = useUiStore(
+    (s) => s.toggleLibraryFavoritesOnly,
+  )
   const labelsOnly = useUiStore((s) => s.libraryLabelsOnly)
   const toggleLibraryLabelsOnly = useUiStore((s) => s.toggleLibraryLabelsOnly)
   const libraryLayout = useUiStore((s) => s.libraryLayout)
@@ -90,22 +95,27 @@ export function BottomLibraryPanel() {
       ? libraryTopic
       : 'all'
 
-  const filtered = useMemo(
-    () =>
-      filterLibraryItems(items, {
-        subject: librarySubject,
-        topic: effectiveTopic,
-        type: libraryTypeFilter,
-        search: librarySearch,
-      }),
-    [
-      items,
-      librarySearch,
-      librarySubject,
-      effectiveTopic,
-      libraryTypeFilter,
-    ],
-  )
+  const filtered = useMemo(() => {
+    let list = filterLibraryItems(items, {
+      subject: librarySubject,
+      topic: effectiveTopic,
+      type: libraryTypeFilter,
+      search: librarySearch,
+    })
+    if (libraryFavoritesOnly) {
+      const fav = new Set(libraryFavoriteIds)
+      list = list.filter((i) => fav.has(i.id))
+    }
+    return list
+  }, [
+    items,
+    librarySearch,
+    librarySubject,
+    effectiveTopic,
+    libraryTypeFilter,
+    libraryFavoritesOnly,
+    libraryFavoriteIds,
+  ])
 
   const topics = useMemo(
     () => Array.from(new Set(filtered.map((i) => i.topic))).sort(cmpStr),
@@ -116,7 +126,8 @@ export function BottomLibraryPanel() {
     librarySubject !== 'all' ||
     effectiveTopic !== 'all' ||
     libraryTypeFilter !== 'all' ||
-    librarySearch.trim().length > 0
+    librarySearch.trim().length > 0 ||
+    libraryFavoritesOnly
 
   // Stable hover handlers so memoized LibraryItemCard does not re-render on tooltip open
   const hoverHandlers = useMemo(
@@ -350,6 +361,24 @@ export function BottomLibraryPanel() {
             <option value="table">Tables</option>
             <option value="figure">Figures</option>
           </select>
+
+          <button
+            type="button"
+            onClick={() => toggleLibraryFavoritesOnly()}
+            title={
+              libraryFavoritesOnly
+                ? 'Show all catalog items'
+                : 'Show only starred favorites'
+            }
+            data-testid="library-filter-favorites"
+            className={`inline-flex items-center gap-1 rounded border px-1.5 py-1 text-[10px] font-medium transition ${
+              libraryFavoritesOnly
+                ? 'border-amber-500/40 bg-amber-500/15 text-amber-200'
+                : 'border-zinc-700 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200'
+            }`}
+          >
+            ★ Favorites
+          </button>
 
           {hasActiveFilters && (
             <button

@@ -66,15 +66,17 @@ export function isProcessChart(
 }
 
 /**
- * App-wide card defaults:
- * - Equations: KaTeX via font-size fit (vector type, sharp when resized)
- * - Figures: inline SVG at card display size (vector)
- * - Process charts: Mermaid SVG fillContainer (vector)
- * - Background fill ON for all types (turn off via Properties)
- * - contentFill ON so content tracks card resize
+ * App-wide card defaults — VECTOR GRAPHICS FIRST
+ * (docs/vector-graphics.md):
  *
- * New equations and figures are authored as vector graphics (LaTeX / SVG).
- * See docs/vector-graphics.md.
+ * - Equations: KaTeX (vector type) + font-size fit → sharp when resized
+ * - Tables: HTML + em fonts + font-size fit → sharp when resized
+ * - Figures/diagrams: inline SVG with viewBox (not PNG of diagrams)
+ * - Process charts: processFlow / Mermaid SVG
+ * - Photos only: raster via Import Image is OK
+ *
+ * When adding any new block item (seed, tools, import helpers), author it as
+ * vector whenever possible so scaling never softens type or paths.
  */
 export const CARD_DEFAULTS = {
   contentFill: true as const,

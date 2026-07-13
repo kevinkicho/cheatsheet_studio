@@ -1,6 +1,11 @@
 /**
  * Seed Firestore libraryItems from the static catalog.
  *
+ * VECTOR GRAPHICS: SEED_LIBRARY is LaTeX equations, markdown tables, and SVG
+ * figures only (see docs/vector-graphics.md). This script overwrites system
+ * docs with that vector catalog so cloud library matches sharp canvas paint.
+ * Re-run after catalog upgrades: `npm run seed`
+ *
  * Requires the Firebase Admin service account JSON in the project root
  * (gitignored). Never import this file from the Vite client.
  *
@@ -36,7 +41,46 @@ initializeApp({
 
 const db = getFirestore()
 
+function assertVectorCatalog() {
+  let eq = 0
+  let tbl = 0
+  let fig = 0
+  for (const item of SEED_LIBRARY) {
+    if (item.type === 'equation') {
+      eq++
+      if (!item.latex?.trim()) {
+        throw new Error(`equation ${item.id} missing latex (vector type required)`)
+      }
+      if (item.imageUrl) {
+        throw new Error(`equation ${item.id} must not use imageUrl`)
+      }
+    } else if (item.type === 'table') {
+      tbl++
+      if (!item.tableMarkdown?.trim()) {
+        throw new Error(`table ${item.id} missing tableMarkdown`)
+      }
+    } else if (item.type === 'figure') {
+      fig++
+      const url = item.imageUrl ?? ''
+      if (
+        !/^data:image\/svg\+xml/i.test(url) &&
+        !/\.svg(\?|#|$)/i.test(url)
+      ) {
+        throw new Error(
+          `figure ${item.id} must be SVG vector (got non-SVG imageUrl)`,
+        )
+      }
+    } else {
+      throw new Error(`unknown type on ${item.id}: ${(item as { type: string }).type}`)
+    }
+  }
+  console.log(
+    `Vector catalog OK: ${eq} equations (LaTeX), ${tbl} tables (markdown), ${fig} figures (SVG)`,
+  )
+}
+
 async function main() {
+  assertVectorCatalog()
   console.log(`Seeding ${SEED_LIBRARY.length} library items…`)
   const batchSize = 400
   let batch = db.batch()

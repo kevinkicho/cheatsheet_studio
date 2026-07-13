@@ -1,6 +1,6 @@
 import type { CanvasItem } from '@/types'
 import { FitContent } from '@/components/math/FitContent'
-import { FigureView } from '@/components/math/FigureView'
+import { FigureView, isSvgFigureSrc } from '@/components/math/FigureView'
 import { LatexView } from '@/components/math/LatexView'
 import { MarkdownTable } from '@/components/math/MarkdownTable'
 import { MermaidView } from '@/components/math/MermaidView'
@@ -25,6 +25,14 @@ type Props = {
 /**
  * Shared card content for MainCanvas and export — same FitContent / themes /
  * markup so preview and PDF match the viewport.
+ *
+ * VECTOR GRAPHICS POLICY (see docs/vector-graphics.md):
+ * Block items are authored as vectors so resize stays sharp:
+ * - Equations → KaTeX (vector type) + fontSize fit
+ * - Tables → HTML + em type + fontSize fit
+ * - Figures → inline SVG at display size (not bitmap scale)
+ * - Process → processFlow / Mermaid SVG
+ * Photos may still use raster via Import Image.
  */
 export function CanvasCardBody({
   item,
@@ -42,6 +50,29 @@ export function CanvasCardBody({
   const mermaidTheme = item.mermaidTheme ?? 'dark'
 
   if (asFigure && item.imageUrl) {
+    // ── VECTOR FIGURES (SVG) ─────────────────────────────────────────────
+    // Never CSS-transform a fixed-pixel SVG — that soft-rasterizes (PPF looked
+    // pixelated). fillContainer + viewBox re-paints paths at card size → sharp.
+    // Raster photos only: FitContent transform (unavoidable soft scale).
+    // Policy: docs/vector-graphics.md — new diagrams MUST be SVG, not PNG.
+    const vectorSvg = isSvgFigureSrc(item.imageUrl)
+    if (vectorSvg) {
+      return (
+        <div
+          className="relative h-full w-full min-h-0 min-w-0"
+          data-card-vector="svg-figure"
+          data-testid="canvas-vector-figure"
+        >
+          <FigureView
+            src={item.imageUrl}
+            alt={item.title ?? 'figure'}
+            fillContainer
+            stretch={!keepAspectRatio}
+          />
+        </div>
+      )
+    }
+    // Raster (photo) path — soft when enlarged; prefer SVG for diagrams
     return (
       <FitContent
         mode="scale"
@@ -64,6 +95,7 @@ export function CanvasCardBody({
   }
 
   if (item.type === 'process-chart' || item.mermaidSource || item.processFlow) {
+    // Vector paint: processFlow SVG or Mermaid SVG (never a static bitmap)
     // Free-form snapshot: fill card via SVG viewBox (like Mermaid fillContainer).
     // Avoid FitContent+meet double letterbox — that made horizontal resize look uneven.
     if (isProcessFlowSnapshot(item.processFlow)) {
@@ -105,15 +137,19 @@ export function CanvasCardBody({
     item.type === 'equation' ||
     item.type === 'custom-equation' ||
     Boolean(item.latex)
+  // Equations + markdown tables are vector type (KaTeX / HTML em fonts)
+  const isVectorText =
+    isEquation || item.type === 'table' || Boolean(item.tableMarkdown)
 
-  // During drag/resize: always transform (cheap). Idle: fontSize for crisp type.
-  const equationFit =
-    interactiveFast || !isEquation || !keepAspectRatio
+  // During drag/resize: transform (cheap). Idle + aspect locked: fontSize for
+  // crisp vector type (equations AND tables — tables used to always transform).
+  const vectorTextFit =
+    interactiveFast || !isVectorText || !keepAspectRatio
       ? 'transform'
       : CARD_DEFAULTS.equationFitMethod
 
   const atNaturalSize = item.autoFit === true || contentFill === false
-  const equationMaxScale = atNaturalSize ? 1 : maxScale
+  const vectorMaxScale = atNaturalSize ? 1 : maxScale
 
   return (
     <FitContent
@@ -121,12 +157,12 @@ export function CanvasCardBody({
       fillMode={fillMode}
       align={keepAspectRatio ? 'center' : 'start'}
       minScale={minScale}
-      maxScale={isEquation || item.type === 'table' ? equationMaxScale : maxScale}
-      fitMethod={equationFit}
+      maxScale={isVectorText ? vectorMaxScale : maxScale}
+      fitMethod={vectorTextFit}
       baseFontSize={style.fontSize ?? 18}
       showBadge={showBadge && !interactiveFast}
       // Do not put board zoom or transient flags in contentKey (avoids remeasure storms)
-      contentKey={`${item.id}-${item.latex ?? ''}-${item.tableMarkdown ?? ''}-${style.fontSize ?? ''}-fit${item.contentFitKey ?? 0}-fill${contentFill ? 1 : 0}-ar${keepAspectRatio ? 1 : 0}-t${showTitle ? 1 : 0}-m${equationFit}-af${item.autoFit ? 1 : 0}`}
+      contentKey={`${item.id}-${item.latex ?? ''}-${item.tableMarkdown ?? ''}-${style.fontSize ?? ''}-fit${item.contentFitKey ?? 0}-fill${contentFill ? 1 : 0}-ar${keepAspectRatio ? 1 : 0}-t${showTitle ? 1 : 0}-m${vectorTextFit}-af${item.autoFit ? 1 : 0}`}
       className="h-full w-full"
     >
       {isEquation && item.latex && (

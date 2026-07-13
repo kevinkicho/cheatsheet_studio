@@ -119,6 +119,7 @@ export function CanvasItemView({
   const updateItem = useCanvasStore((s) => s.updateItem)
   const editingProcessChartId = useUiStore((s) => s.editingProcessChartId)
   const beginEditProcessChart = useUiStore((s) => s.beginEditProcessChart)
+  const canvasShowHiddenItems = useUiStore((s) => s.canvasShowHiddenItems)
   const isProcessChart =
     item.type === 'process-chart' ||
     Boolean(item.mermaidSource || item.processFlow)
@@ -629,9 +630,8 @@ export function CanvasItemView({
         : 'text-left'
   const showResizeHandles = selected && !item.locked && !multiSelected
 
-  if (item.hidden) {
-    // Still occupies layout identity for marquee hit-tests only when not hidden;
-    // fully omit from canvas when Outliner eye is off.
+  // Layers eye-off: omit from board unless "Show hidden" is checked
+  if (item.hidden && !canvasShowHiddenItems) {
     return null
   }
 
@@ -641,6 +641,8 @@ export function CanvasItemView({
       data-canvas-item
       // overflow-visible so corner/edge handles are not clipped by rounded border
       className={`absolute select-none touch-none ${
+        item.hidden ? 'opacity-40' : ''
+      } ${
         isEditingThis
           ? 'ring-2 ring-emerald-400/90'
           : selected

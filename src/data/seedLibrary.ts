@@ -3,9 +3,11 @@ import type { LibraryItem, Subject } from '@/types'
 /**
  * Encode an inline SVG as a data URL for figure cards.
  *
- * Catalog figures are SVG (vector) so enlarge stays sharp.
+ * VECTOR GRAPHICS: catalog figures are SVG (not PNG) so enlarge stays sharp.
  * Include a viewBox; FigureView inlines SVG at the card’s display size.
- * See docs/vector-graphics.md — new figures use svgUrl(`<svg … viewBox="…">`).
+ * New block items: equations → eq(LaTeX); tables → tbl(markdown); diagrams →
+ * svgUrl(`<svg viewBox=…>`); photos only → Import Image raster.
+ * See docs/vector-graphics.md.
  */
 function svgUrl(svg: string): string {
   return 'data:image/svg+xml,' + encodeURIComponent(svg.trim())
@@ -38,6 +40,10 @@ function eq(
   }
 }
 
+/**
+ * Library table: markdown pipe table (vector HTML type on canvas via em fonts
+ * + FitContent fontSize). Prefer tbl over a PNG screenshot of a table.
+ */
 function tbl(
   id: string,
   title: string,
@@ -60,7 +66,11 @@ function tbl(
   }
 }
 
-/** Library figure: SVG data URL (vector). Prefer svgUrl(`<svg viewBox=…>`) for new diagrams. */
+/**
+ * Library figure — MUST be SVG (vector data URL from svgUrl).
+ * Do not pass PNG/JPEG here; photographs use Import Image, not the seed catalog.
+ * Canvas paints SVG with fillContainer so enlarge stays sharp (no CSS soft-scale).
+ */
 function fig(
   id: string,
   title: string,
@@ -70,6 +80,17 @@ function fig(
   tags: string[],
   description?: string,
 ): LibraryItem {
+  if (
+    typeof imageUrl === 'string' &&
+    imageUrl.length > 0 &&
+    !/^data:image\/svg\+xml/i.test(imageUrl) &&
+    !/\.svg(\?|#|$)/i.test(imageUrl)
+  ) {
+    // Dev-time guard: seed diagrams that are not SVG will soft-scale on resize
+    console.warn(
+      `[seedLibrary] fig("${id}") should use svgUrl(\`<svg viewBox=…>\`) for vector graphics`,
+    )
+  }
   return {
     id,
     type: 'figure',
@@ -83,7 +104,16 @@ function fig(
   }
 }
 
-/** Static catalog: offline fallback and Admin seed source. */
+/**
+ * Static catalog: offline fallback and Admin seed source (`npm run seed`).
+ *
+ * VECTOR GRAPHICS GUARANTEE — every entry is one of:
+ * - equation → KaTeX LaTeX (vector type)
+ * - table → markdown pipes (vector HTML/em type)
+ * - figure → svgUrl(`<svg viewBox=…>`) (vector paths)
+ * Enforced by src/data/seedLibrary.vector.test.ts and scripts/seed-library.ts.
+ * See docs/vector-graphics.md
+ */
 /** Keep first occurrence when catalog appends re-use an id. */
 function uniqueById(items: LibraryItem[]): LibraryItem[] {
   const seen = new Set<string>()

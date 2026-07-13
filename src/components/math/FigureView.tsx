@@ -13,6 +13,22 @@ function isSvgMime(type: string | undefined | null): boolean {
   return Boolean(type && /image\/svg\+xml/i.test(type))
 }
 
+/**
+ * True when the URL is an SVG diagram (vector). Use fillContainer paint so the
+ * browser re-renders paths at the card size — never CSS-scale a fixed 220×180 SVG.
+ * Raster URLs (png/jpeg/…) will soft-scale; diagrams must be SVG.
+ * See docs/vector-graphics.md
+ */
+export function isSvgFigureSrc(src: string | undefined | null): boolean {
+  if (!src) return false
+  const s = src.trim()
+  if (isSvgDataUrl(s)) return true
+  if (/\.svg(\?|#|$)/i.test(s)) return true
+  // local:… refs may be SVG — FigureView resolves and inlines when possible
+  if (/^local:/i.test(s)) return true
+  return false
+}
+
 /** Decode data:image/svg+xml (optional ;base64) to SVG markup. */
 function decodeSvgDataUrl(src: string): string | null {
   const m = src.match(
@@ -55,12 +71,13 @@ function parseViewBox(
 }
 
 /**
- * Fill mode: SVG stretches to host (100% × 100%, meet).
- * Intrinsic mode: fixed px from viewBox so FitContent can zoom-fit + show %.
+ * Fill mode: SVG at 100%×100% with viewBox (native vector scale — sharp).
+ * Intrinsic mode: only for non-canvas measures; prefer fill for cards.
  */
 function prepareInlineSvg(
   markup: string,
   mode: 'fill' | 'intrinsic',
+  preserveAspect: 'meet' | 'none' = 'meet',
 ): string {
   let s = markup.trim()
   const dims = parseViewBox(s)
@@ -72,40 +89,56 @@ function prepareInlineSvg(
   s = s.replace(/(<svg\b[^>]*?)\sheight=["'][^"']*["']/i, '$1')
 
   if (mode === 'fill') {
+    // Vector paint: host size drives the rasterization resolution
     s = s.replace(/<svg\b/i, '<svg width="100%" height="100%"')
   } else {
-    // Intrinsic: concrete px size for FitContent natural measure / CSS scale
+    // Intrinsic: concrete px size (library thumbs only — not for card enlarge)
     const w = dims?.w ?? 220
     const h = dims?.h ?? 180
     s = s.replace(/<svg\b/i, `<svg width="${w}" height="${h}"`)
   }
 
+  const par =
+    preserveAspect === 'none' ? 'none' : 'xMidYMid meet'
   if (/preserveAspectRatio=/i.test(s)) {
     s = s.replace(
       /preserveAspectRatio=["'][^"']*["']/i,
-      'preserveAspectRatio="xMidYMid meet"',
+      `preserveAspectRatio="${par}"`,
     )
   } else {
-    s = s.replace(/<svg\b/i, '<svg preserveAspectRatio="xMidYMid meet"')
+    s = s.replace(/<svg\b/i, `<svg preserveAspectRatio="${par}"`)
   }
   return s
 }
 
 /**
  * Display a figure at the container’s layout size.
- * - fillContainer (default): SVG fills host (canvas cards)
- * - fillContainer false: intrinsic viewBox size for FitContent zoom-fit + badge
+ *
+ * ═══════════════════════════════════════════════════════════════════════
+ * VECTOR GRAPHICS POLICY (mandatory for diagrams):
+ * - Author diagrams as SVG (viewBox + paths/text). Never PNG of a diagram.
+ * - Canvas cards MUST use fillContainer so SVG re-paints at display size.
+ * - Do NOT CSS-scale a fixed-pixel SVG (that looks soft like a bitmap).
+ * - Raster (PNG/JPEG/WebP) is only for photographs and will soft-scale.
+ * See docs/vector-graphics.md
+ * ═══════════════════════════════════════════════════════════════════════
+ *
+ * - fillContainer (default): SVG fills host — sharp on resize
+ * - fillContainer false: fixed px (thumbs only)
  */
 export function FigureView({
   src,
   alt = 'figure',
   className = '',
   fillContainer = true,
+  /** When fillContainer: meet keeps aspect; none stretches with the card. */
+  stretch = false,
 }: {
   src: string
   alt?: string
   className?: string
   fillContainer?: boolean
+  stretch?: boolean
 }) {
   const [resolved, setResolved] = useState<string | null>(() =>
     isLocalAssetRef(src) || isEphemeralBlobUrl(src) ? null : src,
@@ -114,6 +147,7 @@ export function FigureView({
   const [failed, setFailed] = useState(false)
   const [hint, setHint] = useState<string | null>(null)
   const mode = fillContainer ? 'fill' : 'intrinsic'
+  const preserveAspect = stretch ? 'none' : 'meet'
 
   useEffect(() => {
     let cancelled = false
@@ -157,7 +191,7 @@ export function FigureView({
           const text = await rec.blob.text()
           if (cancelled) return
           if (text.includes('<svg')) {
-            setLocalSvgMarkup(prepareInlineSvg(text, mode))
+            setLocalSvgMarkup(prepareInlineSvg(text, mode, preserveAspect))
             setResolved(null)
             return
           }
@@ -173,15 +207,15 @@ export function FigureView({
       cancelled = true
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
-  }, [src, mode])
+  }, [src, mode, preserveAspect])
 
   const dataUrlSvg = useMemo(() => {
     if (!resolved || isLocalAssetRef(src)) return null
     if (!isSvgDataUrl(resolved)) return null
     const raw = decodeSvgDataUrl(resolved)
     if (!raw) return null
-    return prepareInlineSvg(raw, mode)
-  }, [resolved, src, mode])
+    return prepareInlineSvg(raw, mode, preserveAspect)
+  }, [resolved, src, mode, preserveAspect])
 
   const inlineSvg = localSvgMarkup ?? dataUrlSvg
 

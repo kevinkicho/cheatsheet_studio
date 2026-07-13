@@ -29,6 +29,25 @@ describe('SEED_LIBRARY integrity', () => {
     }
   })
 
+  it('every catalog figure is SVG (vector — sharp when resized)', () => {
+    const figures = SEED_LIBRARY.filter((i) => i.type === 'figure')
+    expect(figures.length).toBeGreaterThan(0)
+    for (const item of figures) {
+      const url = item.imageUrl ?? ''
+      const isSvg =
+        /^data:image\/svg\+xml/i.test(url) || /\.svg(\?|#|$)/i.test(url)
+      expect(isSvg, `figure "${item.id}" must be SVG vector, got: ${url.slice(0, 40)}…`).toBe(
+        true,
+      )
+    }
+  })
+
+  it('PPF and other diagrams stay SVG (not raster)', () => {
+    const ppf = SEED_LIBRARY.find((i) => i.id === 'fig-ppf')
+    expect(ppf).toBeTruthy()
+    expect(ppf!.imageUrl).toMatch(/^data:image\/svg\+xml/i)
+  })
+
   it('includes multiple subjects', () => {
     const subjects = new Set(SEED_LIBRARY.map((i) => i.subject))
     expect(subjects.size).toBeGreaterThan(1)

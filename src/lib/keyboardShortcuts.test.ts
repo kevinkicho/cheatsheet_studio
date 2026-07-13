@@ -18,6 +18,7 @@ function actions(partial: Partial<ShortcutActions> = {}): ShortcutActions & {
     redo: vi.fn(),
     removeItems: vi.fn(),
     select: vi.fn(),
+    selectAll: vi.fn(),
     setCanvasTool: vi.fn(),
   }
   return {
@@ -25,6 +26,7 @@ function actions(partial: Partial<ShortcutActions> = {}): ShortcutActions & {
     redo: calls.redo,
     removeItems: calls.removeItems,
     select: calls.select,
+    selectAll: calls.selectAll,
     setCanvasTool: calls.setCanvasTool,
     pastLength: 1,
     futureLength: 1,
@@ -94,6 +96,13 @@ describe('handleCanvasKeyDown', () => {
     )
     expect(r.handled).toBe(false)
     expect(a.calls.undo).not.toHaveBeenCalled()
+  })
+
+  it('Ctrl/Cmd+A selects all canvas items', () => {
+    const a = actions()
+    const r = handleCanvasKeyDown(key('a', { ctrlKey: true }), a)
+    expect(r).toEqual({ handled: true, action: 'select-all' })
+    expect(a.calls.selectAll).toHaveBeenCalledOnce()
   })
 
   it('Delete/Backspace removes selection', () => {

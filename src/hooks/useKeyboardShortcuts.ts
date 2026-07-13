@@ -33,12 +33,21 @@ export function useKeyboardShortcuts() {
       }
 
       const state = useCanvasStore.getState()
+      const ui = useUiStore.getState()
       const result = handleCanvasKeyDown(e, {
         undo: () => state.undo(),
         redo: () => state.redo(),
         removeItems: (ids) => state.removeItems(ids),
         select: (id) => state.select(id),
-        setCanvasTool: (tool) => useUiStore.getState().setCanvasTool(tool),
+        selectAll: () => {
+          // Visible cards only (unless Layers "show hidden" is on)
+          const showHidden = ui.canvasShowHiddenItems
+          const ids = state.items
+            .filter((i) => showHidden || !i.hidden)
+            .map((i) => i.id)
+          state.setSelectedIds(ids)
+        },
+        setCanvasTool: (tool) => ui.setCanvasTool(tool),
         pastLength: state.past.length,
         futureLength: state.future.length,
         selectedIds: state.selectedIds,

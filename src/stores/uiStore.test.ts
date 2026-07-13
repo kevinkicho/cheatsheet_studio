@@ -40,6 +40,27 @@ describe('uiStore — zoom & tools', () => {
     expect(useUiStore.getState().rightTool).toBe('equation')
   })
 
+  it('beginEditProcessChart opens Process panel and binds card', () => {
+    useUiStore.setState({
+      rightOpen: false,
+      rightTool: 'layers',
+      editingProcessChartId: null,
+    })
+    useUiStore.getState().beginEditProcessChart('card-abc')
+    const s = useUiStore.getState()
+    expect(s.editingProcessChartId).toBe('card-abc')
+    expect(s.rightTool).toBe('process')
+    expect(s.rightOpen).toBe(true)
+  })
+
+  it('setRightTool does not clear edit id (panel unmount owns that)', () => {
+    useUiStore.getState().beginEditProcessChart('card-xyz')
+    useUiStore.getState().setRightTool('layers')
+    // Still set until CreateProcessChartPanel unmount flushes/ends edit
+    expect(useUiStore.getState().editingProcessChartId).toBe('card-xyz')
+    expect(useUiStore.getState().rightTool).toBe('layers')
+  })
+
   it('setLibraryLayout switches cards / list', () => {
     useUiStore.getState().setLibraryLayout('list')
     expect(useUiStore.getState().libraryLayout).toBe('list')

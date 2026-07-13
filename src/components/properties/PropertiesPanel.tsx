@@ -62,6 +62,8 @@ export function PropertiesPanel() {
   const updateItemsStyle = useCanvasStore((s) => s.updateItemsStyle)
   const fitItemsToContent = useCanvasStore((s) => s.fitItemsToContent)
   const removeItems = useCanvasStore((s) => s.removeItems)
+  const toggleItemStarred = useCanvasStore((s) => s.toggleItemStarred)
+  const toggleItemHidden = useCanvasStore((s) => s.toggleItemHidden)
 
   const selected = items.filter((i) => selectedIds.includes(i.id))
   const multi = selected.length > 1
@@ -332,7 +334,7 @@ export function PropertiesPanel() {
         <div className="flex items-center gap-0.5">
           <button
             type="button"
-            title="Fit card(s) to content"
+            title="Fit card(s) to content — snugs height/width to the equation/table/SVG and turns off fill-scale so empty letterbox gutters collapse"
             onClick={() => fitItemsToContent(ids)}
             className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-indigo-300 hover:bg-indigo-500/10"
           >
@@ -356,7 +358,8 @@ export function PropertiesPanel() {
             {multi && (
               <p className="rounded-md border border-indigo-500/20 bg-indigo-500/10 px-2 py-1.5 text-[10px] leading-relaxed text-indigo-200/90">
                 Edits below apply to all {selected.length} selected cards.
-                Ctrl/Cmd+click a card to add or remove it from the selection.
+                Ctrl/Cmd+A selects all on the board · Ctrl/Cmd+click to
+                add/remove.
               </p>
             )}
             {!multi && single && (
@@ -367,9 +370,39 @@ export function PropertiesPanel() {
                     ? 'auto-fit (grow up to max)'
                     : 'manual resize'}
                 </span>
-                . Ctrl/Cmd+click other cards to multi-select.
+                . Ctrl/Cmd+A selects all · Ctrl/Cmd+click multi-select.
               </p>
             )}
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                title="Star / unstar (favorites)"
+                onClick={() => {
+                  for (const id of ids) toggleItemStarred(id)
+                }}
+                className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] ${
+                  selected.every((i) => i.starred)
+                    ? 'border-amber-500/40 bg-amber-500/15 text-amber-200'
+                    : 'border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200'
+                }`}
+              >
+                ★ Star
+              </button>
+              <button
+                type="button"
+                title="Hide / show on canvas (Layers eye)"
+                onClick={() => {
+                  for (const id of ids) toggleItemHidden(id)
+                }}
+                className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] ${
+                  selected.every((i) => i.hidden)
+                    ? 'border-zinc-500/40 bg-zinc-800 text-zinc-300'
+                    : 'border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200'
+                }`}
+              >
+                {selected.every((i) => i.hidden) ? 'Hidden' : 'Hide'}
+              </button>
+            </div>
           </div>
         )}
 
@@ -481,6 +514,12 @@ export function PropertiesPanel() {
               })
             }
           />
+          <p className="-mt-1 text-[10px] leading-snug text-zinc-500">
+            On: grow content to the card box (can leave empty bands above/below
+            when the card is taller than the equation). Off +{' '}
+            <strong className="text-zinc-400">Fit</strong> snugs the card to
+            content. See docs/vector-graphics.md (letterboxing).
+          </p>
 
           <TriCheck
             label="Keep aspect ratio"

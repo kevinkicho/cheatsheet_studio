@@ -21,6 +21,12 @@ export type Subject =
   | 'economics'
   | 'finance'
 
+/**
+ * Library / canvas content kinds.
+ * VECTOR-FIRST: equations (LaTeX), tables (markdown), figures (SVG diagrams).
+ * Do not store diagram screenshots as PNG — use SVG. Photos may be raster.
+ * See docs/vector-graphics.md
+ */
 export type LibraryItemType = 'equation' | 'table' | 'figure'
 export type CanvasItemType =
   | LibraryItemType
@@ -136,6 +142,11 @@ export interface CanvasItem {
   transparentBackground?: boolean
   /** When true, card is hidden on the canvas (Outliner eye off). Default false. */
   hidden?: boolean
+  /**
+   * When true, card is starred/favorited (Layers + library favorites filter).
+   * Default false. Sheet-persisted with the item.
+   */
+  starred?: boolean
   /** When true, card cannot be moved/resized (Outliner lock). Default false. */
   locked?: boolean
   /** Outliner folder id; undefined/null = root (ungrouped). */

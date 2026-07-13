@@ -46,6 +46,18 @@ interface UiState {
    * Kept for older UI toggles / persisted state.
    */
   libraryEquationsOnly: boolean
+  /**
+   * Library item ids the user starred (persisted). Filter "Favorites" uses this.
+   * Separate from canvas-card `starred` (sheet-local).
+   */
+  libraryFavoriteIds: string[]
+  /** When true, library list shows only favorited catalog items. */
+  libraryFavoritesOnly: boolean
+  /**
+   * When true, hidden canvas cards still render (dimmed) so you can find them.
+   * Default false — Layers eye-off items stay off the board.
+   */
+  canvasShowHiddenItems: boolean
   /** Canvas viewport zoom (1 = 100%). */
   canvasZoom: number
   /** Active canvas tool: select (marquee / cards) or pan (hand). */
@@ -91,6 +103,11 @@ interface UiState {
   setLibraryEquationsOnly: (only: boolean) => void
   toggleLibraryEquationsOnly: () => void
   clearLibraryFilters: () => void
+  toggleLibraryFavorite: (libraryItemId: string) => void
+  setLibraryFavoritesOnly: (on: boolean) => void
+  toggleLibraryFavoritesOnly: () => void
+  setCanvasShowHiddenItems: (on: boolean) => void
+  toggleCanvasShowHiddenItems: () => void
   setCanvasZoom: (zoom: number) => void
   setCanvasTool: (tool: CanvasTool) => void
   zoomIn: () => void
@@ -116,6 +133,9 @@ export const useUiStore = create<UiState>()(
       libraryHoverPreview: true,
       libraryGroupByTopic: true,
       libraryEquationsOnly: false,
+      libraryFavoriteIds: [],
+      libraryFavoritesOnly: false,
+      canvasShowHiddenItems: false,
       canvasZoom: 1,
       canvasTool: 'select',
       editingProcessChartId: null,
@@ -130,13 +150,13 @@ export const useUiStore = create<UiState>()(
       toggleBottom: () => set({ bottomOpen: !get().bottomOpen }),
       toggleMinimap: () => set({ minimapOpen: !get().minimapOpen }),
       setRightTool: (rightTool) =>
-        set((s) => ({
+        set({
           rightTool,
           rightOpen: true,
-          // Leaving Process panel exits edit mode (auto-save already ran via debounce)
-          editingProcessChartId:
-            rightTool === 'process' ? s.editingProcessChartId : null,
-        })),
+          // Edit mode exit is handled by CreateProcessChartPanel unmount when
+          // leaving Process (flush + endEdit). Clearing here raced with Strict
+          // Mode remounts and with Edit-from-other-tool panel mounts.
+        }),
       setEditingProcessChartId: (editingProcessChartId) =>
         set({ editingProcessChartId }),
       beginEditProcessChart: (id) =>
@@ -197,7 +217,23 @@ export const useUiStore = create<UiState>()(
           libraryTopic: 'all',
           libraryTypeFilter: 'all',
           libraryEquationsOnly: false,
+          libraryFavoritesOnly: false,
         }),
+      toggleLibraryFavorite: (libraryItemId) =>
+        set((s) => {
+          const setIds = new Set(s.libraryFavoriteIds)
+          if (setIds.has(libraryItemId)) setIds.delete(libraryItemId)
+          else setIds.add(libraryItemId)
+          return { libraryFavoriteIds: [...setIds] }
+        }),
+      setLibraryFavoritesOnly: (libraryFavoritesOnly) =>
+        set({ libraryFavoritesOnly }),
+      toggleLibraryFavoritesOnly: () =>
+        set({ libraryFavoritesOnly: !get().libraryFavoritesOnly }),
+      setCanvasShowHiddenItems: (canvasShowHiddenItems) =>
+        set({ canvasShowHiddenItems }),
+      toggleCanvasShowHiddenItems: () =>
+        set({ canvasShowHiddenItems: !get().canvasShowHiddenItems }),
       setCanvasZoom: (zoom) => set({ canvasZoom: clampZoom(zoom) }),
       setCanvasTool: (canvasTool) => set({ canvasTool }),
       zoomIn: () => set({ canvasZoom: clampZoom(get().canvasZoom + ZOOM_STEP) }),
@@ -206,7 +242,7 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: 'cheatsheet-ui',
-      version: 6,
+      version: 7,
       migrate: (persisted) => {
         const p = (persisted ?? {}) as Record<string, unknown>
         const { canvasZoom: _drop, ...rest } = p
@@ -221,6 +257,11 @@ export const useUiStore = create<UiState>()(
             : equationsOnly
               ? 'equation'
               : 'all'
+        const favs = Array.isArray(p.libraryFavoriteIds)
+          ? (p.libraryFavoriteIds as string[]).filter(
+              (x) => typeof x === 'string',
+            )
+          : []
         return {
           ...rest,
           canvasTool: (p.canvasTool as string) === 'pan' ? 'pan' : 'select',
@@ -236,6 +277,9 @@ export const useUiStore = create<UiState>()(
             typeof p.librarySubject === 'string' && p.librarySubject
               ? p.librarySubject
               : 'all',
+          libraryFavoriteIds: favs,
+          libraryFavoritesOnly: Boolean(p.libraryFavoritesOnly),
+          canvasShowHiddenItems: Boolean(p.canvasShowHiddenItems),
         }
       },
       partialize: (s) => ({
@@ -252,6 +296,9 @@ export const useUiStore = create<UiState>()(
         libraryHoverPreview: s.libraryHoverPreview,
         libraryGroupByTopic: s.libraryGroupByTopic,
         libraryEquationsOnly: s.libraryEquationsOnly,
+        libraryFavoriteIds: s.libraryFavoriteIds,
+        libraryFavoritesOnly: s.libraryFavoritesOnly,
+        canvasShowHiddenItems: s.canvasShowHiddenItems,
         canvasTool: s.canvasTool,
       }),
     },

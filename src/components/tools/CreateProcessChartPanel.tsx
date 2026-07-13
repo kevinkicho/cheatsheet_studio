@@ -234,10 +234,27 @@ export function CreateProcessChartPanel() {
     return () => window.clearTimeout(t)
   }, [title, editingProcessChartId, items, updateItem])
 
-  // Unmount (switch away from Process tool) → flush auto-save, free editor RAM
+  // Track which card this panel instance is editing (survives store races on unmount)
+  const editingIdRef = useRef<string | null>(editingProcessChartId)
+  useEffect(() => {
+    editingIdRef.current = editingProcessChartId
+  }, [editingProcessChartId])
+
+  // Unmount only when *leaving* Process for real (other tool / sidebar closed).
+  // React Strict Mode remounts, or Edit-while-panel-closed → open Process, must
+  // NOT clear editingProcessChartId or wipe the RF store mid-edit.
   useEffect(() => {
     return () => {
-      const id = useUiStore.getState().editingProcessChartId
+      const ui = useUiStore.getState()
+      const id = editingIdRef.current ?? ui.editingProcessChartId
+
+      // Still on Process with sidebar open → temporary remount (Strict Mode).
+      // Keep edit mode + graph so the remounted panel can continue loading.
+      if (ui.rightTool === 'process' && ui.rightOpen) {
+        return
+      }
+
+      // Real leave: flush card snapshot then exit edit mode
       if (id) {
         const mermaid = getVisualEditorMermaidSource().trim()
         const flow = getVisualEditorProcessFlow()
@@ -254,7 +271,9 @@ export function CreateProcessChartPanel() {
           }
           useCanvasStore.getState().updateItem(id, patch)
         }
-        useUiStore.getState().endEditProcessChart()
+        if (ui.editingProcessChartId === id) {
+          ui.endEditProcessChart()
+        }
       }
       // Drop RF graph + undo stacks so Process panel unmount doesn't keep
       // large node/edge history in the global flow store.

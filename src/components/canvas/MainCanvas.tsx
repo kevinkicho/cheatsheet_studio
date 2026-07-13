@@ -7,6 +7,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react'
+import { flushSync } from 'react-dom'
 import { useDroppable } from '@dnd-kit/core'
 import {
   ChevronUp,
@@ -542,8 +543,9 @@ export function MainCanvas() {
   ])
 
   /**
-   * Zoom/scroll so a single card fills (or is centered in) the viewport.
-   * Used when selecting a row in the Layers outliner.
+   * Zoom/scroll so a single card is centered in the viewport (Layers click).
+   * Avoids flicker: never paint a frame at the new zoom with the old scroll.
+   * Same zoom → smooth pan from current view; zoom change → atomic jump.
    */
   const zoomFitItem = useCallback(
     (itemId: string) => {
@@ -559,22 +561,42 @@ export function MainCanvas() {
       const contentW = Math.max(it.width || 80, 40)
       const contentH = Math.max(it.height || 48, 40)
       // Cap zoom so tiny cards don't blow past readable size
-      const scale = Math.min(availW / contentW, availH / contentH, 1.75)
-      setCanvasZoom(scale)
+      const targetZoom = clampZoom(
+        Math.min(availW / contentW, availH / contentH, 1.75),
+      )
 
-      requestAnimationFrame(() => {
-        const el = viewportRef.current
-        if (!el) return
-        const left = Math.max(
-          0,
-          it.x * scale - (el.clientWidth - contentW * scale) / 2,
-        )
-        const top = Math.max(
-          0,
-          it.y * scale - (el.clientHeight - contentH * scale) / 2,
-        )
-        el.scrollTo({ left, top, behavior: 'smooth' })
+      // Item center in canvas space → scroll so it sits in viewport center
+      const itemCx = it.x + contentW / 2
+      const itemCy = it.y + contentH / 2
+      const targetLeft = Math.max(
+        0,
+        itemCx * targetZoom - vp.clientWidth / 2,
+      )
+      const targetTop = Math.max(
+        0,
+        itemCy * targetZoom - vp.clientHeight / 2,
+      )
+
+      const currentZoom = zoomRef.current
+      const zoomUnchanged = Math.abs(targetZoom - currentZoom) < 0.015
+
+      if (zoomUnchanged) {
+        // Pan only — smooth from current view toward the card
+        vp.scrollTo({
+          left: targetLeft,
+          top: targetTop,
+          behavior: 'smooth',
+        })
+        return
+      }
+
+      // Zoom change: commit scale + scroll in one turn (no intermediate flash)
+      flushSync(() => {
+        setCanvasZoom(targetZoom)
       })
+      // DOM spacer/transform updated; set scroll before the next paint
+      vp.scrollLeft = targetLeft
+      vp.scrollTop = targetTop
     },
     [setCanvasZoom],
   )

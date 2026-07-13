@@ -23,6 +23,7 @@ import {
   Pencil,
   Search,
   Sigma,
+  Star,
   Table2,
   Trash2,
 } from 'lucide-react'
@@ -62,12 +63,17 @@ export function LayersPanel() {
   const toggleSelect = useCanvasStore((s) => s.toggleSelect)
   const setSelectedIds = useCanvasStore((s) => s.setSelectedIds)
   const requestFocusCanvasItem = useUiStore((s) => s.requestFocusCanvasItem)
+  const canvasShowHiddenItems = useUiStore((s) => s.canvasShowHiddenItems)
+  const toggleCanvasShowHiddenItems = useUiStore(
+    (s) => s.toggleCanvasShowHiddenItems,
+  )
   const bringForward = useCanvasStore((s) => s.bringForward)
   const sendBackward = useCanvasStore((s) => s.sendBackward)
   const bringToFront = useCanvasStore((s) => s.bringToFront)
   const sendToBack = useCanvasStore((s) => s.sendToBack)
   const removeItems = useCanvasStore((s) => s.removeItems)
   const toggleItemHidden = useCanvasStore((s) => s.toggleItemHidden)
+  const toggleItemStarred = useCanvasStore((s) => s.toggleItemStarred)
   const toggleItemLocked = useCanvasStore((s) => s.toggleItemLocked)
   const setFolderHidden = useCanvasStore((s) => s.setFolderHidden)
   const setFolderLocked = useCanvasStore((s) => s.setFolderLocked)
@@ -565,6 +571,7 @@ export function LayersPanel() {
                     }
                   }}
                   onToggleHidden={() => toggleHiddenForRow(item.id)}
+                  onToggleStarred={() => toggleItemStarred(item.id)}
                   onToggleLocked={() => toggleLockedForRow(item.id)}
                   onDragStart={(e) => beginDragItems(e, item.id)}
                   onDragOver={(e) => allowDropOn(e, 'item', item.id)}
@@ -609,14 +616,28 @@ export function LayersPanel() {
         </span>
       </div>
 
-      <div className="flex shrink-0 items-center gap-1.5 border-b border-[#0a0a0a] bg-[#232323] px-2 py-1">
-        <Search className="h-3 w-3 shrink-0 text-[#666]" />
-        <input
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          placeholder="Filter…"
-          className="min-w-0 flex-1 bg-transparent text-[11px] text-[#ddd] outline-none placeholder:text-[#555]"
-        />
+      <div className="flex shrink-0 flex-col gap-1 border-b border-[#0a0a0a] bg-[#232323] px-2 py-1">
+        <div className="flex items-center gap-1.5">
+          <Search className="h-3 w-3 shrink-0 text-[#666]" />
+          <input
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            placeholder="Filter…"
+            className="min-w-0 flex-1 bg-transparent text-[11px] text-[#ddd] outline-none placeholder:text-[#555]"
+          />
+        </div>
+        <label
+          className="flex cursor-pointer items-center gap-1.5 text-[10px] text-[#999] hover:text-[#ccc]"
+          title="When checked, hidden cards still appear dimmed on the board"
+        >
+          <input
+            type="checkbox"
+            checked={canvasShowHiddenItems}
+            onChange={() => toggleCanvasShowHiddenItems()}
+            className="rounded border-zinc-600"
+          />
+          Show hidden on canvas
+        </label>
       </div>
 
       <div className="flex shrink-0 items-center border-b border-[#0a0a0a] bg-[#262626] pr-1 text-[9px] text-[#666]">
@@ -628,7 +649,7 @@ export function LayersPanel() {
             </span>
           )}
         </div>
-        <div className="flex w-[52px] shrink-0 justify-end gap-0.5 pr-0.5">
+        <div className="flex w-[72px] shrink-0 justify-end gap-0.5 pr-0.5">
           <button
             type="button"
             disabled={!hasSelection}
@@ -735,6 +756,7 @@ export function LayersPanel() {
                     }
                   }}
                   onToggleHidden={() => toggleHiddenForRow(item.id)}
+                  onToggleStarred={() => toggleItemStarred(item.id)}
                   onToggleLocked={() => toggleLockedForRow(item.id)}
                   onDragStart={(e) => beginDragItems(e, item.id)}
                   onDragOver={(e) => allowDropOn(e, 'item', item.id)}
@@ -1041,6 +1063,7 @@ function OutlinerRow({
   dragging,
   onSelect,
   onToggleHidden,
+  onToggleStarred,
   onToggleLocked,
   onDragStart,
   onDragOver,
@@ -1053,6 +1076,7 @@ function OutlinerRow({
   dragging?: boolean
   onSelect: (e: MouseEvent) => void
   onToggleHidden: () => void
+  onToggleStarred: () => void
   onToggleLocked: () => void
   onDragStart: (e: DragEvent) => void
   onDragOver: (e: DragEvent) => void
@@ -1061,6 +1085,7 @@ function OutlinerRow({
 }) {
   const hidden = item.hidden === true
   const locked = item.locked === true
+  const starred = item.starred === true
   const TypeIcon = typeIcon(item)
 
   return (
@@ -1103,12 +1128,31 @@ function OutlinerRow({
         >
           {item.title || item.type}
         </span>
+        {starred && (
+          <Star
+            className="h-2.5 w-2.5 shrink-0 fill-amber-400 text-amber-400"
+            aria-hidden
+          />
+        )}
         {locked && (
           <Lock className="h-2.5 w-2.5 shrink-0 opacity-60" aria-hidden />
         )}
       </button>
 
-      <div className="flex w-[52px] shrink-0 justify-end gap-0.5 pr-0.5">
+      <div className="flex w-[72px] shrink-0 justify-end gap-0.5 pr-0.5">
+        <RestrictBtn
+          title={starred ? 'Unstar' : 'Star / favorite'}
+          active={starred}
+          dimmed={!starred}
+          onClick={(e) => {
+            e.stopPropagation()
+            onToggleStarred()
+          }}
+        >
+          <Star
+            className={`h-3 w-3 ${starred ? 'fill-amber-400 text-amber-400' : ''}`}
+          />
+        </RestrictBtn>
         <RestrictBtn
           title={
             hidden

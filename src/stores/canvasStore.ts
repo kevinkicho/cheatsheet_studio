@@ -266,6 +266,8 @@ interface CanvasState {
   bringToFront: (id: string) => void
   sendToBack: (id: string) => void
   toggleItemHidden: (id: string) => void
+  /** Star/favorite a canvas card (sheet-local). */
+  toggleItemStarred: (id: string) => void
   toggleItemLocked: (id: string) => void
   /** Mass-set hidden for all items in a folder (null = root / ungrouped). */
   setFolderHidden: (folderId: string | null, hidden: boolean) => void
@@ -1206,9 +1208,18 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   fitItemsToContent: (ids) => {
     if (ids.length === 0) return
     const setIds = new Set(ids)
+    // Snug card chrome to content: re-enable autoFit and turn OFF fill-scale so
+    // letterboxed gutters (contentFill + tall card) collapse. See FitContent docs.
     set((s) => ({
       items: s.items.map((i) =>
-        setIds.has(i.id) ? { ...i, autoFit: true } : i,
+        setIds.has(i.id)
+          ? {
+              ...i,
+              autoFit: true,
+              contentFill: false,
+              contentFitKey: (i.contentFitKey ?? 0) + 1,
+            }
+          : i,
       ),
       dirty: true,
     }))
@@ -1298,6 +1309,14 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     set((s) => ({
       items: s.items.map((i) =>
         i.id === id ? { ...i, hidden: !i.hidden } : i,
+      ),
+      dirty: true,
+    })),
+
+  toggleItemStarred: (id) =>
+    set((s) => ({
+      items: s.items.map((i) =>
+        i.id === id ? { ...i, starred: !i.starred } : i,
       ),
       dirty: true,
     })),

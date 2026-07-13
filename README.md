@@ -74,9 +74,9 @@ Vector: [docs/vector-graphics.md](./docs/vector-graphics.md)
 
 ### Canvas & tools
 - Freeform board with **select (V)** and **pan (H)** tools; **Shift + left-drag** on empty board temporarily pans (stay in Select)  
-- Drag from library, marquee multi-select, multi-move / multi-resize  
+- **Ctrl/Cmd+A** selects all visible cards; marquee multi-select, multi-move / multi-resize  
 - **Free-transform** on selected cards: 8 handles (corners + edges); **Keep aspect ratio** default ON (Properties)  
-- Zoom (in/out/reset), **fit print layout**, **fit content**, focus selection  
+- Zoom (in/out/reset), **fit print layout**, **fit content**, focus selection; Layers click **zoom-fits** a card without flicker  
 - **Minimap** (bottom-right overview; map icon toggles; drag to pan)  
 - Grid on/off, snap-to-grid, tunable spacing (left **Grid settings**)  
 - **Grid covers:** Full page · Printable area (margins) · Whole board  
@@ -102,15 +102,16 @@ Vector: [docs/vector-graphics.md](./docs/vector-graphics.md)
 
 ### Library & content
 - Subjects: Mathematics, Physics, Chemistry, Biology, Economics, Finance  
-- Built-in **seed catalog** (deduped IDs) + optional Firestore seed  
+- Built-in **seed catalog** (165 vector items: LaTeX equations, markdown tables, SVG figures) + optional Firestore seed (`npm run seed`)  
 - Bottom library: **Cards** or **List** (catalog-style split: list + resizable preview)  
-- Catalog filters: search, subject, topic, type; **Clear** filters  
+- Catalog filters: search, subject, topic, type, **★ Favorites**; **Clear** filters  
+- Star catalog items from the card ★ control; favorites persist in UI prefs  
 - **Multi-column sort** (list / Insert from catalog): click headers to stack sorts (asc → desc → clear); **Clear sort / Clear all**  
 - Search ranking: title prefixes first; short queries ignore raw LaTeX  
 - Library card previews **zoom-to-fill** the thumbnail  
 - Custom equations (KaTeX), markdown tables, figure / image cards  
-- **Vector graphics:** equations use KaTeX with **font-size fit** (+ board paintZoom); catalog figures use **inline SVG**; process charts use Mermaid SVG fill — see [docs/vector-graphics.md](docs/vector-graphics.md)  
-- **New equations / figures** are authored as LaTeX or SVG (not raster diagrams)  
+- **Vector graphics:** equations (KaTeX) and **tables** (HTML/em type) use **font-size fit**; SVG figures paint with **fillContainer** (sharp resize); process charts use processFlow / Mermaid SVG — see [docs/vector-graphics.md](docs/vector-graphics.md)  
+- Catalog is **vector-only** (enforced by tests + seed script); cloud load prefers seed SVG if a system figure was stored as raster  
 - Create Equation panel — **Insert from catalog** (equations only)  
 - Import Image panel (preview, local persist, Storage upload when signed in; **SVG preferred for diagrams**)  
 - GIF seamless loop via bake-at-import  
@@ -130,8 +131,9 @@ Vector: [docs/vector-graphics.md](./docs/vector-graphics.md)
 - See [docs/process-charts.md](./docs/process-charts.md)  
 
 ### Layers & organization
-- Outliner with **nested folders**, reparent, hide/lock per item or folder  
-- Multi-select style/property edits  
+- Outliner with **nested folders**, reparent, **hide / star / lock** per item or folder  
+- **Show hidden on canvas** checkbox (dimmed cards when on)  
+- Multi-select style/property edits (Properties: Star, Hide, Fit, Delete)  
 - Color pickers: **default** swatch + **palette** + **recent** colors (localStorage)  
 - Undo / redo with history batches for continuous drag  
 

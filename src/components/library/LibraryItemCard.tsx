@@ -7,12 +7,13 @@ import {
   type PointerEvent,
 } from 'react'
 import { useDraggable } from '@dnd-kit/core'
-import { Check, Copy, ImageIcon, Sigma, Table2 } from 'lucide-react'
+import { Check, Copy, ImageIcon, Sigma, Star, Table2 } from 'lucide-react'
 import type { LibraryItem } from '@/types'
 import { FitContent } from '@/components/math/FitContent'
 import { FigureView } from '@/components/math/FigureView'
 import { LatexView } from '@/components/math/LatexView'
 import { MarkdownTable } from '@/components/math/MarkdownTable'
+import { useUiStore } from '@/stores/uiStore'
 import {
   LibraryHoverPreview,
   useLibraryHoverPreview,
@@ -47,6 +48,8 @@ function LibraryItemCardInner({
   const localHover = useLibraryHoverPreview()
   const useLocal = hoverPreviewEnabled && !hover
   const [copied, setCopied] = useState(false)
+  const isFavorite = useUiStore((s) => s.libraryFavoriteIds.includes(item.id))
+  const toggleLibraryFavorite = useUiStore((s) => s.toggleLibraryFavorite)
 
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `lib-${item.id}`,
@@ -127,7 +130,27 @@ function LibraryItemCardInner({
           <h4 className="min-w-0 flex-1 truncate text-xs font-medium leading-5 text-zinc-100">
             {item.title}
           </h4>
-          <span className="max-w-[38%] shrink-0 truncate text-right text-[10px] leading-5 text-zinc-400/50">
+          <button
+            type="button"
+            title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+            className="pointer-events-auto flex h-5 w-5 shrink-0 items-center justify-center rounded text-zinc-500 hover:bg-zinc-800 hover:text-amber-300"
+            onPointerDown={(e) => {
+              e.stopPropagation()
+              e.preventDefault()
+            }}
+            onClick={(e) => {
+              e.stopPropagation()
+              e.preventDefault()
+              toggleLibraryFavorite(item.id)
+            }}
+          >
+            <Star
+              className={`h-3 w-3 ${
+                isFavorite ? 'fill-amber-400 text-amber-400' : ''
+              }`}
+            />
+          </button>
+          <span className="max-w-[32%] shrink-0 truncate text-right text-[10px] leading-5 text-zinc-400/50">
             {item.topic}
           </span>
         </div>

@@ -4,6 +4,55 @@ import { db } from '@/lib/firebase'
 import { SEED_LIBRARY } from '@/data/seedLibrary'
 import type { LibraryItem, Subject } from '@/types'
 
+/**
+ * VECTOR GRAPHICS: library content must stay sharp on canvas resize.
+ * Seed catalog is LaTeX / markdown tables / SVG only (docs/vector-graphics.md).
+ * When Firestore has a stale system figure as raster, prefer the seed SVG.
+ */
+const SEED_BY_ID = new Map(SEED_LIBRARY.map((i) => [i.id, i]))
+
+function isSvgUrl(url: string | undefined): boolean {
+  if (!url) return false
+  return /^data:image\/svg\+xml/i.test(url) || /\.svg(\?|#|$)/i.test(url)
+}
+
+/** Prefer seed vector payload when cloud doc is missing or raster for same id. */
+function preferSeedVector(cloud: LibraryItem): LibraryItem {
+  const seed = SEED_BY_ID.get(cloud.id)
+  if (!seed) return cloud
+  if (cloud.type === 'figure' || seed.type === 'figure') {
+    if (isSvgUrl(seed.imageUrl) && !isSvgUrl(cloud.imageUrl)) {
+      return {
+        ...cloud,
+        type: 'figure',
+        imageUrl: seed.imageUrl,
+        latex: undefined,
+        tableMarkdown: undefined,
+      }
+    }
+  }
+  if (
+    (cloud.type === 'equation' || seed.type === 'equation') &&
+    seed.latex &&
+    !cloud.latex?.trim()
+  ) {
+    return { ...cloud, type: 'equation', latex: seed.latex, imageUrl: undefined }
+  }
+  if (
+    (cloud.type === 'table' || seed.type === 'table') &&
+    seed.tableMarkdown &&
+    !cloud.tableMarkdown?.trim()
+  ) {
+    return {
+      ...cloud,
+      type: 'table',
+      tableMarkdown: seed.tableMarkdown,
+      imageUrl: undefined,
+    }
+  }
+  return cloud
+}
+
 interface LibraryState {
   items: LibraryItem[]
   loading: boolean
@@ -29,7 +78,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           const data = d.data() as Record<string, unknown>
           const latex = data.latex as string | undefined
           const tableMarkdown = data.tableMarkdown as string | undefined
-          const imageUrl = data.imageUrl as string | undefined
+          let imageUrl = data.imageUrl as string | undefined
           let type = data.type as LibraryItem['type'] | undefined
           // Infer type for older cloud docs missing `type`
           if (!type) {
@@ -38,7 +87,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
             else if (imageUrl) type = 'figure'
             else type = 'equation'
           }
-          return {
+          const cloud = {
             id: d.id,
             type,
             title: (data.title as string) ?? 'Untitled',
@@ -54,12 +103,14 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
             isSystem: (data.isSystem as boolean) ?? false,
             createdBy: data.createdBy as string | undefined,
           } as LibraryItem
+          // Affirmative: never serve raster diagrams when seed has SVG for this id
+          return preferSeedVector(cloud)
         })
         set({ items, source: 'firestore', loading: false })
         return
       }
     } catch {
-      // Offline / rules not ready — fall back to seed
+      // Offline / rules not ready — fall back to seed (always vector)
     }
     set({ items: SEED_LIBRARY, source: 'seed', loading: false })
   },
