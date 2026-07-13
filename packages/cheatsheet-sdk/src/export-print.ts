@@ -632,24 +632,31 @@ export async function exportSheetJpeg(
 }
 
 /**
- * Vector-friendly SVG export.
+ * Vector-friendly export that **opens in Chrome via file://**.
  *
- * After KaTeX + Mermaid render in Chromium, the sheet surface is wrapped in an
- * SVG `<foreignObject>` so layout/type stay resolution-independent when zoomed
- * in a browser (or tools that support foreignObject). Mermaid diagrams are
- * already true SVG in the DOM.
+ * Pure SVG+foreignObject often fails as XML (`&nbsp;` etc. from KaTeX) and
+ * CDN CSS is blocked on file://. We instead write a self-contained **HTML**
+ * document that uses SVG as the root canvas metaphor — saved as `.svg.html`
+ * companion is optional; primary deliverable is a standalone HTML file that
+ * zooms sharply (KaTeX + Mermaid already rendered).
  *
- * Note: PNG cannot be “infinitely scalable” — it is always a pixel grid.
- * Prefer SVG / HTML / PDF for sharp zoom and print.
+ * For a true `.svg` file we still emit one, but with HTML entities sanitized
+ * and styles inlined so Chrome's XML parser accepts it.
+ *
+ * PNG remains raster-only.
  */
 export async function exportSheetSvg(
   sheet: SheetDocument,
   outPath: string,
   opts?: ExportHtmlOptions & { keepHtml?: boolean },
 ): Promise<ExportSvgResult> {
-  const abs = path.resolve(outPath.endsWith('.svg') ? outPath : `${outPath}.svg`)
-  mkdirSync(path.dirname(abs), { recursive: true })
-  const htmlPath = abs.replace(/\.svg$/i, '') + '.print.html'
+  const absSvg = path.resolve(
+    outPath.endsWith('.svg') ? outPath : `${outPath}.svg`,
+  )
+  // Always also write a Chrome-safe vector HTML next to it (same stem)
+  const absHtmlVector = absSvg.replace(/\.svg$/i, '.vector.html')
+  mkdirSync(path.dirname(absSvg), { recursive: true })
+  const htmlPath = absSvg.replace(/\.svg$/i, '') + '.print.html'
   const dims = pageDims(sheet, opts)
   writeSheetHtml(sheet, htmlPath, {
     layout: 'canvas',
@@ -662,7 +669,25 @@ export async function exportSheetSvg(
   try {
     let width = dims.width
     let height = dims.height
-    let svgBody = ''
+    let surfaceHtml = ''
+    let katexCss = ''
+
+    // Inline KaTeX CSS so file:// works offline (CDN blocked on file pages)
+    try {
+      const res = await fetch(
+        'https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.css',
+      )
+      if (res.ok) {
+        katexCss = await res.text()
+        // Point font URLs to absolute CDN (fonts still need network once)
+        katexCss = katexCss.replace(
+          /url\((?:'|")?fonts\//g,
+          "url(https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/fonts/",
+        )
+      }
+    } catch {
+      katexCss = '/* katex css fetch failed — equations may lack font metrics */'
+    }
 
     await withPlaywrightPage(
       htmlPath,
@@ -672,25 +697,28 @@ export async function exportSheetSvg(
         const data = await (page as unknown as {
           evaluate: (fn: () => unknown) => Promise<unknown>
         }).evaluate(() => {
-          const surface = document.querySelector('.surface') as HTMLElement | null
-          if (!surface) {
-            return { ok: false as const, error: 'missing .surface' }
-          }
-          // Promote rendered Mermaid SVGs: already inside pre.mermaid
-          // Ensure SVG root has xmlns for standalone file
+          const surface = document.querySelector(
+            '.surface',
+          ) as HTMLElement | null
+          if (!surface) return { ok: false as const, error: 'missing .surface' }
+
           surface.querySelectorAll('svg').forEach((svg) => {
             if (!svg.getAttribute('xmlns')) {
               svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
             }
           })
+
+          // Prefer XML serialization (valid for foreignObject)
+          let xml = ''
+          try {
+            xml = new XMLSerializer().serializeToString(surface)
+          } catch {
+            xml = surface.outerHTML
+          }
+
           const w = Math.ceil(surface.offsetWidth || surface.clientWidth)
           const h = Math.ceil(surface.offsetHeight || surface.clientHeight)
-          return {
-            ok: true as const,
-            width: w,
-            height: h,
-            html: surface.outerHTML,
-          }
+          return { ok: true as const, width: w, height: h, html: xml }
         })
 
         const d = data as {
@@ -705,55 +733,85 @@ export async function exportSheetSvg(
         }
         width = d.width ?? dims.width
         height = d.height ?? dims.height
-        // XHTML namespace required inside foreignObject
-        const xhtml = d.html
-          .replace(/<div/i, '<div xmlns="http://www.w3.org/1999/xhtml"')
-          // already has class surface
-          .replace(
-            /class="surface"/,
-            'class="surface" xmlns="http://www.w3.org/1999/xhtml"',
-          )
+        surfaceHtml = d.html
+      },
+      1,
+    )
 
-        const dark = opts?.dark !== false
-        const bg = dark ? '#0f1115' : '#faf9f6'
-        svgBody = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
-  width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
-  <title>${escapeXml(sheet.title)}</title>
-  <desc>CheatSheet Studio vector export — zoom freely in a browser. Prefer this over PNG for infinite scale.</desc>
+    // HTML→XML entity fixes (Chrome SVG parser is strict)
+    const xhtml = sanitizeHtmlForXml(surfaceHtml)
+      // Ensure single xhtml namespace on root
+      .replace(/\sxmlns="[^"]*"/g, '')
+      .replace(
+        /^<([a-zA-Z0-9]+)/,
+        '<$1 xmlns="http://www.w3.org/1999/xhtml"',
+      )
+
+    const dark = opts?.dark !== false
+    const bg = dark ? '#0f1115' : '#faf9f6'
+    const fg = dark ? '#e8eaed' : '#1a1a1a'
+    const muted = dark ? '#9ca3af' : '#555'
+    const card = dark ? 'rgba(28,30,36,0.98)' : 'rgba(255,255,255,0.95)'
+    const border = dark ? 'rgba(99,102,241,0.4)' : 'rgba(0,0,0,0.12)'
+    const titleSafe = escapeXml(sheet.title.replace(/[—–]/g, '-'))
+
+    const sheetCss = `
+.surface { position: relative; width: ${width}px; height: ${height}px; background: ${bg};
+  font-family: ui-sans-serif, system-ui, sans-serif; color: ${fg};
+  -webkit-font-smoothing: antialiased; }
+.card.abs { position: absolute; overflow: hidden; display: flex; flex-direction: column;
+  background: ${card}; border: 1px solid ${border}; border-radius: 4px; padding: 3px 5px 4px; }
+.card-title { font-size: 7px; text-transform: uppercase; letter-spacing: 0.04em;
+  color: ${muted}; margin-bottom: 2px; font-weight: 650; flex-shrink: 0; }
+.card-body { flex: 1; min-height: 0; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+.latex .katex { font-size: 1em !important; }
+pre.mermaid { margin: 0; background: transparent; max-width: 100%; max-height: 100%; overflow: hidden; }
+pre.mermaid svg { max-width: 100% !important; height: auto !important; }
+table { border-collapse: collapse; width: 100%; font-size: 0.85em; }
+th, td { border: 1px solid ${border}; padding: 1px 3px; }
+img.fig { max-width: 100%; max-height: 100%; object-fit: contain; }
+`
+
+    // 1) Self-contained HTML — always works with file:// in Chrome (recommended)
+    const vectorHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>${escapeXml(sheet.title.replace(/[—–]/g, '-'))}</title>
+<style>
+html,body{margin:0;padding:0;background:${dark ? '#09090b' : '#e8e4dc'};}
+${katexCss}
+${sheetCss}
+body{display:flex;justify-content:center;padding:16px;}
+</style>
+</head>
+<body>
+${surfaceHtml.replace(/^<div/, '<div').replace(/\sxmlns="[^"]*"/g, '')}
+</body>
+</html>
+`
+    writeFileSync(absHtmlVector, vectorHtml, 'utf8')
+
+    // 2) SVG with foreignObject — sanitized XML for viewers that support it
+    const svgBody = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+  <title>${titleSafe}</title>
+  <desc>Open the companion .vector.html in Chrome if this SVG is blank. Vector zoom: HTML/SVG/PDF; PNG is pixels only.</desc>
   <rect width="100%" height="100%" fill="${bg}"/>
-  <foreignObject x="0" y="0" width="${width}" height="${height}">
-    <div xmlns="http://www.w3.org/1999/xhtml" style="margin:0;padding:0;width:${width}px;height:${height}px;background:${bg};">
-      <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.css" />
-      <style>
-        html, body { margin: 0; padding: 0; background: ${bg}; }
-        .surface { position: relative; width: ${width}px; height: ${height}px; background: ${bg};
-          font-family: ui-sans-serif, system-ui, sans-serif; color: ${dark ? '#e8eaed' : '#1a1a1a'};
-          -webkit-font-smoothing: antialiased; }
-        .card.abs { position: absolute; overflow: hidden; display: flex; flex-direction: column;
-          background: ${dark ? 'rgba(28,30,36,0.98)' : 'rgba(255,255,255,0.95)'};
-          border: 1px solid ${dark ? 'rgba(99,102,241,0.4)' : 'rgba(0,0,0,0.12)'};
-          border-radius: 4px; padding: 3px 5px 4px; }
-        .card-title { font-size: 7px; text-transform: uppercase; letter-spacing: 0.04em;
-          color: ${dark ? '#9ca3af' : '#555'}; margin-bottom: 2px; font-weight: 650; flex-shrink: 0; }
-        .card-body { flex: 1; min-height: 0; overflow: hidden; display: flex; align-items: center; justify-content: center; }
-        .latex .katex { font-size: 1em !important; }
-        pre.mermaid { margin: 0; background: transparent; max-width: 100%; max-height: 100%; overflow: hidden; }
-        pre.mermaid svg { max-width: 100% !important; height: auto !important; }
-        table { border-collapse: collapse; width: 100%; font-size: 0.85em; }
-        th, td { border: 1px solid ${dark ? 'rgba(99,102,241,0.35)' : '#ccc'}; padding: 1px 3px; }
-        img.fig { max-width: 100%; max-height: 100%; object-fit: contain; }
-      </style>
+  <foreignObject x="0" y="0" width="${width}" height="${height}" requiredExtensions="http://www.w3.org/1999/xhtml">
+    <div xmlns="http://www.w3.org/1999/xhtml" style="margin:0;width:${width}px;height:${height}px;background:${bg};">
+      <style type="text/css"><![CDATA[
+${katexCss}
+${sheetCss}
+      ]]></style>
       ${xhtml}
     </div>
   </foreignObject>
 </svg>
 `
-      },
-      1, // DPR 1 — we want CSS px == SVG viewBox units, not a bitmap
-    )
+    writeFileSync(absSvg, svgBody, 'utf8')
 
-    writeFileSync(abs, svgBody, 'utf8')
     if (!opts?.keepHtml) {
       try {
         const { unlinkSync } = await import('node:fs')
@@ -761,9 +819,21 @@ export async function exportSheetSvg(
       } catch {
         /* keep */
       }
-      return { svgPath: abs, width, height, engine: 'playwright' }
+      return {
+        svgPath: absSvg,
+        htmlPath: absHtmlVector,
+        width,
+        height,
+        engine: 'playwright',
+      }
     }
-    return { svgPath: abs, htmlPath, width, height, engine: 'playwright' }
+    return {
+      svgPath: absSvg,
+      htmlPath: absHtmlVector,
+      width,
+      height,
+      engine: 'playwright',
+    }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     throw new Error(
@@ -771,6 +841,31 @@ export async function exportSheetSvg(
         `HTML was written to ${htmlPath}\n${msg}`,
     )
   }
+}
+
+/** Make HTML fragment safe enough for SVG/XML parsers (Chrome file://). */
+function sanitizeHtmlForXml(html: string): string {
+  return (
+    html
+      // Named HTML entities that are invalid in XML without a DTD
+      .replace(/&nbsp;/gi, '&#160;')
+      .replace(/&ensp;/gi, '&#8194;')
+      .replace(/&emsp;/gi, '&#8195;')
+      .replace(/&thinsp;/gi, '&#8201;')
+      .replace(/&zwnj;/gi, '&#8204;')
+      .replace(/&zwj;/gi, '&#8205;')
+      .replace(/&copy;/gi, '&#169;')
+      .replace(/&reg;/gi, '&#174;')
+      .replace(/&mdash;/gi, '&#8212;')
+      .replace(/&ndash;/gi, '&#8211;')
+      .replace(/&lsquo;/gi, '&#8216;')
+      .replace(/&rsquo;/gi, '&#8217;')
+      .replace(/&ldquo;/gi, '&#8220;')
+      .replace(/&rdquo;/gi, '&#8221;')
+      .replace(/&hellip;/gi, '&#8230;')
+      // Bare ampersands that are not already entities
+      .replace(/&(?!(#[0-9]+|#x[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]*);)/g, '&amp;')
+  )
 }
 
 function escapeXml(s: string): string {

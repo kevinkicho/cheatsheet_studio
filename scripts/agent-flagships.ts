@@ -453,8 +453,13 @@ async function buildAndExport(
         layout: 'canvas',
       })
       console.log(
-        `  SVG   ${path.relative(root, svg.svgPath)}  (${svg.width}×${svg.height} viewBox, vector)`,
+        `  SVG   ${path.relative(root, svg.svgPath)}  (${svg.width}×${svg.height})`,
       )
+      if (svg.htmlPath) {
+        console.log(
+          `  VECT  ${path.relative(root, svg.htmlPath)}  (open in Chrome — file:// safe)`,
+        )
+      }
     } catch (e) {
       console.warn(
         `  SVG   skipped: ${e instanceof Error ? e.message.split('\n')[0] : e}`,

@@ -507,9 +507,13 @@ async function run() {
         rich: !args.includes('--plain'),
       })
       console.log(
-        `SVG → ${result.svgPath} (${result.width}×${result.height} viewBox, vector)`,
+        `SVG → ${result.svgPath} (${result.width}×${result.height} viewBox)`,
       )
-      if (result.htmlPath) console.log(`HTML kept → ${result.htmlPath}`)
+      if (result.htmlPath) {
+        console.log(
+          `Vector HTML → ${result.htmlPath}  (open this in Chrome if .svg is blank)`,
+        )
+      }
       return
     }
 
