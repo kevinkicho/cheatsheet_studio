@@ -148,11 +148,16 @@ Premade outlines under `packages/cheatsheet-sdk/topic-packs/`:
 | `physics-energy` | Work & energy |
 | `chem-stoichiometry` | Stoichiometry / limiting reagent |
 | `bio-genetics` | Hardy–Weinberg / monohybrid |
+| `complex-numbers` | Complex / polar form |
+| `org-chem-basics` | Organic functional groups |
+| `micro-supply-demand` | Supply & demand shocks |
 
 ```bash
+npm run cheatsheet -- doctor
 npm run cheatsheet -- packs
 npm run cheatsheet -- packs --json
 npm run cheatsheet -- pack finance-capm -o out/capm.sheet.json
+npm run cheatsheet -- pack --all -o out/packs/
 npm run cheatsheet -- append-outline out/capm.sheet.json extra.outline.json
 ```
 
@@ -163,7 +168,7 @@ Then **My Sheets → Import JSON** in the app.
 | Direction | Where |
 |-----------|--------|
 | Out | Workspace → **Export JSON** or **Ctrl/Cmd+Shift+E** |
-| In | My Sheets → **Import JSON** |
+| In | Workspace or My Sheets → **Import JSON** |
 
 Round-trip: polish in UI → Export JSON → agent appends / re-layouts → Import JSON.
 

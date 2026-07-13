@@ -302,7 +302,9 @@ firebase serve    # http://localhost:5000 — must rebuild to see latest code
 | `npm run dev:emulators` | Vite with emulator env flags |
 | `npm run seed` | Seed `libraryItems` via Admin SDK |
 | `npm run cheatsheet -- …` | Headless sheet CLI (agents) — see [docs/agent-sdk.md](./docs/agent-sdk.md) |
+| `npm run cheatsheet -- doctor` | SDK health check (packs, catalog, cloud env) |
 | `npm run test:sdk` | Unit tests for `@cheatsheet-studio/sdk` |
+| `npm run sdk:build` | Build publishable SDK package (`dist/` + catalog snapshot) |
 
 ---
 

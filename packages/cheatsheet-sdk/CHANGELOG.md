@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.1
+
+- 14 topic packs (complex, org-chem, micro S&D, …)
+- `pack --all -o dir/` generate every pack
+- `doctor` CLI + MCP health check
+- Workspace top-bar **Import JSON** (alongside Export)
+
 ## 0.2.0
 
 - Topic packs: calc, lin-algebra, finance (CAPM/NPV), physics, chem, bio, econ, stats

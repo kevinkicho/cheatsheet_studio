@@ -1,0 +1,40 @@
+{
+  "id": "complex-numbers",
+  "title": "Math — Complex Numbers",
+  "description": "Euler form, conjugate, magnitude, and polar conversion flowchart.",
+  "subjects": ["mathematics"],
+  "outline": {
+    "title": "Math — Complex Numbers",
+    "notes": "Topic pack: complex-numbers",
+    "autoLayout": true,
+    "blocks": [
+      { "type": "heading", "title": "Forms" },
+      {
+        "type": "equation",
+        "title": "Rectangular",
+        "latex": "z = x + iy"
+      },
+      {
+        "type": "equation",
+        "title": "Polar / Euler",
+        "latex": "z = re^{i\\theta} = r(\\cos\\theta + i\\sin\\theta)"
+      },
+      {
+        "type": "equation",
+        "title": "Modulus & argument",
+        "latex": "r = |z| = \\sqrt{x^2+y^2},\\quad \\theta = \\arg(z)"
+      },
+      {
+        "type": "equation",
+        "title": "Conjugate",
+        "latex": "\\bar{z} = x - iy,\\quad z\\bar{z} = |z|^2"
+      },
+      {
+        "type": "process",
+        "title": "Multiply in polar",
+        "kind": "flowchart",
+        "mermaid": "flowchart LR\n  A[Write z1,z2 polar] --> B[r = r1 r2]\n  B --> C[θ = θ1 + θ2]\n  C --> D[Back to x+iy if needed]"
+      }
+    ]
+  }
+}

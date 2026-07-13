@@ -23,6 +23,11 @@ jobs:
       - name: Unit & component tests
         run: npm test
 
+      - name: Agent SDK tests + doctor
+        run: |
+          npm run test:sdk
+          npm run cheatsheet -- doctor
+
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
 

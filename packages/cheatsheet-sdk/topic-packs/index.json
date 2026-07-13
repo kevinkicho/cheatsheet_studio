@@ -23,6 +23,13 @@
       "subjects": ["mathematics"]
     },
     {
+      "id": "complex-numbers",
+      "file": "complex-numbers.json",
+      "title": "Math — Complex Numbers",
+      "description": "Euler form, modulus, polar multiply.",
+      "subjects": ["mathematics"]
+    },
+    {
       "id": "stats-bayes",
       "file": "stats-bayes.json",
       "title": "Statistics — Bayes",
@@ -51,6 +58,13 @@
       "subjects": ["economics"]
     },
     {
+      "id": "micro-supply-demand",
+      "file": "micro-supply-demand.json",
+      "title": "Economics — Supply & Demand",
+      "description": "Equilibrium, surplus, shock analysis.",
+      "subjects": ["economics"]
+    },
+    {
       "id": "physics-kinematics",
       "file": "physics-kinematics.json",
       "title": "Physics — 1D Kinematics",
@@ -69,6 +83,13 @@
       "file": "chem-stoichiometry.json",
       "title": "Chemistry — Stoichiometry",
       "description": "Moles, ideal gas, limiting reagent workflow.",
+      "subjects": ["chemistry"]
+    },
+    {
+      "id": "org-chem-basics",
+      "file": "org-chem-basics.json",
+      "title": "Chemistry — Organic Basics",
+      "description": "Functional groups and reaction classification.",
       "subjects": ["chemistry"]
     },
     {

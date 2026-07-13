@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import {
   BookOpen,
   ChevronDown,
@@ -14,12 +14,14 @@ import {
   Redo2,
   Save,
   Undo2,
+  Upload,
 } from 'lucide-react'
 import { useAuthStore } from '@/stores/authStore'
 import { useCanvasStore } from '@/stores/canvasStore'
 import { useSheetsStore } from '@/stores/sheetsStore'
 import { useUiStore, type AppView } from '@/stores/uiStore'
 import { downloadWorkspaceSheetJson } from '@/lib/exportSheetDocument'
+import { readSheetFileFromBrowserFile } from '@/lib/sheetDocumentImport'
 import { PrintSizeMenu } from './PrintSizeMenu'
 import { ExportMenu, type ExportStatusKind } from './ExportMenu'
 
@@ -47,11 +49,14 @@ export function TopBar() {
   const openSheet = useSheetsStore((s) => s.openSheet)
   const saveActiveSheet = useSheetsStore((s) => s.saveActiveSheet)
   const retryCloudSync = useSheetsStore((s) => s.retryCloudSync)
+  const importSheetDocument = useSheetsStore((s) => s.importSheetDocument)
   const canvasSheetId = useCanvasStore((s) => s.sheetId)
   const currentSheetId = activeSheetId ?? canvasSheetId ?? ''
   const isLocalSheet = currentSheetId.startsWith('local_')
   const view = useUiStore((s) => s.view)
   const setView = useUiStore((s) => s.setView)
+  const importInputRef = useRef<HTMLInputElement>(null)
+  const [importBusy, setImportBusy] = useState(false)
   const leftOpen = useUiStore((s) => s.leftOpen)
   const rightOpen = useUiStore((s) => s.rightOpen)
   const bottomOpen = useUiStore((s) => s.bottomOpen)
@@ -169,7 +174,7 @@ export function TopBar() {
 
           <button
             type="button"
-            title="Download sheet JSON for agents (Ctrl+Shift+E) — re-open via My Sheets → Import JSON"
+            title="Download sheet JSON for agents (Ctrl+Shift+E)"
             data-testid="export-sheet-json"
             onClick={() => downloadWorkspaceSheetJson()}
             className="inline-flex items-center gap-1 rounded-md border border-zinc-800 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-900"
@@ -177,6 +182,49 @@ export function TopBar() {
             <Download className="h-3.5 w-3.5" />
             <span className="hidden lg:inline">Export JSON</span>
           </button>
+
+          <button
+            type="button"
+            title="Import agent sheet JSON as a new sheet"
+            data-testid="import-sheet-json"
+            disabled={!user || importBusy}
+            onClick={() => importInputRef.current?.click()}
+            className="inline-flex items-center gap-1 rounded-md border border-zinc-800 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-900 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Upload className="h-3.5 w-3.5" />
+            <span className="hidden lg:inline">
+              {importBusy ? '…' : 'Import JSON'}
+            </span>
+          </button>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept="application/json,.json,.sheet.json"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              if (!file || !user) return
+              setImportBusy(true)
+              void readSheetFileFromBrowserFile(file)
+                .then(async (parsed) => {
+                  if (!parsed.ok) {
+                    window.alert(parsed.error)
+                    return
+                  }
+                  await importSheetDocument(user.uid, parsed.sheet)
+                  setView('workspace')
+                })
+                .catch((err) => {
+                  window.alert(
+                    err instanceof Error ? err.message : 'Import failed',
+                  )
+                })
+                .finally(() => {
+                  setImportBusy(false)
+                  if (importInputRef.current) importInputRef.current.value = ''
+                })
+            }}
+          />
 
           <div className="ml-0.5 flex items-center gap-0.5">
             <button

@@ -1,0 +1,35 @@
+{
+  "id": "micro-supply-demand",
+  "title": "Economics — Supply & Demand",
+  "description": "Equilibrium, surplus, and shift analysis flowchart.",
+  "subjects": ["economics"],
+  "outline": {
+    "title": "Economics — Supply & Demand",
+    "notes": "Topic pack: micro-supply-demand",
+    "autoLayout": true,
+    "blocks": [
+      { "type": "heading", "title": "Market equilibrium" },
+      {
+        "type": "equation",
+        "title": "Equilibrium condition",
+        "latex": "Q_d(P^*) = Q_s(P^*)"
+      },
+      {
+        "type": "table",
+        "title": "Shifts vs movements",
+        "markdown": "| Change | Curve | Result |\n|--------|-------|--------|\n| Price only | Move along | ΔQ on same curve |\n| Income / prefs | Demand shifts | New P*, Q* |\n| Cost / tech | Supply shifts | New P*, Q* |"
+      },
+      {
+        "type": "equation",
+        "title": "Consumer surplus (linear)",
+        "latex": "\\mathrm{CS} = \\tfrac{1}{2}(P_{\\max} - P^*)Q^*"
+      },
+      {
+        "type": "process",
+        "title": "Shock analysis",
+        "kind": "flowchart",
+        "mermaid": "flowchart TD\n  A[Identify shock] --> B{Demand or supply?}\n  B -->|Demand| C[Shift D left/right]\n  B -->|Supply| D[Shift S left/right]\n  C --> E[New intersection]\n  D --> E\n  E --> F[Compare P* Q*]"
+      }
+    ]
+  }
+}

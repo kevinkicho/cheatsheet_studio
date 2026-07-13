@@ -62,3 +62,6 @@ export type { TopicPack, TopicPackMeta } from './topic-packs'
 
 export { resolveCloudAuth, requireOwnerUid } from './auth'
 export type { CloudAuthConfig } from './auth'
+
+export { runDoctor } from './doctor'
+export type { DoctorCheck, DoctorReport } from './doctor'

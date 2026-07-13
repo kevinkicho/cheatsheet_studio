@@ -39,6 +39,11 @@ skills-lock.json
 /blob-report/
 /playwright/.cache/
 
+# Generated agent pack dumps / npm packs
+examples/packs-all/
+*.tgz
+packages/cheatsheet-sdk/*.tgz
+
 # Editor
 .vscode/*
 !.vscode/extensions.json

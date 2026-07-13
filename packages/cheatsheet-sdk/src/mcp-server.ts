@@ -174,6 +174,11 @@ const TOOLS: ToolDef[] = [
       required: ['sheetId', 'outPath'],
     },
   },
+  {
+    name: 'cheatsheet_doctor',
+    description: 'Health-check SDK (packs, catalog, optional cloud env)',
+    inputSchema: { type: 'object', properties: {} },
+  },
 ]
 
 function respond(id: string | number | null | undefined, result: unknown) {
@@ -341,6 +346,10 @@ async function callTool(
       })
       writeSheetFile(outPath, doc)
       return { ok: true, path: outPath, summary: summarizeSheet(doc) }
+    }
+    case 'cheatsheet_doctor': {
+      const { runDoctor } = await import('./doctor')
+      return runDoctor()
     }
     default:
       throw new Error(`Unknown tool: ${name}`)

@@ -1,0 +1,30 @@
+{
+  "id": "org-chem-basics",
+  "title": "Chemistry — Organic Basics",
+  "description": "Functional groups table and reaction-type decision flowchart.",
+  "subjects": ["chemistry"],
+  "outline": {
+    "title": "Chemistry — Organic Basics",
+    "notes": "Topic pack: org-chem-basics",
+    "autoLayout": true,
+    "blocks": [
+      { "type": "heading", "title": "Functional groups" },
+      {
+        "type": "table",
+        "title": "Common groups",
+        "markdown": "| Group | Pattern |\n|-------|--------|\n| Alkane | C–C single |\n| Alkene | C=C |\n| Alcohol | R–OH |\n| Carbonyl | C=O |\n| Carboxylic acid | –COOH |\n| Amine | –NH2 |"
+      },
+      {
+        "type": "equation",
+        "title": "General substitution",
+        "latex": "\\mathrm{R{-}X} + \\mathrm{Nu}^- \\rightarrow \\mathrm{R{-}Nu} + \\mathrm{X}^-"
+      },
+      {
+        "type": "process",
+        "title": "Classify reaction",
+        "kind": "flowchart",
+        "mermaid": "flowchart TD\n  A[Look at change] --> B{Bonds broken/formed?}\n  B -->|π → σ| C[Addition]\n  B -->|σ → π| D[Elimination]\n  B -->|Atom swap| E[Substitution]\n  B -->|Rearrange| F[Rearrangement]"
+      }
+    ]
+  }
+}

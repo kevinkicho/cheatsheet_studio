@@ -25,9 +25,13 @@ npm run cheatsheet -- packs
 npm run cheatsheet -- pack calc-derivatives -o out/calc.sheet.json
 ```
 
-Packs (11): `calc-derivatives`, `calc-integrals`, `lin-algebra`, `stats-bayes`,
-`finance-capm`, `finance-npv`, `econ-elasticity`, `physics-kinematics`,
-`physics-energy`, `chem-stoichiometry`, `bio-genetics`.
+14 packs — run `npm run cheatsheet -- packs` for the live list.
+Includes calc, lin-algebra, complex, finance, econ, physics, chem, bio, stats.
+
+```bash
+npm run cheatsheet -- doctor
+npm run cheatsheet -- pack --all -o out/packs/
+```
 
 User: **My Sheets → Import JSON** → polish in Workspace.
 
