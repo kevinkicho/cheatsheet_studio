@@ -79,13 +79,14 @@ export function estimateBlockSize(
   }
 
   if (isProcess(it)) {
-    const mind = it.mermaidKind === 'mindmap' || it.mermaidSource?.includes('mindmap')
-    // Compact flowcharts — not full-page diagrams
-    const w = Math.min(maxW, Math.round((mind ? 200 : 168) * s))
-    const lines = (it.mermaidSource ?? '').split('\n').length
+    const mind =
+      it.mermaidKind === 'mindmap' || it.mermaidSource?.includes('mindmap')
+    // Leave room for rendered Mermaid SVG (export scales down if still large)
+    const w = Math.min(maxW, Math.round((mind ? 220 : 190) * s))
+    const lines = (it.mermaidSource ?? '').split('\n').filter(Boolean).length
     const h = Math.min(
-      220,
-      Math.max(mind ? 120 : 90, Math.round((70 + lines * 10) * s)),
+      260,
+      Math.max(mind ? 140 : 120, Math.round((90 + lines * 12) * s)),
     )
     return { w, h }
   }
@@ -94,27 +95,37 @@ export function estimateBlockSize(
     const rows = (it.tableMarkdown ?? '').split('\n').filter(Boolean).length
     const cols = ((it.tableMarkdown ?? '').split('\n')[0] ?? '').split('|')
       .length
-    const w = Math.min(maxW, Math.round(Math.min(280, 70 + cols * 36) * s))
-    const h = Math.round(Math.min(160, 28 + rows * 16) * s + d.pad * 2)
+    const w = Math.min(maxW, Math.round(Math.min(300, 80 + cols * 40) * s))
+    const h = Math.round(Math.min(180, 36 + rows * 18) * s + d.pad * 2)
     return { w, h }
   }
 
   if (isFigure(it)) {
     return {
-      w: Math.min(maxW, Math.round(140 * s)),
-      h: Math.round(100 * s),
+      w: Math.min(maxW, Math.round(160 * s)),
+      h: Math.round(120 * s),
     }
   }
 
-  // Equation / latex — size from formula length
+  // Equation / latex — size from formula complexity (frac/sum need vertical room)
   const latex = it.latex ?? ''
   const len = latex.replace(/\\[a-zA-Z]+/g, 'X').replace(/[{}^_]/g, '').length
-  const display = latex.includes('\\frac') || latex.includes('\\sum') || latex.includes('\\int')
+  const display =
+    latex.includes('\\frac') ||
+    latex.includes('\\sum') ||
+    latex.includes('\\int') ||
+    latex.includes('\\prod') ||
+    latex.includes('\\\\')
+  const stacked = (latex.match(/\\frac/g) || []).length
   const w = Math.min(
     maxW,
-    Math.round(Math.min(260, Math.max(90, 40 + len * (display ? 5.5 : 4.2))) * s),
+    Math.round(
+      Math.min(280, Math.max(100, 48 + len * (display ? 5.2 : 4.0))) * s,
+    ),
   )
-  const h = Math.round((display ? 36 : 26) * s + d.title + d.pad * 2 + 4)
+  // KaTeX display fractions are ~2–2.5em tall; leave headroom so export doesn't clip
+  const baseH = display ? 48 + stacked * 10 : 30
+  const h = Math.round(baseH * s + d.title + d.pad * 2 + 10)
   return { w, h }
 }
 

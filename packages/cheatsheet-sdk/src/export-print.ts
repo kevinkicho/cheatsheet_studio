@@ -283,6 +283,10 @@ export function sheetToPrintHtml(
       display: flex;
       flex-direction: column;
     }
+    /* Content may be scale()-fitted so formulas/diagrams stay fully visible */
+    .card.abs .card-body {
+      transform-origin: center center;
+    }
     .card.stack {
       background: ${card};
       border: 1px solid ${border};
@@ -431,11 +435,58 @@ type PlaywrightPage = {
   goto: (url: string, o?: Record<string, unknown>) => Promise<unknown>
   waitForTimeout: (ms: number) => Promise<void>
   setViewportSize: (s: { width: number; height: number }) => Promise<void>
+  evaluate: (fn: () => unknown) => Promise<unknown>
   locator: (sel: string) => {
     screenshot: (o: Record<string, unknown>) => Promise<Buffer>
     count: () => Promise<number>
     first: () => { screenshot: (o: Record<string, unknown>) => Promise<Buffer> }
   }
+}
+
+/**
+ * Scale each card's body so KaTeX / Mermaid / tables are fully visible
+ * (dense pack often under-sizes height; overflow:hidden was clipping content).
+ */
+async function fitCardContents(page: PlaywrightPage): Promise<void> {
+  await page.evaluate(() => {
+    document.querySelectorAll('.card.abs').forEach((cardEl) => {
+      const card = cardEl as HTMLElement
+      const body = card.querySelector('.card-body') as HTMLElement | null
+      if (!body) return
+      const title = card.querySelector('.card-title') as HTMLElement | null
+
+      body.style.transform = ''
+      body.style.maxWidth = 'none'
+      body.style.maxHeight = 'none'
+      body.style.overflow = 'visible'
+      card.style.overflow = 'visible'
+
+      const pad = 8
+      const availW = Math.max(8, card.clientWidth - pad)
+      const availH = Math.max(
+        8,
+        card.clientHeight - (title ? title.offsetHeight + 4 : 0) - pad,
+      )
+
+      const target =
+        (body.querySelector(
+          '.katex-display, .katex, pre.mermaid svg, pre.mermaid, table, img.fig, img',
+        ) as HTMLElement | null) || body
+
+      const rect = target.getBoundingClientRect()
+      const tw = Math.max(target.scrollWidth || 0, rect.width || 0, 1)
+      const th = Math.max(target.scrollHeight || 0, rect.height || 0, 1)
+      const scale = Math.min(1, availW / tw, availH / th)
+
+      body.style.transformOrigin = 'center center'
+      if (scale < 0.995) {
+        body.style.transform = `scale(${Math.max(0.35, scale)})`
+      }
+      body.style.overflow = 'hidden'
+      card.style.overflow = 'hidden'
+    })
+  })
+  await page.waitForTimeout(50)
 }
 
 async function withPlaywrightPage(
@@ -455,7 +506,6 @@ async function withPlaywrightPage(
     const context = await browser.newContext({
       viewport: { width: vpW, height: vpH },
       deviceScaleFactor: Math.min(3, Math.max(1, deviceScaleFactor)),
-      // Avoid subpixel blur
       isMobile: false,
     })
     const page = await context.newPage()
@@ -479,8 +529,9 @@ async function withPlaywrightPage(
       } catch {
         /* partial ok */
       }
-      // Wait for KaTeX fonts + layout
       await page.waitForTimeout(500)
+      // Un-clip KaTeX/Mermaid that overflow dense card boxes
+      await fitCardContents(page as never)
     }
     await run(page as never)
     await context.close()
@@ -799,11 +850,12 @@ ${surfaceHtml.replace(/^<div/, '<div').replace(/\sxmlns="[^"]*"/g, '')}
   <title>${titleSafe}</title>
   <desc>Open the companion .vector.html in Chrome if this SVG is blank. Vector zoom: HTML/SVG/PDF; PNG is pixels only.</desc>
   <rect width="100%" height="100%" fill="${bg}"/>
-  <foreignObject x="0" y="0" width="${width}" height="${height}" requiredExtensions="http://www.w3.org/1999/xhtml">
+  <foreignObject x="0" y="0" width="${width}" height="${height}">
     <div xmlns="http://www.w3.org/1999/xhtml" style="margin:0;width:${width}px;height:${height}px;background:${bg};">
       <style type="text/css"><![CDATA[
 ${katexCss}
 ${sheetCss}
+.card.abs .card-body { transform-origin: center center; }
       ]]></style>
       ${xhtml}
     </div>
