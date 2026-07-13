@@ -35,6 +35,22 @@ describe('portLayout', () => {
     expect(ports[0]!.px).toBeCloseTo(0.5, 1)
   })
 
+  it('stadium Start/Done ports sit mid-sides (no spiral tornado)', () => {
+    const ports = computePortPlacements(
+      { count: 4, radius: 1, rotation: 0, onPerimeter: true },
+      'stadium',
+    )
+    expect(ports).toHaveLength(4)
+    expect(ports[0]!.px).toBeCloseTo(0.5, 1)
+    expect(ports[0]!.py).toBeCloseTo(0, 1)
+    expect(ports[1]!.px).toBeCloseTo(1, 1)
+    expect(ports[1]!.py).toBeCloseTo(0.5, 1)
+    expect(ports[2]!.px).toBeCloseTo(0.5, 1)
+    expect(ports[2]!.py).toBeCloseTo(1, 1)
+    expect(ports[3]!.px).toBeCloseTo(0, 1)
+    expect(ports[3]!.py).toBeCloseTo(0.5, 1)
+  })
+
   it('free radial places first port near top when rotation=0', () => {
     const ports = computePortPlacements(
       { count: 4, radius: 1, rotation: 0, onPerimeter: false },
@@ -94,6 +110,47 @@ describe('portLayout', () => {
     ])
     expect(edges[0]!.sourceHandle).toBe('port-2')
     expect(edges[0]!.targetHandle).toBe('port-0')
+  })
+
+  it('reconcile never force-facing on manualConnect edges', () => {
+    const nodes = [
+      {
+        id: 'a',
+        type: 'flowNode',
+        position: { x: 0, y: 0 },
+        width: 100,
+        height: 60,
+        data: { label: 'A', shape: 'rectangle', portCount: 4 },
+      },
+      {
+        id: 'b',
+        type: 'flowNode',
+        position: { x: 0, y: 200 },
+        width: 100,
+        height: 60,
+        data: { label: 'B', shape: 'rectangle', portCount: 4 },
+      },
+    ] as Node<FlowNodeData>[]
+
+    // Left→left plug (port-3), even though facing would prefer bottom/top
+    const edges = reconcileEdgeHandles(
+      nodes,
+      [
+        {
+          id: 'e1',
+          source: 'a',
+          target: 'b',
+          sourceHandle: 'port-3',
+          targetHandle: 'port-3',
+          data: { manualConnect: true },
+        },
+      ],
+      { forceFacing: true },
+    )
+    expect(edges[0]!.sourceHandle).toBe('port-3')
+    expect(edges[0]!.targetHandle).toBe('port-3')
+    expect(edges[0]!.source).toBe('a')
+    expect(edges[0]!.target).toBe('b')
   })
 
   it('pickFacingPortId prefers port toward neighbor', () => {

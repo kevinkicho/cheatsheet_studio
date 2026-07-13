@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Cloud,
   CloudUpload,
@@ -14,6 +14,7 @@ import { useFlowchartLibraryStore } from '@/stores/flowchartLibraryStore'
 import {
   MermaidVisualEditor,
   getVisualEditorMermaidSource,
+  getVisualEditorProcessFlow,
 } from '@/components/tools/MermaidVisualEditor'
 import type { MermaidDiagramKind, MermaidFlowDirection } from '@/types'
 import {
@@ -97,8 +98,29 @@ export function CreateProcessChartPanel() {
     void loadLibrary(user.uid)
   }, [user?.uid, loadLibrary])
 
+  // Selected canvas card → editor (inherit processFlow snapshot when present)
+  const [editorProcessFlow, setEditorProcessFlow] = useState<
+    import('@/lib/processFlowSnapshot').ProcessFlowSnapshot | null
+  >(null)
+  const prevSelectedId = useRef<string | null>(null)
+
   useEffect(() => {
-    if (!selectedChart) return
+    // Deselected / card left viewport selection → restore default flowchart editor
+    if (!selectedChart) {
+      if (prevSelectedId.current) {
+        prevSelectedId.current = null
+        const tpl = mermaidTemplate('flowchart', direction)
+        setTitle('Process chart')
+        setKind('flowchart')
+        setSource(tpl)
+        setEditorProcessFlow(null)
+        setActiveLibId(null)
+        setReloadToken((t) => t + 1)
+      }
+      return
+    }
+
+    prevSelectedId.current = selectedChart.id
     setTitle(selectedChart.title || 'Process chart')
     const src =
       selectedChart.mermaidSource || mermaidTemplate('flowchart', 'TD')
@@ -115,9 +137,32 @@ export function CreateProcessChartPanel() {
     setDirection(
       selectedChart.mermaidDirection ?? detectFlowDirection(src) ?? 'TD',
     )
+    // Free-form card layout → editor (exact match); null falls back to Mermaid layout
+    setEditorProcessFlow(selectedChart.processFlow ?? null)
     setReloadToken((t) => t + 1)
     setActiveLibId(null)
   }, [selectedChart?.id]) // eslint-disable-line react-hooks/exhaustive-deps -- load on select change
+
+  /** Live editor → selected card (bidirectional fine-tune) */
+  const handleEditorSnapshot = useCallback(
+    (
+      mermaid: string,
+      flow: import('@/lib/processFlowSnapshot').ProcessFlowSnapshot | null,
+    ) => {
+      if (!selectedChart) return
+      const k = detectMermaidKind(mermaid)
+      const dir = detectFlowDirection(mermaid) ?? direction
+      updateItem(selectedChart.id, {
+        mermaidSource: mermaid,
+        // Clone so card holds a frozen editor snapshot, not a live store ref
+        processFlow: flow ? structuredClone(flow) : undefined,
+        mermaidKind: isProcessPanelKind(k) ? k : kind,
+        mermaidDirection: dir,
+        title: title.trim() || selectedChart.title,
+      })
+    },
+    [selectedChart, direction, kind, title, updateItem],
+  )
 
   const resolveSource = useCallback(() => {
     const fromCanvas = getVisualEditorMermaidSource().trim()
@@ -145,6 +190,10 @@ export function CreateProcessChartPanel() {
         kind?: MermaidDiagramKind
         direction?: MermaidFlowDirection
         libId?: string | null
+        /** Free-form snapshot; pass null to force Mermaid layout (clear stale card flow). */
+        processFlow?:
+          | import('@/lib/processFlowSnapshot').ProcessFlowSnapshot
+          | null
       },
       opts?: { skipConfirm?: boolean },
     ) => {
@@ -160,6 +209,11 @@ export function CreateProcessChartPanel() {
       setKind(k)
       setDirection(d)
       setSource(next.source)
+      // Always set processFlow on load — undefined means "clear" so a previous
+      // card/library snapshot cannot override the mermaid source import.
+      setEditorProcessFlow(
+        next.processFlow === undefined ? null : next.processFlow,
+      )
       setReloadToken((t) => t + 1)
       setActiveLibId(next.libId ?? null)
       return true
@@ -177,10 +231,9 @@ export function CreateProcessChartPanel() {
       kind: nextKind,
       direction,
       libId: null,
+      processFlow: null, // template = Mermaid layout, not a free-form snapshot
     })
     if (!ok) return
-    // Force editor remount + import even if kind string was already set
-    setReloadToken((t) => t + 1)
     flash(
       nextKind === 'flowchart'
         ? 'Loaded flowchart template into editor'
@@ -197,12 +250,24 @@ export function CreateProcessChartPanel() {
     setSource(src)
     const k = detectMermaidKind(src)
     const dir = detectFlowDirection(src) ?? direction
+    // Snapshot free-form editor so the sheet card paints the exact same
+    // geometry (never re-layout via Mermaid on the main canvas).
+    const captured =
+      k === 'mindmap' ? null : getVisualEditorProcessFlow()
+    const processFlow = captured ? structuredClone(captured) : undefined
+    if (k !== 'mindmap' && !processFlow) {
+      flash('Could not capture diagram — add nodes in the editor first')
+      return
+    }
     addProcessChart(src, {
       title: title.trim() || (k === 'mindmap' ? 'Mind map' : 'Process chart'),
       mermaidTheme: 'dark',
       mermaidKind: isProcessPanelKind(k) ? k : kind,
       mermaidDirection: dir,
+      processFlow,
     })
+    // Keep panel state in sync so re-selecting the new card reloads this snapshot
+    if (processFlow) setEditorProcessFlow(processFlow)
     flash('Added to canvas')
   }
 
@@ -216,13 +281,22 @@ export function CreateProcessChartPanel() {
     setSource(src)
     const k = detectMermaidKind(src)
     const dir = detectFlowDirection(src) ?? direction
+    const captured =
+      k === 'mindmap' ? null : getVisualEditorProcessFlow()
+    const processFlow = captured ? structuredClone(captured) : undefined
+    if (k !== 'mindmap' && !processFlow) {
+      flash('Could not capture diagram — add nodes in the editor first')
+      return
+    }
     updateItem(selectedChart.id, {
       title: title.trim() || (k === 'mindmap' ? 'Mind map' : 'Process chart'),
       mermaidSource: src,
+      processFlow,
       mermaidTheme: 'dark',
       mermaidKind: isProcessPanelKind(k) ? k : kind,
       mermaidDirection: dir,
     })
+    if (processFlow) setEditorProcessFlow(processFlow)
     flash('Updated selected chart')
   }
 
@@ -238,6 +312,9 @@ export function CreateProcessChartPanel() {
     }
     clearLibError()
     const k = detectMermaidKind(src)
+    // Capture free-form layout so reload restores positions, not only mermaid text
+    const processFlow =
+      k === 'mindmap' ? null : getVisualEditorProcessFlow() ?? null
     const payload = {
       title:
         title.trim() ||
@@ -247,14 +324,21 @@ export function CreateProcessChartPanel() {
         | 'flowchart'
         | 'mindmap',
       mermaidDirection: detectFlowDirection(src) ?? direction,
+      processFlow,
     }
-    if (mode === 'overwrite' && activeLibId) {
+    if (mode === 'overwrite') {
+      if (!activeLibId) {
+        flash('No linked library item — use Save new, or Load one first')
+        return
+      }
       const ok = await saveOverwrite(user.uid, activeLibId, payload)
-      if (ok) flash('Saved to cloud library')
+      if (ok) flash('Updated cloud library item')
+      else flash('Update failed — see cloud library error')
       return
     }
     const created = await saveNew(user.uid, payload)
     if (created) flash('Saved new diagram to cloud library')
+    else flash('Save failed — see cloud library error')
   }
 
   const handleLoadLibraryItem = (item: StoredFlowchart) => {
@@ -269,6 +353,8 @@ export function CreateProcessChartPanel() {
       kind: k,
       direction: item.mermaidDirection,
       libId: item.id,
+      // Restore free-form layout when present; null forces Mermaid layout
+      processFlow: item.processFlow ?? null,
     })
     if (ok) {
       setLibraryOpen(false)
@@ -300,6 +386,7 @@ export function CreateProcessChartPanel() {
     <div
       className="flex h-full min-h-0 flex-col"
       data-testid="process-chart-panel"
+      data-process-chart-panel=""
     >
       <div className="flex shrink-0 items-center gap-1.5 border-b border-zinc-800 px-2.5 py-1.5">
         <GitBranch className="h-3.5 w-3.5 text-indigo-400" />
@@ -473,11 +560,14 @@ export function CreateProcessChartPanel() {
           key={kind}
           source={source}
           onSourceChange={setSource}
+          processFlow={editorProcessFlow}
+          onEditorSnapshot={selectedChart ? handleEditorSnapshot : undefined}
           reloadToken={reloadToken}
           diagramKind={toEditorKind(kind)}
           onReset={() => {
             const tpl = mermaidTemplate(kind, direction)
             setSource(tpl)
+            setEditorProcessFlow(null)
             setReloadToken((t) => t + 1)
             setActiveLibId(null)
             flash(

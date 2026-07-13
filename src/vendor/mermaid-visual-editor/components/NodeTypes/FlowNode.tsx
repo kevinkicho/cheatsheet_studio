@@ -192,7 +192,6 @@ const IS_SVG_SHAPE = new Set<NodeShape>(Object.keys(SVG_RENDERERS) as NodeShape[
 // ─── Radial / perimeter connection ports ─────────────────────────────────────
 // One Handle per port (id = port-N). ConnectionMode.Loose = source+target.
 // Center with calc() — avoid transform (breaks RF connection-line origin).
-const PORT_SIZE = 8
 const PORT_SIZE_SEL = 10
 
 function NodeHandles({
@@ -202,8 +201,11 @@ function NodeHandles({
   selected: boolean
   ports: PortPlacement[]
 }) {
-  // Visible only when selected — unselected matches clean Mermaid card look
-  const size = selected ? PORT_SIZE_SEL : 6
+  // Ports must stay hit-testable when not selected so you can drop a wire
+  // onto another node without selecting it first. Only the chrome is hidden.
+  // Larger hit target when unselected so the port the user aims at is used
+  // (not a different face via auto snap).
+  const size = selected ? PORT_SIZE_SEL : 16
   const half = size / 2
   return (
     <>
@@ -215,7 +217,7 @@ function NodeHandles({
           position={p.position}
           className="flow-port"
           isConnectable
-          title={selected ? `Port ${p.index + 1}` : undefined}
+          title={`Port ${p.index + 1}`}
           style={
             {
               ['--port-left' as string]: `calc(${p.left} - ${half}px)`,
@@ -228,9 +230,11 @@ function NodeHandles({
               maxHeight: size,
               borderRadius: '50%',
               background: selected ? '#38bdf8' : 'transparent',
-              border: selected ? '2px solid #fff' : 'none',
-              opacity: selected ? 1 : 0,
-              zIndex: selected ? 4 : 2,
+              border: selected ? '2px solid #fff' : '2px solid transparent',
+              opacity: selected ? 1 : 0.01,
+              zIndex: selected ? 4 : 3,
+              pointerEvents: 'auto',
+              cursor: 'crosshair',
             } as CSSProperties
           }
         />
@@ -545,7 +549,7 @@ export function FlowNode({ id, data, selected }: NodeProps) {
   return (
     <div
       key={`css-${shape}`}
-      className={`relative flex h-full w-full cursor-pointer select-none items-center justify-center px-3 py-1 ${extraClass} ${handDrawnClass}`}
+      className={`relative flex h-full w-full cursor-pointer select-none items-center justify-center ${extraClass} ${handDrawnClass}`}
       data-shape={shape}
       data-fill={nodeData.fillColor ?? ''}
       style={{
@@ -555,14 +559,22 @@ export function FlowNode({ id, data, selected }: NodeProps) {
         height: '100%',
         minWidth: 0,
         minHeight: 0,
+        // overflow visible so mid-side ports aren't clipped into a weird ring
+        overflow: 'visible',
+        // Tight padding so Mermaid-measured stadium boxes match selection bounds
+        paddingLeft: shape === 'stadium' ? 10 : 10,
+        paddingRight: shape === 'stadium' ? 10 : 10,
+        paddingTop: shape === 'stadium' ? 4 : 4,
+        paddingBottom: shape === 'stadium' ? 4 : 4,
         boxSizing: 'border-box',
       }}
       onDoubleClick={handleDoubleClick}
     >
       <IconBadge icon={nodeData.icon} />
       <NodeResizer
-        minWidth={80}
-        minHeight={isCircleShape ? 80 : 40}
+        // Allow Mermaid stadium sizes (~60×39); don't force min 80×40
+        minWidth={isCircleShape ? 80 : 36}
+        minHeight={isCircleShape ? 80 : 28}
         isVisible={!!selected}
         onResizeEnd={() => pushHistory()}
       />

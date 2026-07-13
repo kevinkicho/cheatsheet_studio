@@ -47,6 +47,7 @@ export function ImportModal({ onClose }: ImportModalProps) {
   const handleImport = useCallback(() => {
     if (!result || result.error) return
     const { nodes, edges, direction, look, curveStyle } = result
+    // Always import edges from pasted Mermaid (diagram truth)
     importDiagram(nodes, edges, {
       direction,
       theme: 'dark',

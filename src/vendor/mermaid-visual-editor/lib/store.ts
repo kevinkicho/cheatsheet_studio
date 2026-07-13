@@ -17,6 +17,7 @@ import {
   clampPortRadius,
   getPortLayout,
   normalizePortHandleId,
+  pickFacingPortId,
   reconcileEdgeHandles,
 } from "./portLayout";
 import {
@@ -101,6 +102,13 @@ export interface FlowNodeData extends Record<string, unknown> {
   portOnPerimeter?: boolean;
 }
 
+/** User-placed bend point on a flowchart edge (flow coordinates). */
+export type EdgeWaypoint = {
+  id: string;
+  x: number;
+  y: number;
+};
+
 export interface FlowEdgeData extends Record<string, unknown> {
   edgeStyle?: EdgeStyle;
   /** @deprecated Combined control — prefer startMarker + endMarker */
@@ -113,11 +121,22 @@ export interface FlowEdgeData extends Record<string, unknown> {
   /**
    * Absolute SVG path from Mermaid's layout engine (RF flow coordinates).
    * Cleared when the user moves a node so free-form editing reverts to RF routing.
+   * Ends are always re-snapped to live node borders for arrow accuracy.
    */
   mermaidPath?: string;
   /** Edge label position from Mermaid (RF flow coordinates). */
   mermaidLabelX?: number;
   mermaidLabelY?: number;
+  /**
+   * Manual bend dots along the edge. When set, path is start→waypoints→end
+   * (catmull-rom). User can drag/delete each dot; count editable in Object Settings.
+   */
+  waypoints?: EdgeWaypoint[];
+  /**
+   * True when the user plugged ports (or re-plugged). Path anchors to those
+   * ports. Mermaid/template edges leave this unset and use auto face-attach.
+   */
+  manualConnect?: boolean;
 }
 
 /** Resolve per-side markers, migrating legacy `arrowType` when needed. */
@@ -182,6 +201,28 @@ interface FlowState {
   /** flowchart | mindmap — drives serialize / import format. */
   diagramKind: DiagramKind;
   /**
+   * Chart canvas chrome (UI + snapshot paint). Not undo history.
+   */
+  chartBackground: string;
+  chartShowGrid: boolean;
+  chartGridColor: string;
+  /** Fallback edge stroke when an edge has no per-edge color. */
+  chartEdgeColor: string;
+  /** Lateral gap between multi-edges (Yes/No pairs), px. */
+  multiEdgeSpacing: number;
+  /**
+   * When true, Auto Layout / direction change rewires edges from Mermaid.
+   * When false (default), re-layout only moves nodes and keeps existing
+   * links; user adds more by plugging ports. Templates still show their lines.
+   */
+  autoConnectEdges: boolean;
+  setChartBackground: (hex: string) => void;
+  setChartShowGrid: (show: boolean) => void;
+  setChartGridColor: (hex: string) => void;
+  setChartEdgeColor: (hex: string) => void;
+  setMultiEdgeSpacing: (px: number) => void;
+  setAutoConnectEdges: (on: boolean) => void;
+  /**
    * Bumped after mindmap auto-layout so the canvas can fitView.
    * Not part of undo history.
    */
@@ -218,6 +259,21 @@ interface FlowState {
     width?: number,
     height?: number,
   ) => void;
+  /**
+   * Drop a connection on empty canvas: place a rectangle and wire it.
+   * Single undo step; does not fit-view (keeps viewport stable).
+   */
+  addConnectedNodeAtPosition: (opts: {
+    position: { x: number; y: number };
+    /** Node the drag started from */
+    fromNodeId: string;
+    fromHandleId?: string | null;
+    /** 'source' = fromNode is source; 'target' = fromNode is target */
+    fromHandleType?: "source" | "target" | null;
+    shape?: NodeShape;
+    width?: number;
+    height?: number;
+  }) => string | null;
   updateNodeLabel: (id: string, label: string) => void;
   updateNodeShape: (id: string, shape: NodeShape) => void;
   updateNodeStyle: (
@@ -292,6 +348,20 @@ interface FlowState {
   // Edge operations
   updateEdgeLabel: (id: string, label: string) => void;
   updateEdgeType: (id: string, updates: Partial<FlowEdgeData>) => void;
+  /** Set / replace waypoints on an edge (clears mermaidPath when non-empty). */
+  setEdgeWaypoints: (id: string, waypoints: EdgeWaypoint[]) => void;
+  addEdgeWaypoint: (id: string, at?: { x: number; y: number }) => void;
+  removeEdgeWaypoint: (edgeId: string, waypointId: string) => void;
+  updateEdgeWaypoint: (
+    edgeId: string,
+    waypointId: string,
+    pos: { x: number; y: number },
+  ) => void;
+  /** Currently selected bend dot (for Delete key / inspector). */
+  selectedWaypoint: { edgeId: string; waypointId: string } | null;
+  setSelectedWaypoint: (
+    sel: { edgeId: string; waypointId: string } | null,
+  ) => void;
 
   // Diagram settings
   setDirection: (direction: Direction) => void;
@@ -339,14 +409,6 @@ function computeMarkersFromData(data: FlowEdgeData | undefined): {
   };
 }
 
-/** @deprecated use computeMarkersFromData */
-function computeMarkers(arrowType: ArrowType): {
-  markerEnd?: EdgeMarkerType;
-  markerStart?: EdgeMarkerType;
-} {
-  return computeMarkersFromData({ arrowType });
-}
-
 // ─── Store ────────────────────────────────────────────────────────────────────
 export const useFlowStore = create<FlowState>((set, get) => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -382,6 +444,22 @@ export const useFlowStore = create<FlowState>((set, get) => {
     look: "classic",
     curveStyle: "basis",
     diagramKind: "flowchart",
+    chartBackground: "#12141a",
+    chartShowGrid: true,
+    chartGridColor: "#2a2d36",
+    chartEdgeColor: "#a1a1aa",
+    // Mermaid reverse edges sit ~14px off the forward corridor
+    multiEdgeSpacing: 14,
+    autoConnectEdges: false,
+    setChartBackground: (hex) => set({ chartBackground: hex }),
+    setChartShowGrid: (show) => set({ chartShowGrid: show }),
+    setChartGridColor: (hex) => set({ chartGridColor: hex }),
+    setChartEdgeColor: (hex) => set({ chartEdgeColor: hex }),
+    setMultiEdgeSpacing: (px) =>
+      set({
+        multiEdgeSpacing: Math.min(48, Math.max(8, Math.round(px))),
+      }),
+    setAutoConnectEdges: (on) => set({ autoConnectEdges: on }),
     layoutEpoch: 0,
     focusNodeRequest: null,
     requestFocusNode: (nodeId) =>
@@ -455,15 +533,20 @@ export const useFlowStore = create<FlowState>((set, get) => {
         changes,
         get().nodes,
       ) as Node<FlowNodeData>[];
-      // Only user drag (dragging true|false) invalidates Mermaid edge paths.
-      // Programmatic position sets (dragging undefined) keep sheet-matched paths.
+      // Free-form drag invalidates exact Mermaid edge paths — live router takes over
       const userDragged = changes.some(
         (c) =>
           c.type === "position" &&
           (c.dragging === true || c.dragging === false),
       );
-      if (userDragged) {
+      if (userDragged && get().diagramKind !== "mindmap") {
+        const movedIds = new Set(
+          changes
+            .filter((c) => c.type === "position")
+            .map((c) => (c as { id: string }).id),
+        );
         const edges = get().edges.map((e) => {
+          if (!movedIds.has(e.source) && !movedIds.has(e.target)) return e;
           if (!e.data?.mermaidPath) return e;
           const {
             mermaidPath: _p,
@@ -487,6 +570,11 @@ export const useFlowStore = create<FlowState>((set, get) => {
     onConnect: withHistory((connection) => {
       // Mind map edges are undirected parent→child lines (no arrow heads)
       const isMm = get().diagramKind === "mindmap";
+      // Absolute: never reassign connection.source / connection.target
+      const sourceId = connection.source;
+      const targetId = connection.target;
+      if (!sourceId || !targetId) return;
+
       const edgeData: FlowEdgeData = isMm
         ? { edgeStyle: "solid", startMarker: "none", endMarker: "none", arrowType: "none" }
         : {
@@ -494,29 +582,47 @@ export const useFlowStore = create<FlowState>((set, get) => {
             startMarker: "none",
             endMarker: "arrow",
             arrowType: "arrow",
+            // User dragged this wire — pin to the ports they used
+            manualConnect: true,
           };
       const markers = isMm ? {} : computeMarkersFromData(edgeData);
-      const sourceHandle = isMm
+
+      // Prefer the exact handles RF reports from the drag
+      let sourceHandle = isMm
         ? (connection.sourceHandle ?? "center")
         : (normalizePortHandleId(connection.sourceHandle) ??
           connection.sourceHandle ??
-          undefined);
-      const targetHandle = isMm
+          null);
+      let targetHandle = isMm
         ? (connection.targetHandle ?? "center-target")
         : (normalizePortHandleId(connection.targetHandle) ??
           connection.targetHandle ??
-          undefined);
+          null);
+
+      // Only if a handle id is missing: fill a port on THAT connected node
+      // facing its partner — never pick a different node.
+      if (!isMm) {
+        const nodes = get().nodes as Node<FlowNodeData>[];
+        const src = nodes.find((n) => n.id === sourceId);
+        const tgt = nodes.find((n) => n.id === targetId);
+        if (src && tgt) {
+          if (!sourceHandle) sourceHandle = pickFacingPortId(src, tgt);
+          if (!targetHandle) targetHandle = pickFacingPortId(tgt, src);
+        }
+      }
+
       set({
         edges: addEdge(
           {
-            ...connection,
+            source: sourceId,
+            target: targetId,
             sourceHandle,
             targetHandle,
             type: isMm ? "mindmapEdge" : "flowEdge",
             ...markers,
             data: edgeData,
             reconnectable: !isMm,
-          },
+          } as Connection,
           get().edges,
         ) as Edge<FlowEdgeData>[],
       });
@@ -525,20 +631,53 @@ export const useFlowStore = create<FlowState>((set, get) => {
     onReconnect: withHistory((oldEdge, newConnection) => {
       const isMm = get().diagramKind === "mindmap";
       if (isMm) return;
-      const sourceHandle =
+      // Absolute: use the new connection's source/target only (what user re-plugged)
+      const sourceId = newConnection.source ?? oldEdge.source;
+      const targetId = newConnection.target ?? oldEdge.target;
+      if (!sourceId || !targetId) return;
+
+      let sourceHandle =
         normalizePortHandleId(newConnection.sourceHandle) ??
         newConnection.sourceHandle ??
-        undefined;
-      const targetHandle =
+        null;
+      let targetHandle =
         normalizePortHandleId(newConnection.targetHandle) ??
         newConnection.targetHandle ??
-        undefined;
+        null;
+
+      // Fill missing handles on the re-plugged pair only
+      const nodes = get().nodes as Node<FlowNodeData>[];
+      const src = nodes.find((n) => n.id === sourceId);
+      const tgt = nodes.find((n) => n.id === targetId);
+      if (src && tgt) {
+        if (!sourceHandle) sourceHandle = pickFacingPortId(src, tgt);
+        if (!targetHandle) targetHandle = pickFacingPortId(tgt, src);
+      }
+
+      const next = reconnectEdge(
+        oldEdge,
+        {
+          source: sourceId,
+          target: targetId,
+          sourceHandle,
+          targetHandle,
+        },
+        get().edges,
+      ) as Edge<FlowEdgeData>[];
+      // Re-plug counts as a manual connection (same edge id)
       set({
-        edges: reconnectEdge(
-          oldEdge,
-          { ...newConnection, sourceHandle, targetHandle },
-          get().edges,
-        ) as Edge<FlowEdgeData>[],
+        edges: next.map((e) =>
+          e.id === oldEdge.id
+            ? {
+                ...e,
+                source: sourceId,
+                target: targetId,
+                sourceHandle,
+                targetHandle,
+                data: { ...(e.data ?? {}), manualConnect: true },
+              }
+            : e,
+        ),
       });
     }),
 
@@ -551,11 +690,24 @@ export const useFlowStore = create<FlowState>((set, get) => {
     addNode: withHistory((shape: NodeShape = "rectangle") => {
       const id = `node_${nodeCounter++}`;
       const offset = (nodeCounter * 30) % 200;
+      // Explicit size so the shape paints even after deselect (RF won't leave 0×0)
+      const w = 140;
+      const h = 48;
       const newNode: Node<FlowNodeData> = {
         id,
         type: "flowNode",
         position: { x: 150 + offset, y: 100 + offset },
-        data: { label: "Node", shape },
+        width: w,
+        height: h,
+        style: { width: w, height: h },
+        data: {
+          label: "Node",
+          shape,
+          portCount: 4,
+          portOnPerimeter: true,
+          portRadius: 1,
+          portRotation: 0,
+        },
         selected: true,
       };
       const { focusNodeRequest } = get();
@@ -576,13 +728,24 @@ export const useFlowStore = create<FlowState>((set, get) => {
     addNodeAtPosition: withHistory(
       (position, shape: NodeShape = "rectangle", width?: number, height?: number) => {
         const id = `node_${nodeCounter++}`;
+        const w = width && width > 8 ? width : 140;
+        const h = height && height > 8 ? height : 48;
         const newNode: Node<FlowNodeData> = {
           id,
           type: "flowNode",
           position,
-          data: { label: "Node", shape },
+          width: w,
+          height: h,
+          style: { width: w, height: h },
+          data: {
+            label: "Node",
+            shape,
+            portCount: 4,
+            portOnPerimeter: true,
+            portRadius: 1,
+            portRotation: 0,
+          },
           selected: true,
-          ...(width && height ? { style: { width, height } } : {}),
         };
         const { focusNodeRequest } = get();
         set({
@@ -597,6 +760,100 @@ export const useFlowStore = create<FlowState>((set, get) => {
             token: (focusNodeRequest?.token ?? 0) + 1,
           },
         });
+      },
+    ),
+
+    addConnectedNodeAtPosition: withHistory(
+      (opts: {
+        position: { x: number; y: number };
+        fromNodeId: string;
+        fromHandleId?: string | null;
+        fromHandleType?: "source" | "target" | null;
+        shape?: NodeShape;
+        width?: number;
+        height?: number;
+      }) => {
+        const isMm = get().diagramKind === "mindmap";
+        if (isMm) return null;
+        if (!opts.fromNodeId || !get().nodes.some((n) => n.id === opts.fromNodeId)) {
+          return null;
+        }
+
+        const id = `node_${nodeCounter++}`;
+        const w = opts.width && opts.width > 8 ? opts.width : 140;
+        const h = opts.height && opts.height > 8 ? opts.height : 48;
+        const shape = opts.shape ?? "rectangle";
+        // Center the new shape on the drop point
+        const position = {
+          x: opts.position.x - w / 2,
+          y: opts.position.y - h / 2,
+        };
+        const newNode: Node<FlowNodeData> = {
+          id,
+          type: "flowNode",
+          position,
+          width: w,
+          height: h,
+          style: { width: w, height: h },
+          data: {
+            label: "Node",
+            shape,
+            portCount: 4,
+            portOnPerimeter: true,
+            portRadius: 1,
+            portRotation: 0,
+          },
+          selected: true,
+        };
+
+        const edgeData: FlowEdgeData = {
+          edgeStyle: "solid",
+          startMarker: "none",
+          endMarker: "arrow",
+          arrowType: "arrow",
+          manualConnect: true,
+        };
+        const markers = computeMarkersFromData(edgeData);
+        const fromHandle =
+          normalizePortHandleId(opts.fromHandleId) ??
+          opts.fromHandleId ??
+          undefined;
+
+        // Dragging from a source handle → from is source; from a target → from is target
+        const fromIsSource = opts.fromHandleType !== "target";
+        const connection: Connection = fromIsSource
+          ? {
+              source: opts.fromNodeId,
+              target: id,
+              sourceHandle: fromHandle ?? null,
+              targetHandle: null,
+            }
+          : {
+              source: id,
+              target: opts.fromNodeId,
+              sourceHandle: null,
+              targetHandle: fromHandle ?? null,
+            };
+
+        set({
+          nodes: [
+            ...get().nodes.map((n) =>
+              n.selected ? { ...n, selected: false } : n,
+            ),
+            newNode,
+          ],
+          edges: addEdge(
+            {
+              ...connection,
+              type: "flowEdge",
+              ...markers,
+              data: edgeData,
+              reconnectable: true,
+            } as Connection,
+            get().edges,
+          ) as Edge<FlowEdgeData>[],
+        });
+        return id;
       },
     ),
 
@@ -1011,6 +1268,89 @@ export const useFlowStore = create<FlowState>((set, get) => {
         edges: get().edges.map((e) => (e.id === id ? { ...e, label } : e)),
       });
     }),
+
+    selectedWaypoint: null,
+    setSelectedWaypoint: (sel) => set({ selectedWaypoint: sel }),
+
+    setEdgeWaypoints: withHistory((id, waypoints) => {
+      set({
+        edges: get().edges.map((e) => {
+          if (e.id !== id) return e;
+          const data: FlowEdgeData = {
+            ...(e.data ?? {}),
+            waypoints,
+          };
+          // Custom bends replace frozen Mermaid path
+          if (waypoints.length > 0) {
+            delete data.mermaidPath;
+            delete data.mermaidLabelX;
+            delete data.mermaidLabelY;
+          }
+          return { ...e, data };
+        }),
+        selectedWaypoint: null,
+      });
+    }),
+
+    addEdgeWaypoint: withHistory((id, at) => {
+      set({
+        edges: get().edges.map((e) => {
+          if (e.id !== id) return e;
+          const prev = e.data?.waypoints ?? [];
+          const wp = {
+            id: `wp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
+            x: at?.x ?? 0,
+            y: at?.y ?? 0,
+          };
+          // If no position given, place at midpoint of current path ends later in UI
+          const data: FlowEdgeData = {
+            ...(e.data ?? {}),
+            waypoints: [...prev, wp],
+          };
+          delete data.mermaidPath;
+          delete data.mermaidLabelX;
+          delete data.mermaidLabelY;
+          return { ...e, data };
+        }),
+      });
+    }),
+
+    removeEdgeWaypoint: withHistory((edgeId, waypointId) => {
+      const prevSel = get().selectedWaypoint;
+      const clearSel =
+        prevSel?.edgeId === edgeId && prevSel?.waypointId === waypointId;
+      set({
+        edges: get().edges.map((e) => {
+          if (e.id !== edgeId) return e;
+          const wps = (e.data?.waypoints ?? []).filter(
+            (w) => w.id !== waypointId,
+          );
+          return {
+            ...e,
+            data: { ...(e.data ?? {}), waypoints: wps },
+          };
+        }),
+        selectedWaypoint: clearSel ? null : prevSel,
+      });
+    }),
+
+    updateEdgeWaypoint: (edgeId, waypointId, pos) => {
+      // No history spam while dragging — pushHistory on pointer up from UI
+      set({
+        edges: get().edges.map((e) => {
+          if (e.id !== edgeId) return e;
+          const wps = (e.data?.waypoints ?? []).map((w) =>
+            w.id === waypointId
+              ? { ...w, x: pos.x, y: pos.y }
+              : w,
+          );
+          return {
+            ...e,
+            data: { ...(e.data ?? {}), waypoints: wps },
+          };
+        }),
+      });
+    },
 
     updateEdgeType: withHistory((id, updates) => {
       set({

@@ -49,6 +49,19 @@ function isTypingTarget(target: EventTarget | null): boolean {
 }
 
 /**
+ * True when focus is inside the process/flowchart interactive editor.
+ * Delete/Backspace there must remove RF nodes/edges only — never the canvas card.
+ */
+export function isProcessEditorTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null
+  if (!el?.closest) return false
+  return Boolean(
+    el.closest('.mermaid-visual-editor') ||
+      el.closest('[data-process-chart-panel]'),
+  )
+}
+
+/**
  * Handle a keydown for canvas shortcuts.
  * Returns whether the event was consumed (caller should preventDefault).
  */
@@ -75,6 +88,11 @@ export function handleCanvasKeyDown(
   }
 
   if (inField) return { handled: false }
+
+  // Never delete a canvas card while working in the process interactive editor
+  if (isProcessEditorTarget(e.target)) {
+    return { handled: false }
+  }
 
   if (
     (e.key === 'Delete' || e.key === 'Backspace') &&

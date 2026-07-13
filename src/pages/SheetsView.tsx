@@ -37,6 +37,7 @@ import { isFigureLike } from '@/lib/cardDefaults'
 import { LatexView } from '@/components/math/LatexView'
 import { FigureView } from '@/components/math/FigureView'
 import { MermaidView } from '@/components/math/MermaidView'
+import { ProcessFlowView } from '@/components/math/ProcessFlowView'
 import { MarkdownTable } from '@/components/math/MarkdownTable'
 import { FitContent } from '@/components/math/FitContent'
 import { CARD_DEFAULTS } from '@/lib/cardDefaults'
@@ -56,7 +57,8 @@ function countByType(items: CanvasItem[]) {
   let other = 0
   for (const it of items) {
     if (it.hidden) continue
-    if (it.type === 'process-chart' || it.mermaidSource) process += 1
+    if (it.type === 'process-chart' || it.mermaidSource || it.processFlow)
+      process += 1
     else if (it.type === 'table' || it.tableMarkdown) tables += 1
     else if (isFigureLike(it)) figures += 1
     else if (
@@ -78,7 +80,8 @@ function countByType(items: CanvasItem[]) {
 }
 
 function cardKind(it: CanvasItem): CardKind {
-  if (it.type === 'process-chart' || it.mermaidSource) return 'process'
+  if (it.type === 'process-chart' || it.mermaidSource || it.processFlow)
+    return 'process'
   if (it.type === 'table' || it.tableMarkdown) return 'table'
   if (isFigureLike(it)) return 'figure'
   if (it.type === 'equation' || it.type === 'custom-equation' || it.latex)
@@ -960,6 +963,12 @@ function CardDetailView({
                   src={item.imageUrl}
                   alt={item.title ?? 'figure'}
                   className="max-w-none"
+                />
+              ) : kind === 'process' && item.processFlow ? (
+                <ProcessFlowView
+                  snapshot={item.processFlow}
+                  title={item.title}
+                  className="h-full w-full min-h-[80px]"
                 />
               ) : kind === 'process' && item.mermaidSource ? (
                 <MermaidView

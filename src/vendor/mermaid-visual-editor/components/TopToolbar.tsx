@@ -4,13 +4,13 @@ import { useShallow } from 'zustand/react/shallow'
 import { useFlowStore } from '../lib/store'
 import { ShapePickerPopover } from './ShapePickerPopover'
 import { SettingsPopover } from './SettingsPopover'
-import { ImportModal } from './ImportModal'
 
 interface TopToolbarProps {
   inspectorOpen: boolean
   onToggleInspector: () => void
   onOpenPalette?: () => void
-  syntax: string
+  /** @deprecated Unused — Mermaid import/copy live in Chart Settings. */
+  syntax?: string
   /** Confirmed reset to default starter diagram (parent performs reload). */
   onReset?: () => void
 }
@@ -159,22 +159,6 @@ const IconCube = () => (
   </svg>
 )
 
-const IconCopy = () => (
-  <svg
-    width="18"
-    height="18"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-  </svg>
-)
-
 const IconSettings = () => (
   <svg
     width="18"
@@ -195,13 +179,10 @@ export function TopToolbar({
   inspectorOpen,
   onToggleInspector,
   onOpenPalette,
-  syntax,
   onReset,
 }: TopToolbarProps) {
   const [shapePickerOpen, setShapePickerOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [importOpen, setImportOpen] = useState(false)
-  const [copied, setCopied] = useState(false)
 
   const { setInteractionMode, addSubgraph } = useFlowStore(
     useShallow((s) => ({
@@ -222,12 +203,6 @@ export function TopToolbar({
 
   const selectActive = !drawingShape && interactionMode === 'select'
   const panActive = !drawingShape && interactionMode === 'pan'
-
-  const handleCopy = async () => {
-    await navigator.clipboard.writeText(syntax)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1500)
-  }
 
   const handleReset = () => {
     if (!onReset) return
@@ -250,8 +225,6 @@ export function TopToolbar({
         pointerEvents: 'auto',
       }}
     >
-      {importOpen && <ImportModal onClose={() => setImportOpen(false)} />}
-
       <div
         style={{
           background: NEU_BG,
@@ -283,7 +256,7 @@ export function TopToolbar({
         <NeuIconBtn
           onClick={() => setInteractionMode('pan')}
           active={panActive}
-          title="Pan mode (H)"
+          title="Pan mode (H) — or hold Shift + drag"
         >
           <IconHand />
         </NeuIconBtn>
@@ -336,36 +309,6 @@ export function TopToolbar({
             </svg>
           </NeuIconBtn>
         )}
-
-        <Divider vertical={vertical} />
-
-        <NeuIconBtn
-          onClick={() => setImportOpen(true)}
-          title="Import Mermaid syntax"
-        >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-            <polyline points="17 8 12 3 7 8" />
-            <line x1="12" y1="3" x2="12" y2="15" />
-          </svg>
-        </NeuIconBtn>
-
-        <NeuIconBtn
-          onClick={handleCopy}
-          active={copied}
-          title="Copy Mermaid syntax"
-        >
-          <IconCopy />
-        </NeuIconBtn>
 
         {onOpenPalette && (
           <>

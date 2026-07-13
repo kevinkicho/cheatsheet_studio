@@ -14,6 +14,10 @@ import {
 } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { stripUndefined } from '@/lib/firestoreSanitize'
+import {
+  isProcessFlowSnapshot,
+  type ProcessFlowSnapshot,
+} from '@/lib/processFlowSnapshot'
 import type { MermaidDiagramKind, MermaidFlowDirection } from '@/types'
 
 export type StoredFlowchart = {
@@ -22,8 +26,18 @@ export type StoredFlowchart = {
   mermaidSource: string
   mermaidKind: MermaidDiagramKind
   mermaidDirection: MermaidFlowDirection
+  /** Free-form editor snapshot (positions / edge routes). Optional for older docs. */
+  processFlow?: ProcessFlowSnapshot
   updatedAt: number
   createdAt: number
+}
+
+export type FlowchartLibraryInput = {
+  title: string
+  mermaidSource: string
+  mermaidKind?: MermaidDiagramKind
+  mermaidDirection?: MermaidFlowDirection
+  processFlow?: ProcessFlowSnapshot | null
 }
 
 type FlowchartDoc = {
@@ -32,6 +46,7 @@ type FlowchartDoc = {
   mermaidSource: string
   mermaidKind?: MermaidDiagramKind
   mermaidDirection?: MermaidFlowDirection
+  processFlow?: unknown
   updatedAt?: Ts | number
   createdAt?: Ts | number
 }
@@ -43,12 +58,16 @@ function tsToMs(v: Ts | number | undefined): number {
 }
 
 function mapDoc(id: string, data: FlowchartDoc): StoredFlowchart {
+  const processFlow = isProcessFlowSnapshot(data.processFlow)
+    ? data.processFlow
+    : undefined
   return {
     id,
     title: (data.title || 'Untitled flowchart').trim() || 'Untitled flowchart',
     mermaidSource: data.mermaidSource ?? '',
     mermaidKind: data.mermaidKind ?? 'flowchart',
     mermaidDirection: data.mermaidDirection ?? 'TD',
+    processFlow,
     updatedAt: tsToMs(data.updatedAt),
     createdAt: tsToMs(data.createdAt),
   }
@@ -78,19 +97,19 @@ export async function listUserFlowcharts(
 
 export async function createUserFlowchart(
   uid: string,
-  input: {
-    title: string
-    mermaidSource: string
-    mermaidKind?: MermaidDiagramKind
-    mermaidDirection?: MermaidFlowDirection
-  },
+  input: FlowchartLibraryInput,
 ): Promise<StoredFlowchart> {
+  const processFlow =
+    input.processFlow && isProcessFlowSnapshot(input.processFlow)
+      ? input.processFlow
+      : undefined
   const payload = stripUndefined({
     ownerId: uid,
     title: input.title.trim() || 'Untitled flowchart',
     mermaidSource: input.mermaidSource,
     mermaidKind: input.mermaidKind ?? 'flowchart',
     mermaidDirection: input.mermaidDirection ?? 'TD',
+    processFlow,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   })
@@ -103,6 +122,7 @@ export async function createUserFlowchart(
     mermaidKind: (payload.mermaidKind as MermaidDiagramKind) ?? 'flowchart',
     mermaidDirection:
       (payload.mermaidDirection as MermaidFlowDirection) ?? 'TD',
+    processFlow,
     createdAt: now,
     updatedAt: now,
   }
@@ -115,11 +135,23 @@ export async function updateUserFlowchart(
     mermaidSource?: string
     mermaidKind?: MermaidDiagramKind
     mermaidDirection?: MermaidFlowDirection
+    processFlow?: ProcessFlowSnapshot | null
   },
 ): Promise<void> {
+  // Explicit null clears a stored snapshot (e.g. mindmap / mermaid-only reload)
+  const processFlowField =
+    input.processFlow === null
+      ? { processFlow: null }
+      : input.processFlow && isProcessFlowSnapshot(input.processFlow)
+        ? { processFlow: input.processFlow }
+        : {}
+
   const patch = stripUndefined({
-    ...input,
     title: input.title?.trim(),
+    mermaidSource: input.mermaidSource,
+    mermaidKind: input.mermaidKind,
+    mermaidDirection: input.mermaidDirection,
+    ...processFlowField,
     updatedAt: serverTimestamp(),
   })
   await updateDoc(doc(db, 'flowcharts', id), patch)

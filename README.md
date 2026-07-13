@@ -52,7 +52,7 @@ organize layers in nested folders, and sync sheets per Google account.
 | Local image persistence (IndexedDB) + Storage promote | **Implemented** |
 | GIF ping-pong bake at import | **Implemented** |
 | Undo / redo (document history) | **Implemented** |
-| Process charts (flowchart + mind map; Mermaid-matched layout) | **Implemented** |
+| Process charts (flowchart pipe editor + processFlow cards; mind maps) | **Implemented** |
 | My Sheets preview + card detail | **Implemented** |
 | Color pickers (defaults + recent) | **Implemented** |
 | Collapsible left / right / bottom chrome | **Implemented** |
@@ -115,15 +115,15 @@ Vector: [docs/vector-graphics.md](./docs/vector-graphics.md)
 - Import Image panel (preview, local persist, Storage upload when signed in; **SVG preferred for diagrams**)  
 - GIF seamless loop via bake-at-import  
 
-### Process charts (Mermaid)
+### Process charts (Mermaid + free-form flow)
 - Right sidebar **Process** tool: **dark** interactive canvas (vendored [saketkattu/mermaid-visual-editor](https://github.com/saketkattu/mermaid-visual-editor), MIT)  
-- **Diagram types:** **Flowchart** and **Mind map** only — both use the interactive React Flow editor (**never** a static Mermaid preview pane; the editor *is* the preview)  
-- **Flowchart layout fidelity:** import / Auto Layout / direction change render with the **same Mermaid 11 studio-dark engine** as sheet cards, then copy **node boxes** (`translate` center + `getBBox`) and **edge paths** (`path.flowchart-link`) onto React Flow — free-form edit should match **Add to canvas**  
-- Flowchart: 14 shapes, perimeter connection ports, per-side edge markers (arrow / circle / cross / none), reconnectable edges (grips when selected), inspector node/port settings  
-- Mind map: radial layout, promote/demote, bang/cloud shapes, zoom-fit chrome padding  
-- Toolbar: vertical/horizontal chrome, snap tools, zoom fit, diagram **Reset** (confirm)  
-- **Cloud library** (signed in): save / load / delete named diagrams in Firestore (`flowcharts`)  
-- Canvas cards: zinc studio dark + SVG **fillContainer** (vector at card size)  
+- **Diagram types:** **Flowchart** and **Mind map** only — both use the interactive React Flow editor (**never** a static Mermaid preview pane)  
+- **Flowchart pipes:** orthogonal smooth-step connections (port plugs stay locked; reverse multi e.g. **No** is a side U-turn that clears node boxes)  
+- **Editor → canvas fidelity:** **Add to canvas** / **Update card** store a `processFlow` snapshot (nodes, ports, baked pipe paths). Cards and print export paint that snapshot so the board matches the editor (not a Mermaid re-layout)  
+- Mermaid source is still saved for re-open / library; **mind maps** still paint via Mermaid SVG on cards  
+- **Auto Layout** ranks with dagre after optional Mermaid size measure; Shift+drag pan; drop a link on empty → new rectangle  
+- **Delete** in the process editor removes flowchart nodes/edges only (does not delete the selected canvas card)  
+- Cloud library (signed in): save / load / update with `mermaidSource` + `processFlow`  
 - See [docs/process-charts.md](./docs/process-charts.md)  
 
 ### Layers & organization

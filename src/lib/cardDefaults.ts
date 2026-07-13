@@ -82,6 +82,8 @@ export const CARD_DEFAULTS = {
   keepAspectRatio: true as const,
   showTitle: true as const,
   titleAlign: 'left' as TitleAlign,
+  /** Card title bar font size (px). */
+  titleFontSize: 10 as const,
   /** Background fill on unless user opts out (transparentBackground: true). */
   backgroundFill: true as const,
   /**

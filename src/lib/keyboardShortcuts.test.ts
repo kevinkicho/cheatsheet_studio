@@ -72,6 +72,19 @@ describe('handleCanvasKeyDown', () => {
     expect(a.calls.redo).toHaveBeenCalledTimes(2)
   })
 
+  it('does not delete canvas card when focus is in process editor', () => {
+    const a = actions({ selectedIds: ['card1'] })
+    const host = document.createElement('div')
+    host.className = 'mermaid-visual-editor'
+    const inner = document.createElement('div')
+    host.appendChild(inner)
+    document.body.appendChild(host)
+    const r = handleCanvasKeyDown(key('Delete', { target: inner }), a)
+    expect(r).toEqual({ handled: false })
+    expect(a.calls.removeItems).not.toHaveBeenCalled()
+    host.remove()
+  })
+
   it('does not steal undo when typing in an input', () => {
     const a = actions()
     const input = document.createElement('input')

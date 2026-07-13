@@ -4,10 +4,12 @@ import { FigureView } from '@/components/math/FigureView'
 import { LatexView } from '@/components/math/LatexView'
 import { MarkdownTable } from '@/components/math/MarkdownTable'
 import { MermaidView } from '@/components/math/MermaidView'
+import { ProcessFlowView } from '@/components/math/ProcessFlowView'
 import {
   CARD_DEFAULTS,
   isFigureLike,
 } from '@/lib/cardDefaults'
+import { isProcessFlowSnapshot } from '@/lib/processFlowSnapshot'
 
 type Props = {
   item: CanvasItem
@@ -61,7 +63,24 @@ export function CanvasCardBody({
     )
   }
 
-  if (item.type === 'process-chart' || item.mermaidSource) {
+  if (item.type === 'process-chart' || item.mermaidSource || item.processFlow) {
+    // Free-form snapshot: fill card via SVG viewBox (like Mermaid fillContainer).
+    // Avoid FitContent+meet double letterbox — that made horizontal resize look uneven.
+    if (isProcessFlowSnapshot(item.processFlow)) {
+      // Include path fingerprint so baked editor geometry always re-paints
+      const pathSig = item.processFlow.edges
+        .map((e) => e.path?.length ?? 0)
+        .join('.')
+      return (
+        <ProcessFlowView
+          key={`${item.id}-pf-${item.processFlow.nodes.length}-${item.processFlow.edges.length}-${pathSig}-ar${keepAspectRatio ? 1 : 0}`}
+          snapshot={item.processFlow}
+          title={item.title}
+          preserveAspect={keepAspectRatio ? 'meet' : 'none'}
+          className="h-full w-full"
+        />
+      )
+    }
     return (
       <MermaidView
         key={`${item.id}-mmd-${keepAspectRatio ? 'meet' : 'none'}-${mermaidTheme}`}

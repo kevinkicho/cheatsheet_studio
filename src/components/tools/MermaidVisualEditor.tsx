@@ -19,17 +19,37 @@ import {
 import { serialize } from '@/vendor/mermaid-visual-editor/lib/serializer'
 import { parseMermaidFlowchart } from '@/vendor/mermaid-visual-editor/lib/parser'
 import { layoutWithMermaid } from '@/vendor/mermaid-visual-editor/lib/layoutFromMermaid'
+import { cleanFlowchartLayout } from '@/vendor/mermaid-visual-editor/lib/layout'
 import {
   applyMindmapTreeLayout,
   parseMermaidMindmap,
   serializeMindmap,
 } from '@/vendor/mermaid-visual-editor/lib/mindmap'
+import {
+  captureProcessFlow,
+  isProcessFlowSnapshot,
+  processFlowToRf,
+} from '@/lib/processFlowSnapshot'
+import type { ProcessFlowSnapshot } from '@/lib/processFlowSnapshot'
 
 type Props = {
   /** Current Mermaid source (used when loading into canvas). */
   source: string
   /** Called whenever canvas serializes to new Mermaid. */
   onSourceChange: (mermaid: string) => void
+  /**
+   * Free-form snapshot from a selected canvas card. When set (with reload),
+   * loads exact positions/paths into the editor instead of re-laying Mermaid.
+   */
+  processFlow?: ProcessFlowSnapshot | null
+  /**
+   * Debounced editor → card sync: mermaid text + free-form snapshot.
+   * Parent should write both onto the selected process-chart item.
+   */
+  onEditorSnapshot?: (
+    mermaid: string,
+    processFlow: ProcessFlowSnapshot | null,
+  ) => void
   /**
    * Increment to force re-import of `source` (template apply / direction).
    * Parent should bump when the same string is re-applied.
@@ -84,6 +104,23 @@ export function getVisualEditorMermaidSource(): string {
   return serializeCanvas()
 }
 
+/**
+ * Free-form graph snapshot for sheet cards / print — matches what the
+ * interactive editor shows (positions + edge routing), not a Mermaid re-layout.
+ */
+export function getVisualEditorProcessFlow(): ProcessFlowSnapshot | null {
+  const { nodes, edges, direction, curveStyle, diagramKind, multiEdgeSpacing } =
+    useFlowStore.getState()
+  if (nodes.length === 0) return null
+  // Mind maps still use Mermaid SVG on cards (radial layout is stable)
+  if (diagramKind === 'mindmap') return null
+  return captureProcessFlow(nodes, edges, {
+    direction,
+    curveStyle,
+    multiEdgeSpacing,
+  })
+}
+
 type ImportFn = ReturnType<typeof useFlowStore.getState>['importDiagram']
 
 function resetCanvas(importDiagram: ImportFn, kind: DiagramKind) {
@@ -98,13 +135,13 @@ function resetCanvas(importDiagram: ImportFn, kind: DiagramKind) {
 
 /**
  * Load source into the RF store.
- * Flowcharts are laid out by rendering Mermaid (same engine as sheet cards)
- * and copying node positions — so free-form RF matches Add to canvas.
+ * Prefer `processFlow` snapshot (card truth) when present; else Mermaid layout.
  */
 async function tryImport(
   raw: string,
   importDiagram: ImportFn,
   preferredKind?: DiagramKind,
+  processFlow?: ProcessFlowSnapshot | null,
 ): Promise<string | null> {
   const trimmed = raw.trim()
   const body = stripFrontmatter(trimmed || '')
@@ -114,6 +151,34 @@ async function tryImport(
     preferredKind === 'mindmap' || preferredKind === 'flowchart'
       ? preferredKind
       : detectKindFromSource(body || 'flowchart TD')
+
+  // Card free-form snapshot → editor (exact match, no Mermaid re-layout).
+  // Always restore snapshot edges — they are user/card truth, not auto-wire.
+  if (
+    kind === 'flowchart' &&
+    isProcessFlowSnapshot(processFlow) &&
+    processFlow.nodes.length > 0
+  ) {
+    const { nodes, edges } = processFlowToRf(processFlow)
+    importDiagram(nodes, edges, {
+      direction: processFlow.direction ?? 'TD',
+      theme: 'dark',
+      look: 'classic',
+      curveStyle: processFlow.curveStyle ?? 'basis',
+      diagramKind: 'flowchart',
+    })
+    useFlowStore.setState((s) => ({ layoutEpoch: s.layoutEpoch + 1 }))
+    const syntaxOut =
+      trimmed && /^(flowchart|graph)\b/im.test(body)
+        ? trimmed
+        : serialize(nodes, edges, {
+            direction: processFlow.direction ?? 'TD',
+            theme: 'dark',
+            look: 'classic',
+            curveStyle: processFlow.curveStyle ?? 'basis',
+          })
+    return syntaxOut
+  }
 
   if (kind === 'mindmap') {
     const src = /^mindmap\b/im.test(body) ? trimmed : EMPTY_MINDMAP
@@ -156,13 +221,19 @@ async function tryImport(
     look: result.look,
     curveStyle: result.curveStyle,
   })
-  // Exact Mermaid engine positions, sizes, and edge paths (same as sheet cards)
+  // Mermaid for sizes when available, then dagre for a clean ranked stack so
+  // smooth-step edges look like a normal flowchart (not staggered diagonals).
   const laid = await layoutWithMermaid(
     syntaxOut,
     result.nodes,
     result.edges,
   )
-  importDiagram(laid.nodes, laid.edges, {
+  const cleaned = cleanFlowchartLayout(
+    laid.nodes,
+    laid.edges,
+    result.direction,
+  )
+  importDiagram(cleaned.nodes, cleaned.edges, {
     direction: result.direction,
     theme: 'dark',
     look: result.look,
@@ -224,6 +295,8 @@ function ChromeOverlay({
 function VisualEditorInner({
   source,
   onSourceChange,
+  processFlow = null,
+  onEditorSnapshot,
   reloadToken = 0,
   diagramKind: diagramKindProp,
   onReset,
@@ -252,6 +325,8 @@ function VisualEditorInner({
   const lastKindProp = useRef<DiagramKind | undefined>(diagramKindProp)
   // Ignore canvas→parent pushes until import for this kind has settled
   const suppressPush = useRef(false)
+  const processFlowRef = useRef(processFlow)
+  processFlowRef.current = processFlow
 
   useEffect(() => {
     setTheme('dark')
@@ -262,7 +337,12 @@ function VisualEditorInner({
     if (bootstrapped.current) return
     suppressPush.current = true
     let cancelled = false
-    void tryImport(source, importDiagram, diagramKindProp).then((out) => {
+    void tryImport(
+      source,
+      importDiagram,
+      diagramKindProp,
+      processFlowRef.current,
+    ).then((out) => {
       if (cancelled) return
       if (out) {
         lastLoaded.current = out.trim()
@@ -291,7 +371,21 @@ function VisualEditorInner({
     onSourceChange(syntax)
   }, [syntax, nodes.length, onSourceChange])
 
-  // Parent source / reloadToken / diagram kind chip changed
+  // Debounced free-form snapshot → parent (keeps selected card in sync)
+  useEffect(() => {
+    if (!bootstrapped.current || suppressPush.current) return
+    if (!onEditorSnapshot) return
+    if (nodes.length === 0) return
+    const t = window.setTimeout(() => {
+      if (suppressPush.current) return
+      const mermaid = serializeCanvas()
+      const flow = getVisualEditorProcessFlow()
+      onEditorSnapshot(mermaid, flow)
+    }, 280)
+    return () => window.clearTimeout(t)
+  }, [nodes, edges, direction, curveStyle, onEditorSnapshot])
+
+  // Parent source / reloadToken / diagram kind chip / processFlow changed
   useEffect(() => {
     if (!bootstrapped.current) return
 
@@ -304,7 +398,7 @@ function VisualEditorInner({
     lastKindProp.current = diagramKindProp
 
     const trimmed = source.trim()
-    if (!trimmed && !kindChanged) return
+    if (!trimmed && !kindChanged && !tokenBump) return
 
     if (
       !tokenBump &&
@@ -315,7 +409,7 @@ function VisualEditorInner({
       return
     }
 
-    // Kind chip or template reload — preferredKind is always the chip
+    // Kind chip, template reload, or card selection — prefer processFlow when set
     suppressPush.current = true
     let cancelled = false
     void tryImport(
@@ -323,6 +417,7 @@ function VisualEditorInner({
         (diagramKindProp === 'mindmap' ? EMPTY_MINDMAP : EMPTY_FLOWCHART),
       importDiagram,
       diagramKindProp,
+      processFlowRef.current,
     ).then((out) => {
       if (cancelled) return
       if (out) {
@@ -373,7 +468,7 @@ function VisualEditorInner({
       >
         {diagramKind === 'mindmap'
           ? 'Mind map · Tab=child · Enter=sibling · Shift+Tab=promote · Inspector for shape/color/icon/reparent'
-          : 'Select (V) · Pan (H) · scroll to zoom · Auto Layout matches sheet spacing'}
+          : 'Select (V) · Pan (H or Shift+drag) · scroll to zoom · drop a link on empty → new rectangle'}
       </p>
     </div>
   )

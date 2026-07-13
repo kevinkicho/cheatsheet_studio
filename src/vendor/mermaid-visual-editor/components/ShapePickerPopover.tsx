@@ -136,18 +136,18 @@ export function ShapePickerPopover({
           })}
         </div>
       ))}
-      {!hasNodeSelection && drawingShape && (
-        <div
+      {hasNodeSelection ? (
+        <p
           style={{
-            marginTop: 10,
-            fontSize: 11,
-            color: PANEL_ICON_ACTIVE,
-            textAlign: 'center',
+            margin: '0 0 10px',
+            fontSize: 10,
+            color: PANEL_TEXT_MUTED,
+            lineHeight: 1.4,
           }}
         >
-          Click &amp; drag on canvas to draw — Esc to cancel
-        </div>
-      )}
+          Changes the shape of the selected object(s).
+        </p>
+      ) : null}
     </PopoverPortal>
   )
 }

@@ -11,7 +11,7 @@ Whenever you add **new equations or figures** (seed library, tools, or docs samp
 |------|-----------|-----|
 | **Equation** | KaTeX-compatible **LaTeX** in the `latex` field | Scalable type (web fonts); canvas uses font-size fit |
 | **Figure / diagram** | **SVG** with a `viewBox` (`svgUrl(\`<svg…>\`)` or imported `.svg`) | Paths repaint at the card’s display size |
-| **Process chart** | **Mermaid source** | Renders to SVG that fills the card |
+| **Process chart** | **Mermaid source** + flowchart **`processFlow` snapshot** | Flowcharts paint editor geometry as SVG; mind maps use Mermaid SVG |
 | **Photo** | PNG / JPEG / WebP / GIF via Import Image | Raster is appropriate for photographs |
 
 Euler’s identity is a pure LaTeX equation (`e^{i\pi} + 1 = 0`), not a bitmap.
@@ -39,9 +39,15 @@ Figures for diagrams use **SVG** with a proper `viewBox`:
 
 Photographic images remain supported for real-world pictures; **diagrams and math illustrations use SVG**.
 
-## Process charts (Mermaid)
+## Process charts
 
-Process charts are **Mermaid source** rendered to **SVG** with `fillContainer`, so diagrams paint at the card size (vector) without CSS `scale()`.
+- **Flowcharts** store a free-form **`processFlow` snapshot** from the interactive
+  editor and paint it with `ProcessFlowView` (SVG viewBox, including pipe
+  U-turns). Card geometry matches the Process tool — not a Mermaid re-layout.
+- **Mind maps** (and flowcharts without a snapshot) use **Mermaid → SVG** via
+  `MermaidView` `fillContainer`.
+
+See [process-charts.md](./process-charts.md).
 
 ## Adding new library content
 
@@ -56,11 +62,13 @@ Process charts are **Mermaid source** rendered to **SVG** with `fillContainer`, 
 |------|-------------|
 | Equations on canvas | `CanvasCardBody` → `LatexView` + `FitContent` `fontSize` + `paintZoom` |
 | Figures on canvas | `FigureView` inline SVG / full-box sizing |
-| Process charts | `MermaidView` `fillContainer` (SVG viewBox) |
+| Process charts | `ProcessFlowView` (flowchart snapshot) or `MermaidView` fillContainer |
 | Library seed | `src/data/seedLibrary.ts` LaTeX + `svgUrl` |
 | Defaults | `src/lib/cardDefaults.ts` (`equationFitMethod: 'fontSize'`) |
 | Import diagrams | Prefer **SVG** in Import Image panel |
 
 ## Export
 
-On-canvas and print layout keep **vector sources** (KaTeX, SVG, Mermaid). Export to PDF/PNG/JPEG samples that high-quality layout at capture time for the target file format.
+On-canvas and print layout keep **vector sources** (KaTeX, SVG, processFlow /
+Mermaid). Export to PDF/PNG/JPEG samples that high-quality layout at capture
+time for the target file format.

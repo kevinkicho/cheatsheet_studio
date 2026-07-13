@@ -6,6 +6,7 @@ import {
   useReactFlow,
   type Connection,
   type Edge,
+  type FinalConnectionState,
   type Node,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
@@ -15,16 +16,15 @@ import {
   useMemo,
   useRef,
   useState,
-  type MouseEvent,
 } from 'react'
 
 import { fitViewPaddingForChrome } from '../lib/chromeLayout'
-import { reconcileEdgeHandles } from '../lib/portLayout'
 import { useFlowStore, type FlowEdgeData, type FlowNodeData } from '../lib/store'
 import { FlowNode } from './NodeTypes/FlowNode'
 import { MindmapNode } from './NodeTypes/MindmapNode'
 import { FlowEdge } from './EdgeTypes/FlowEdge'
 import { MindmapEdge } from './EdgeTypes/MindmapEdge'
+import { MermaidConnectionLine } from './EdgeTypes/MermaidConnectionLine'
 
 const nodeTypes = { flowNode: FlowNode, mindmapNode: MindmapNode }
 const edgeTypes = { flowEdge: FlowEdge, mindmapEdge: MindmapEdge }
@@ -38,6 +38,7 @@ function CanvasInner({ onOpenPalette }: CanvasInnerProps) {
     nodes, edges,
     onNodesChange, onEdgesChange, onConnect, onReconnect, removeEdgeById,
     addNode, addNodeAtPosition,
+    addConnectedNodeAtPosition,
     undo, redo, duplicateSelected, copySelected, pasteClipboard,
     pushHistory, assignToSubgraph,
     drawingShape, setDrawingShape,
@@ -47,11 +48,16 @@ function CanvasInner({ onOpenPalette }: CanvasInnerProps) {
     addMindmapChild,
     addMindmapSibling,
     promoteMindmapNodes,
+    selectedWaypoint,
+    removeEdgeWaypoint,
+    setSelectedWaypoint,
   } = useFlowStore()
   const { screenToFlowPosition, fitView, getViewport, setViewport } =
     useReactFlow()
   const panMode = !drawingShape && interactionMode === 'pan'
   const isMindmap = diagramKind === 'mindmap'
+  const chartShowGrid = useFlowStore((s) => s.chartShowGrid)
+  const chartGridColor = useFlowStore((s) => s.chartGridColor)
 
   // Track failed edge re-plug so we can delete the connection
   const edgeReconnectOk = useRef(true)
@@ -159,40 +165,73 @@ function CanvasInner({ onOpenPalette }: CanvasInnerProps) {
   )
 
   /**
-   * Snap every edge endpoint onto a real `port-N` handle so paths meet the
-   * blue dots (import/layout often omit handles → RF used box midpoints).
+   * Drop connection preview on empty canvas → place a rectangle and wire it.
+   * Valid drops onto existing nodes still use onConnect only.
+   */
+  const handleConnectEnd = useCallback(
+    (
+      event: globalThis.MouseEvent | globalThis.TouchEvent,
+      connectionState: FinalConnectionState,
+    ) => {
+      if (isMindmap || drawingShape || panMode) return
+      // Successful connect is handled by onConnect
+      if (connectionState.isValid) return
+      const fromNode = connectionState.fromNode
+      if (!fromNode) return
+
+      // Only create when released on the pane (not on a node/handle/UI chrome)
+      const target = event.target
+      if (!(target instanceof Element)) return
+      if (target.closest('.react-flow__node')) return
+      if (target.closest('.react-flow__handle')) return
+      if (target.closest('[data-shape-picker]')) return
+      // Prefer pane / viewport; also allow wrapper if RF marks differently
+      const onPane =
+        target.classList.contains('react-flow__pane') ||
+        !!target.closest('.react-flow__pane') ||
+        target.classList.contains('react-flow__viewport') ||
+        !!target.closest('.react-flow__viewport')
+      if (!onPane) return
+
+      const { clientX, clientY } =
+        'changedTouches' in event
+          ? {
+              clientX: event.changedTouches[0]?.clientX ?? 0,
+              clientY: event.changedTouches[0]?.clientY ?? 0,
+            }
+          : { clientX: event.clientX, clientY: event.clientY }
+
+      const flowPos = screenToFlowPosition({ x: clientX, y: clientY })
+      const fromHandle = connectionState.fromHandle
+      addConnectedNodeAtPosition({
+        position: flowPos,
+        fromNodeId: fromNode.id,
+        fromHandleId: fromHandle?.id ?? null,
+        fromHandleType: fromHandle?.type ?? 'source',
+        shape: 'rectangle',
+      })
+    },
+    [
+      isMindmap,
+      drawingShape,
+      panMode,
+      screenToFlowPosition,
+      addConnectedNodeAtPosition,
+    ],
+  )
+
+  /**
+   * Ports are only for creating / re-plugging connections. Stroke geometry is
+   * Mermaid center→border clip (FlowEdge), independent of handle midpoints.
    */
   const wiredEdges = useMemo(() => {
     if (isMindmap) return edges
-    return reconcileEdgeHandles(nodes as Node<FlowNodeData>[], edges).map(
-      (e) => ({
-        ...e,
-        reconnectable: true,
-        // Keep selected styling from store
-      }),
-    )
-  }, [nodes, edges, isMindmap])
-
-  // Persist reconciled handles once when they differ (no render loop: only write if changed)
-  useEffect(() => {
-    if (isMindmap) return
-    const next = reconcileEdgeHandles(nodes as Node<FlowNodeData>[], edges)
-    let dirty = false
-    if (next.length !== edges.length) dirty = true
-    else {
-      for (let i = 0; i < next.length; i++) {
-        if (
-          next[i]!.sourceHandle !== edges[i]!.sourceHandle ||
-          next[i]!.targetHandle !== edges[i]!.targetHandle
-        ) {
-          dirty = true
-          break
-        }
-      }
-    }
-    if (!dirty) return
-    useFlowStore.setState({ edges: next })
-  }, [nodes, edges, isMindmap])
+    return edges.map((e) => ({
+      ...e,
+      type: 'flowEdge' as const,
+      reconnectable: true,
+    }))
+  }, [edges, isMindmap])
 
   // ── Draw-mode state ─────────────────────────────────────────────────────────
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null)
@@ -280,6 +319,21 @@ function CanvasInner({ onOpenPalette }: CanvasInnerProps) {
         }
       }
 
+      // Delete selected connection bend point
+      if (
+        !isTyping &&
+        (e.key === 'Delete' || e.key === 'Backspace') &&
+        selectedWaypoint
+      ) {
+        e.preventDefault()
+        removeEdgeWaypoint(
+          selectedWaypoint.edgeId,
+          selectedWaypoint.waypointId,
+        )
+        setSelectedWaypoint(null)
+        return
+      }
+
       // N → add node (when not typing)
       if (!isTyping && (e.key === 'n' || e.key === 'N')) {
         if (isMindmap) addMindmapChild()
@@ -347,10 +401,13 @@ function CanvasInner({ onOpenPalette }: CanvasInnerProps) {
     addMindmapChild,
     addMindmapSibling,
     promoteMindmapNodes,
+    selectedWaypoint,
+    removeEdgeWaypoint,
+    setSelectedWaypoint,
   ])
 
   // ── Double-click on blank canvas → add node at cursor ─────────────────────
-  const handleDoubleClick = (e: MouseEvent) => {
+  const handleDoubleClick = (e: React.MouseEvent) => {
     if (drawingShape) return
     const target = e.target as Element
     if (target.closest('.react-flow__node')) return
@@ -516,6 +573,7 @@ function CanvasInner({ onOpenPalette }: CanvasInnerProps) {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        onConnectEnd={isMindmap ? undefined : handleConnectEnd}
         onReconnect={isMindmap ? undefined : handleReconnect}
         onReconnectStart={isMindmap ? undefined : handleReconnectStart}
         onReconnectEnd={isMindmap ? undefined : handleReconnectEnd}
@@ -530,6 +588,8 @@ function CanvasInner({ onOpenPalette }: CanvasInnerProps) {
           // Keep edges above node ports so re-plug grips receive clicks
           zIndex: 5,
         }}
+        // New-connection rubber band uses Mermaid clip + basis (not RF bezier)
+        connectionLineComponent={isMindmap ? undefined : MermaidConnectionLine}
         elevateEdgesOnSelect
         onNodeDragStop={handleNodeDragStop}
         // Controlled fit via runFitView — avoid always-on fitView (causes jump/twitch)
@@ -538,23 +598,32 @@ function CanvasInner({ onOpenPalette }: CanvasInnerProps) {
         deleteKeyCode={['Backspace', 'Delete']}
         // Loose: radial ports work as both source/target; mindmap uses center handles
         connectionMode={ConnectionMode.Loose}
+        // Snap to the port the user aimed at (not a distant face)
+        connectionRadius={28}
         // Draw: no pan. Pan mode: left-drag pans. Select: middle/right pan only.
+        // Hold Shift + left-drag to pan (must null selectionKeyCode — RF defaults
+        // selectionKeyCode to Shift which forces selection and blocks pan).
         panOnDrag={drawingShape ? false : panMode ? true : [1, 2]}
+        panActivationKeyCode={drawingShape || panMode ? null : 'Shift'}
+        selectionKeyCode={null}
         selectionOnDrag={!drawingShape && !panMode}
-        multiSelectionKeyCode={['Shift', 'Control']}
+        // Ctrl/Cmd multi-select (Shift reserved for temporary pan)
+        multiSelectionKeyCode={['Control', 'Meta']}
         nodesDraggable={!drawingShape && !panMode}
         elementsSelectable={!drawingShape}
         edgesFocusable={!drawingShape}
         panOnScroll
         zoomOnScroll
-        style={{ background: 'var(--neu-bg)' }}
+        style={{ background: 'transparent' }}
       >
-        <Background
-          variant={BackgroundVariant.Dots}
-          gap={20}
-          size={1}
-          color="var(--neu-dot, #2a2d36)"
-        />
+        {chartShowGrid && (
+          <Background
+            variant={BackgroundVariant.Dots}
+            gap={20}
+            size={1}
+            color={chartGridColor || 'var(--neu-dot, #2a2d36)'}
+          />
+        )}
         {/* SVG filter for hand-drawn look on nodes (class rf-hand-drawn) */}
         <svg width={0} height={0} style={{ position: 'absolute' }} aria-hidden>
           <defs>

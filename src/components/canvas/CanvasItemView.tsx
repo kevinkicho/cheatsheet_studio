@@ -8,10 +8,13 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react'
 import type { CanvasItem } from '@/types'
+import { DEFAULT_TITLE_FONT_SIZE, titleBandPx } from '@/types'
 import { useCanvasStore } from '@/stores/canvasStore'
 import { LatexView } from '@/components/math/LatexView'
 import { MarkdownTable } from '@/components/math/MarkdownTable'
 import { MermaidView } from '@/components/math/MermaidView'
+import { ProcessFlowView } from '@/components/math/ProcessFlowView'
+import { isProcessFlowSnapshot } from '@/lib/processFlowSnapshot'
 import { CanvasCardBody } from '@/components/canvas/CanvasCardBody'
 import {
   CARD_DEFAULTS,
@@ -50,14 +53,21 @@ interface CanvasItemViewProps {
 const MAX_AUTO_W = 520
 const MAX_AUTO_H = 420
 const DRAG_THRESHOLD_PX = 3
-/** Title row in card chrome: h-4 (16px) + mb-0.5 (2px). Reserved in flow, not overlay. */
-const TITLE_BAND_PX = 18
 /** Minimal chrome slack when snugging autoFit cards (avoid oversized height). */
 const AUTOFIT_SLACK_PX = 2
 
 /** Natural-size measure target for autoFit (unscaled). */
 function NaturalBody({ item }: { item: CanvasItem }) {
-  if (item.type === 'process-chart' || item.mermaidSource) {
+  if (item.type === 'process-chart' || item.mermaidSource || item.processFlow) {
+    if (isProcessFlowSnapshot(item.processFlow)) {
+      return (
+        <ProcessFlowView
+          snapshot={item.processFlow}
+          title={item.title}
+          className="h-full w-full"
+        />
+      )
+    }
     return (
       <MermaidView
         source={item.mermaidSource ?? ''}
@@ -188,7 +198,9 @@ export function CanvasItemView({
       const pad = (style.padding ?? CARD_DEFAULTS.padding) * 2
       // Title sits in normal flow above the body — reserve its band so the body
       // height equals content height (no forced shrink / grow gutters).
-      const titleBand = showTitle ? TITLE_BAND_PX : 0
+      const titleBand = showTitle
+        ? titleBandPx(style.titleFontSize ?? DEFAULT_TITLE_FONT_SIZE)
+        : 0
 
       const contentW = Math.ceil(
         Math.max(body.scrollWidth, body.offsetWidth, 1),
@@ -257,6 +269,7 @@ export function CanvasItemView({
     item.imageUrl,
     item.title,
     item.style?.fontSize,
+    item.style?.titleFontSize,
     item.style?.padding,
     item.width,
     item.height,
@@ -684,7 +697,15 @@ export function CanvasItemView({
           <div
             data-card-title
             title="Click to hide title"
-            className={`pointer-events-auto relative z-10 mb-0.5 h-4 shrink-0 cursor-pointer truncate px-0.5 text-[10px] font-medium uppercase leading-4 tracking-wide text-zinc-500 hover:text-zinc-200 ${titleAlignClass}`}
+            className={`pointer-events-auto relative z-10 shrink-0 cursor-pointer truncate px-0.5 font-medium uppercase tracking-wide text-zinc-500 hover:text-zinc-200 ${titleAlignClass}`}
+            style={{
+              fontSize: style.titleFontSize ?? DEFAULT_TITLE_FONT_SIZE,
+              lineHeight: 1.6,
+              marginBottom: 2,
+              height: Math.round(
+                (style.titleFontSize ?? DEFAULT_TITLE_FONT_SIZE) * 1.6,
+              ),
+            }}
           >
             {item.title}
           </div>

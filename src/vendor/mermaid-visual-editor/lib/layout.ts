@@ -1,6 +1,10 @@
 import dagre from '@dagrejs/dagre'
 import type { Edge, Node } from '@xyflow/react'
-import type { Direction, FlowNodeData } from './store'
+import type { Direction, FlowEdgeData, FlowNodeData } from './store'
+import { facePairForEdge } from './edgePath'
+import { nodeBoxFromRf } from './mermaidEdgeRoute'
+import { positionToDefaultPortId } from './portLayout'
+import { siblingIndexForEdge } from './mermaidEdgeRoute'
 
 /** Defaults close to studio Mermaid flowchart metrics (mermaidTheme FLOW). */
 const NODE_WIDTH = 160
@@ -102,14 +106,184 @@ export function applyDagreLayout(
     }
 
     // Top-level non-subgraph node
-    const w = typeof node.style?.width === 'number' ? node.style.width : NODE_WIDTH
-    const h = typeof node.style?.height === 'number' ? node.style.height : NODE_HEIGHT
+    const w =
+      typeof node.width === 'number'
+        ? node.width
+        : typeof node.style?.width === 'number'
+          ? node.style.width
+          : NODE_WIDTH
+    const h =
+      typeof node.height === 'number'
+        ? node.height
+        : typeof node.style?.height === 'number'
+          ? node.style.height
+          : NODE_HEIGHT
     return {
       ...node,
       position: {
         x: layout.x - w / 2,
         y: layout.y - h / 2,
       },
+      width: w,
+      height: h,
+      style: { ...node.style, width: w, height: h },
     }
   })
+}
+
+/**
+ * Clean TD/LR stack: dagre positions + drop Mermaid free-path noise so
+ * smooth-step edges look like a normal flowchart (not diagonals / ovals).
+ * Keeps manualConnect plugs and bend waypoints.
+ */
+export function cleanFlowchartLayout(
+  nodes: Node<FlowNodeData>[],
+  edges: Edge<FlowEdgeData>[],
+  direction: Direction = 'TD',
+): { nodes: Node<FlowNodeData>[]; edges: Edge<FlowEdgeData>[] } {
+  if (nodes.length === 0) return { nodes, edges }
+
+  const sized = nodes.map((n) => {
+    if (n.data?.isSubgraph) return n
+    const w =
+      typeof n.width === 'number'
+        ? n.width
+        : typeof n.style?.width === 'number'
+          ? n.style.width
+          : NODE_WIDTH
+    const h =
+      typeof n.height === 'number'
+        ? n.height
+        : typeof n.style?.height === 'number'
+          ? n.style.height
+          : NODE_HEIGHT
+    return {
+      ...n,
+      width: w,
+      height: h,
+      style: { ...n.style, width: w, height: h },
+    }
+  })
+
+  const positioned = applyDagreLayout(sized, edges, direction)
+
+  // Assign port handles that match the faces smooth-step will use, so the
+  // painted blue dots and the line ends are the same connection points.
+  // Never changes edge.source / edge.target. Manual plugs keep their handles.
+  const edgeRefs = edges.map((e) => ({
+    id: e.id,
+    source: e.source,
+    target: e.target,
+  }))
+  const centers = new Map(
+    positioned.map((n) => {
+      const w =
+        typeof n.width === 'number'
+          ? n.width
+          : typeof n.style?.width === 'number'
+            ? n.style.width
+            : NODE_WIDTH
+      const h =
+        typeof n.height === 'number'
+          ? n.height
+          : typeof n.style?.height === 'number'
+            ? n.style.height
+            : NODE_HEIGHT
+      return [
+        n.id,
+        { cx: n.position.x + w / 2, cy: n.position.y + h / 2 },
+      ] as const
+    }),
+  )
+  const byId = new Map(positioned.map((n) => [n.id, n]))
+
+  const cleanedEdges = edges.map((e) => {
+    const data = { ...(e.data ?? {}) } as FlowEdgeData
+    const manual = data.manualConnect === true
+    delete data.mermaidPath
+    delete data.mermaidLabelX
+    delete data.mermaidLabelY
+
+    if (manual) {
+      return {
+        ...e,
+        type: 'flowEdge' as const,
+        reconnectable: true,
+        data,
+      }
+    }
+
+    const sn = byId.get(e.source)
+    const tn = byId.get(e.target)
+    let sourceHandle = e.sourceHandle
+    let targetHandle = e.targetHandle
+    if (sn && tn) {
+      const sw =
+        typeof sn.width === 'number'
+          ? sn.width
+          : typeof sn.style?.width === 'number'
+            ? sn.style.width
+            : NODE_WIDTH
+      const sh =
+        typeof sn.height === 'number'
+          ? sn.height
+          : typeof sn.style?.height === 'number'
+            ? sn.style.height
+            : NODE_HEIGHT
+      const tw =
+        typeof tn.width === 'number'
+          ? tn.width
+          : typeof tn.style?.width === 'number'
+            ? tn.style.width
+            : NODE_WIDTH
+      const th =
+        typeof tn.height === 'number'
+          ? tn.height
+          : typeof tn.style?.height === 'number'
+            ? tn.style.height
+            : NODE_HEIGHT
+      const sBox = nodeBoxFromRf(
+        sn.position.x,
+        sn.position.y,
+        sw,
+        sh,
+        sn.data?.shape,
+      )
+      const tBox = nodeBoxFromRf(
+        tn.position.x,
+        tn.position.y,
+        tw,
+        th,
+        tn.data?.shape,
+      )
+      const pairCount = edgeRefs.filter(
+        (x) =>
+          (x.source === e.source && x.target === e.target) ||
+          (x.source === e.target && x.target === e.source),
+      ).length
+      const idx = siblingIndexForEdge(
+        e.id,
+        e.source,
+        e.target,
+        edgeRefs,
+        centers,
+      )
+      const multi = pairCount > 1
+      const slot = multi ? (idx === 0 ? -1 : idx) : 0
+      const faces = facePairForEdge(sBox, tBox, slot, multi)
+      sourceHandle = positionToDefaultPortId(faces.sourcePos)
+      targetHandle = positionToDefaultPortId(faces.targetPos)
+    }
+
+    return {
+      ...e,
+      sourceHandle,
+      targetHandle,
+      type: 'flowEdge' as const,
+      reconnectable: true,
+      data,
+    }
+  })
+
+  return { nodes: positioned, edges: cleanedEdges }
 }

@@ -1,10 +1,10 @@
 /**
- * Node Settings — connection ports (count, distance, rotation, perimeter).
- * Shown when a flowchart shape (not group / mindmap) is selected.
+ * Node Settings — auto-connect toggle, connection ports, bend points, edge color.
  */
 import { useEffect, useRef } from 'react'
 import { useShallow } from 'zustand/react/shallow'
-import { useFlowStore, type FlowNodeData } from '../../lib/store'
+import { ColorPicker } from '@/components/ui/ColorPicker'
+import { useFlowStore, type FlowEdgeData, type FlowNodeData } from '../../lib/store'
 import {
   DEFAULT_PORT_LAYOUT,
   PORT_COUNT_MAX,
@@ -13,6 +13,12 @@ import {
   PORT_RADIUS_MIN,
   getPortLayout,
 } from '../../lib/portLayout'
+import {
+  liveEndpoints,
+  newWaypointId,
+  seedWaypointsAlongEdge,
+} from '../../lib/edgePath'
+import { nodeBoxFromRf, siblingIndexForEdge } from '../../lib/mermaidEdgeRoute'
 
 const NEU_BG = 'var(--neu-bg)'
 const TEXT = 'var(--neu-text, #e4e4e7)'
@@ -70,11 +76,413 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
   )
 }
 
+const cardStyle: React.CSSProperties = {
+  background: NEU_BG,
+  borderRadius: 14,
+  boxShadow: 'var(--neu-shadow-concave)',
+  padding: 14,
+}
+
 function selectedNodeIds(): string[] {
   return useFlowStore
     .getState()
     .nodes.filter((n) => n.selected && !n.data.isSubgraph)
     .map((n) => n.id)
+}
+
+function selectedEdgeIds(): string[] {
+  return useFlowStore
+    .getState()
+    .edges.filter((e) => e.selected)
+    .map((e) => e.id)
+}
+
+function nodeBoxFromStore(id: string) {
+  const n = useFlowStore.getState().nodes.find((x) => x.id === id)
+  if (!n) return null
+  const w =
+    typeof n.width === 'number'
+      ? n.width
+      : typeof n.style?.width === 'number'
+        ? n.style.width
+        : 120
+  const h =
+    typeof n.height === 'number'
+      ? n.height
+      : typeof n.style?.height === 'number'
+        ? n.style.height
+        : 48
+  return nodeBoxFromRf(
+    n.position.x,
+    n.position.y,
+    w,
+    h,
+    (n.data?.shape as never) ?? 'rectangle',
+  )
+}
+
+/** Bend points + per-connection color for selected connection(s). */
+function EdgeBendPointsPanel() {
+  const {
+    setEdgeWaypoints,
+    removeEdgeWaypoint,
+    setSelectedWaypoint,
+    selectedWaypoint,
+    multiEdgeSpacing,
+    updateEdgeType,
+  } = useFlowStore(
+    useShallow((s) => ({
+      setEdgeWaypoints: s.setEdgeWaypoints,
+      removeEdgeWaypoint: s.removeEdgeWaypoint,
+      setSelectedWaypoint: s.setSelectedWaypoint,
+      selectedWaypoint: s.selectedWaypoint,
+      multiEdgeSpacing: s.multiEdgeSpacing,
+      updateEdgeType: s.updateEdgeType,
+    })),
+  )
+
+  const selectedEdges = useFlowStore(
+    useShallow((s) => s.edges.filter((e) => e.selected)),
+  )
+  const allEdges = useFlowStore((s) => s.edges)
+  const lastEdgeIds = useRef<string[]>([])
+  useEffect(() => {
+    if (selectedEdges.length > 0) {
+      lastEdgeIds.current = selectedEdges.map((e) => e.id)
+    }
+  }, [selectedEdges])
+
+  const displayEdges =
+    selectedEdges.length > 0
+      ? selectedEdges
+      : allEdges.filter((e) => lastEdgeIds.current.includes(e.id))
+
+  if (displayEdges.length === 0) return null
+
+  const first = displayEdges[0]!
+  const data = (first.data ?? {}) as FlowEdgeData
+  const count = data.waypoints?.length ?? 0
+
+  const resolveIds = () => {
+    const live = selectedEdgeIds()
+    return live.length > 0 ? live : lastEdgeIds.current
+  }
+
+  const applyCount = (n: number) => {
+    const next = Math.max(0, Math.min(12, n))
+    for (const edgeId of resolveIds()) {
+      const edge = useFlowStore.getState().edges.find((e) => e.id === edgeId)
+      if (!edge) continue
+      const src = nodeBoxFromStore(edge.source)
+      const tgt = nodeBoxFromStore(edge.target)
+      if (!src || !tgt) continue
+      const centers = new Map(
+        useFlowStore.getState().nodes.map((nd) => {
+          const w =
+            typeof nd.width === 'number'
+              ? nd.width
+              : typeof nd.style?.width === 'number'
+                ? nd.style.width
+                : 120
+          const h =
+            typeof nd.height === 'number'
+              ? nd.height
+              : typeof nd.style?.height === 'number'
+                ? nd.style.height
+                : 48
+          return [
+            nd.id,
+            {
+              cx: nd.position.x + w / 2,
+              cy: nd.position.y + h / 2,
+            },
+          ] as const
+        }),
+      )
+      const idx = siblingIndexForEdge(
+        edge.id,
+        edge.source,
+        edge.target,
+        useFlowStore
+          .getState()
+          .edges.map((e) => ({
+            id: e.id,
+            source: e.source,
+            target: e.target,
+          })),
+        centers,
+      )
+      const seeded = seedWaypointsAlongEdge(
+        src,
+        tgt,
+        next,
+        edge.data?.waypoints,
+        edge.data?.mermaidPath,
+        idx,
+        multiEdgeSpacing,
+      )
+      setEdgeWaypoints(edgeId, seeded)
+    }
+  }
+
+  const addOne = () => {
+    for (const edgeId of resolveIds()) {
+      const edge = useFlowStore.getState().edges.find((e) => e.id === edgeId)
+      if (!edge) continue
+      const src = nodeBoxFromStore(edge.source)
+      const tgt = nodeBoxFromStore(edge.target)
+      if (!src || !tgt) continue
+      const { start, end } = liveEndpoints(src, tgt)
+      const prev = edge.data?.waypoints ?? []
+      const mid = {
+        id: newWaypointId(),
+        x: Math.round((start.x + end.x) / 2),
+        y: Math.round((start.y + end.y) / 2),
+      }
+      // Insert near middle of list
+      const insertAt = Math.floor(prev.length / 2)
+      const next = [...prev]
+      next.splice(insertAt, 0, mid)
+      setEdgeWaypoints(edgeId, next)
+      setSelectedWaypoint({ edgeId, waypointId: mid.id })
+    }
+  }
+
+  return (
+    <div style={{ ...cardStyle, marginTop: 10 }}>
+      <div
+        style={{
+          fontSize: 11,
+          fontWeight: 600,
+          color: TEXT,
+          marginBottom: 4,
+        }}
+      >
+        {displayEdges.length === 1
+          ? 'Connection'
+          : `${displayEdges.length} connections`}
+      </div>
+      <p
+        style={{
+          fontSize: 9,
+          color: MUTED,
+          lineHeight: 1.4,
+          margin: '0 0 10px',
+        }}
+      >
+        Color and bend points for this connection. Select the edge, then edit
+        below. Bend dots hide when the edge is deselected.
+      </p>
+
+      <FieldLabel>Connection color</FieldLabel>
+      <div style={{ marginBottom: 12 }} onMouseDown={(e) => e.stopPropagation()}>
+        <ColorPicker
+          key={`edge-color-${first.id}-${data.strokeColor ?? 'def'}`}
+          value={data.strokeColor}
+          defaultValue="#a1a1aa"
+          onChange={(hex) =>
+            resolveIds().forEach((id) =>
+              updateEdgeType(id, { strokeColor: hex }),
+            )
+          }
+          compact
+          aria-label="Connection color"
+        />
+      </div>
+
+      <FieldLabel>Bend count</FieldLabel>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          marginBottom: 10,
+        }}
+      >
+        <NeuBtn
+          title="Fewer bend points"
+          disabled={count <= 0}
+          onClick={() => applyCount(count - 1)}
+        >
+          −
+        </NeuBtn>
+        <span
+          style={{
+            flex: 1,
+            textAlign: 'center',
+            fontSize: 14,
+            fontWeight: 700,
+            color: TEXT,
+            fontVariantNumeric: 'tabular-nums',
+          }}
+        >
+          {count}
+        </span>
+        <NeuBtn
+          title="More bend points"
+          disabled={count >= 12}
+          onClick={() => applyCount(count + 1)}
+        >
+          +
+        </NeuBtn>
+      </div>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+        <NeuBtn title="Add one bend at midpoint" onClick={addOne}>
+          + Bend
+        </NeuBtn>
+        <NeuBtn
+          title="Clear all bend points"
+          disabled={count === 0}
+          onClick={() => resolveIds().forEach((id) => setEdgeWaypoints(id, []))}
+        >
+          Clear bends
+        </NeuBtn>
+        {selectedWaypoint && (
+          <NeuBtn
+            title="Delete selected bend point"
+            onClick={() => {
+              removeEdgeWaypoint(
+                selectedWaypoint.edgeId,
+                selectedWaypoint.waypointId,
+              )
+              setSelectedWaypoint(null)
+            }}
+          >
+            Delete selected
+          </NeuBtn>
+        )}
+      </div>
+
+      {count > 0 && displayEdges.length === 1 && (
+        <ul
+          style={{
+            listStyle: 'none',
+            margin: 0,
+            padding: 0,
+            maxHeight: 120,
+            overflow: 'auto',
+          }}
+        >
+          {(data.waypoints ?? []).map((wp, i) => {
+            const sel =
+              selectedWaypoint?.edgeId === first.id &&
+              selectedWaypoint?.waypointId === wp.id
+            return (
+              <li
+                key={wp.id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '4px 6px',
+                  marginBottom: 4,
+                  borderRadius: 6,
+                  background: sel
+                    ? 'rgba(56, 189, 248, 0.15)'
+                    : 'transparent',
+                  fontSize: 10,
+                  color: TEXT,
+                  cursor: 'pointer',
+                }}
+                onClick={() =>
+                  setSelectedWaypoint({ edgeId: first.id, waypointId: wp.id })
+                }
+              >
+                <span style={{ color: MUTED }}>#{i + 1}</span>
+                <span style={{ fontVariantNumeric: 'tabular-nums' }}>
+                  ({Math.round(wp.x)}, {Math.round(wp.y)})
+                </span>
+                <button
+                  type="button"
+                  title="Remove this bend"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    removeEdgeWaypoint(first.id, wp.id)
+                  }}
+                  style={{
+                    marginLeft: 'auto',
+                    background: 'none',
+                    border: 'none',
+                    color: MUTED,
+                    cursor: 'pointer',
+                    fontSize: 12,
+                  }}
+                >
+                  ×
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function AutoConnectToggle() {
+  const autoConnectEdges = useFlowStore((s) => s.autoConnectEdges)
+  const setAutoConnectEdges = useFlowStore((s) => s.setAutoConnectEdges)
+
+  return (
+    <div
+      style={{
+        ...cardStyle,
+        marginBottom: 10,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 10,
+      }}
+    >
+      <div style={{ minWidth: 0 }}>
+        <div
+          style={{
+            fontSize: 11,
+            fontWeight: 600,
+            color: TEXT,
+            marginBottom: 2,
+          }}
+        >
+          Auto-connect lines
+        </div>
+        <p
+          style={{
+            fontSize: 9,
+            color: MUTED,
+            lineHeight: 1.4,
+            margin: 0,
+          }}
+        >
+          {autoConnectEdges
+            ? 'On: Auto Layout / direction change rewires links from Mermaid.'
+            : 'Off (default): diagram lines stay as-is; you plug extra links with ports. Layout only moves nodes.'}
+        </p>
+      </div>
+      <button
+        type="button"
+        onClick={() => setAutoConnectEdges(!autoConnectEdges)}
+        style={{
+          background: NEU_BG,
+          border: 'none',
+          borderRadius: 8,
+          boxShadow: autoConnectEdges
+            ? 'var(--neu-shadow-inset)'
+            : 'var(--neu-shadow-raised)',
+          padding: '5px 12px',
+          fontSize: 11,
+          fontWeight: 600,
+          color: autoConnectEdges
+            ? 'var(--neu-icon-active, #818cf8)'
+            : MUTED,
+          cursor: 'pointer',
+          flexShrink: 0,
+        }}
+      >
+        {autoConnectEdges ? 'On' : 'Off'}
+      </button>
+    </div>
+  )
 }
 
 export function NodeSettingsSection() {
@@ -93,6 +501,9 @@ export function NodeSettingsSection() {
     useShallow((s) =>
       s.nodes.filter((n) => n.selected && !n.data.isSubgraph),
     ),
+  )
+  const selectedEdges = useFlowStore(
+    useShallow((s) => s.edges.filter((e) => e.selected)),
   )
   const lastNodeIds = useRef<string[]>([])
   useEffect(() => {
@@ -114,6 +525,7 @@ export function NodeSettingsSection() {
 
   const first = displayNodes[0] ?? null
   const data = first ? (first.data as FlowNodeData) : null
+  const hasEdgeSel = selectedEdges.length > 0
 
   if (isMindmap) {
     return (
@@ -132,23 +544,36 @@ export function NodeSettingsSection() {
     )
   }
 
-  if (!data || data.isSubgraph) {
+  // Only edges selected → connection color + bend points
+  if ((!data || data.isSubgraph) && hasEdgeSel) {
     return (
       <div
         onMouseDown={(e) => e.stopPropagation()}
-        style={{
-          background: NEU_BG,
-          borderRadius: 14,
-          boxShadow: 'var(--neu-shadow-concave)',
-          padding: '20px 14px',
-          fontSize: 11,
-          color: MUTED,
-          textAlign: 'center',
-          lineHeight: 1.5,
-        }}
+        onPointerDown={(e) => e.stopPropagation()}
       >
-        Select a flowchart shape to edit its connection ports (dots on the
-        perimeter).
+        <AutoConnectToggle />
+        <EdgeBendPointsPanel />
+      </div>
+    )
+  }
+
+  if (!data || data.isSubgraph) {
+    return (
+      <div onMouseDown={(e) => e.stopPropagation()}>
+        <AutoConnectToggle />
+        <div
+          style={{
+            ...cardStyle,
+            padding: '20px 14px',
+            fontSize: 11,
+            color: MUTED,
+            textAlign: 'center',
+            lineHeight: 1.5,
+          }}
+        >
+          Select a flowchart shape for connection ports, or a connection for
+          color and bend points.
+        </div>
       </div>
     )
   }
@@ -169,15 +594,8 @@ export function NodeSettingsSection() {
       onMouseDown={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
     >
-      <div
-        style={{
-          background: NEU_BG,
-          borderRadius: 14,
-          boxShadow: 'var(--neu-shadow-concave)',
-          padding: 14,
-        }}
-      >
-        {/* Header row: title + top-right Reset */}
+      <AutoConnectToggle />
+      <div style={cardStyle}>
         <div
           style={{
             display: 'flex',
@@ -208,9 +626,11 @@ export function NodeSettingsSection() {
                 margin: 0,
               }}
             >
+              Connection ports only (where edges attach). Not related to adding
+              shapes from the shape picker. Visible when this shape is selected.
               {layout.onPerimeter
-                ? 'On perimeter: dots are spaced evenly along the shape outline (perimeter ÷ count). Rotate shifts them along the path.'
-                : 'Free radial: dots sit on a circle around the center. Distance moves them in/out from the border.'}
+                ? ' On perimeter: even spacing along the outline.'
+                : ' Free radial: distance from center.'}
             </p>
           </div>
           <button
@@ -317,9 +737,7 @@ export function NodeSettingsSection() {
             }}
           >
             Rotate · {Math.round(layout.rotation)}°
-            {layout.onPerimeter
-              ? ' (along perimeter)'
-              : ' (around center)'}
+            {layout.onPerimeter ? ' (along perimeter)' : ' (around center)'}
           </span>
           <input
             type="range"
@@ -359,6 +777,9 @@ export function NodeSettingsSection() {
           Snap ports to shape perimeter
         </label>
       </div>
+
+      {/* Also show bend points if an edge is selected alongside nodes */}
+      {hasEdgeSel && <EdgeBendPointsPanel />}
     </div>
   )
 }

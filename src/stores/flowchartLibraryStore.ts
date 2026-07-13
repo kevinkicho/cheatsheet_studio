@@ -4,10 +4,14 @@ import {
   deleteUserFlowchart,
   listUserFlowcharts,
   updateUserFlowchart,
+  type FlowchartLibraryInput,
   type StoredFlowchart,
 } from '@/lib/flowchartLibrary'
 import { formatFirestoreError } from '@/lib/firestoreSanitize'
+import type { ProcessFlowSnapshot } from '@/lib/processFlowSnapshot'
 import type { MermaidDiagramKind, MermaidFlowDirection } from '@/types'
+
+type SaveInput = FlowchartLibraryInput
 
 interface FlowchartLibraryState {
   items: StoredFlowchart[]
@@ -17,29 +21,22 @@ interface FlowchartLibraryState {
   /** Currently linked library id (after save/load), if any. */
   activeId: string | null
   load: (uid: string) => Promise<void>
-  saveNew: (
-    uid: string,
-    input: {
-      title: string
-      mermaidSource: string
-      mermaidKind?: MermaidDiagramKind
-      mermaidDirection?: MermaidFlowDirection
-    },
-  ) => Promise<StoredFlowchart | null>
+  saveNew: (uid: string, input: SaveInput) => Promise<StoredFlowchart | null>
   saveOverwrite: (
     uid: string,
     id: string,
-    input: {
-      title: string
-      mermaidSource: string
-      mermaidKind?: MermaidDiagramKind
-      mermaidDirection?: MermaidFlowDirection
-    },
+    input: SaveInput,
   ) => Promise<boolean>
   remove: (uid: string, id: string) => Promise<boolean>
   setActiveId: (id: string | null) => void
   clearError: () => void
   reset: () => void
+}
+
+function withFlow(
+  input: SaveInput,
+): SaveInput & { processFlow?: ProcessFlowSnapshot | null } {
+  return input
 }
 
 export const useFlowchartLibraryStore = create<FlowchartLibraryState>(
@@ -67,7 +64,7 @@ export const useFlowchartLibraryStore = create<FlowchartLibraryState>(
     saveNew: async (uid, input) => {
       set({ saving: true, error: null })
       try {
-        const created = await createUserFlowchart(uid, input)
+        const created = await createUserFlowchart(uid, withFlow(input))
         set((s) => ({
           items: [created, ...s.items],
           saving: false,
@@ -83,8 +80,12 @@ export const useFlowchartLibraryStore = create<FlowchartLibraryState>(
     saveOverwrite: async (_uid, id, input) => {
       set({ saving: true, error: null })
       try {
-        await updateUserFlowchart(id, input)
+        await updateUserFlowchart(id, withFlow(input))
         const now = Date.now()
+        const processFlow =
+          input.processFlow === null
+            ? undefined
+            : (input.processFlow ?? undefined)
         set((s) => ({
           items: s.items
             .map((it) =>
@@ -93,9 +94,16 @@ export const useFlowchartLibraryStore = create<FlowchartLibraryState>(
                     ...it,
                     title: input.title.trim() || it.title,
                     mermaidSource: input.mermaidSource,
-                    mermaidKind: input.mermaidKind ?? it.mermaidKind,
+                    mermaidKind:
+                      (input.mermaidKind as MermaidDiagramKind) ??
+                      it.mermaidKind,
                     mermaidDirection:
-                      input.mermaidDirection ?? it.mermaidDirection,
+                      (input.mermaidDirection as MermaidFlowDirection) ??
+                      it.mermaidDirection,
+                    processFlow:
+                      input.processFlow === undefined
+                        ? it.processFlow
+                        : processFlow,
                     updatedAt: now,
                   }
                 : it,

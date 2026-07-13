@@ -1,12 +1,11 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import type { LibraryItem } from '@/types'
-import { DEFAULT_ITEM_STYLE } from '@/types'
+import { DEFAULT_ITEM_STYLE, titleBandPx } from '@/types'
 import { FigureView } from '@/components/math/FigureView'
 import { LatexView } from '@/components/math/LatexView'
 import { MarkdownTable } from '@/components/math/MarkdownTable'
 import { estimateLibraryCardSize } from '@/lib/canvasDrop'
 
-const TITLE_BAND = 18
 const SLACK = 4
 
 /**
@@ -35,7 +34,10 @@ export function CanvasDragPreview({ item }: { item: LibraryItem }) {
       if (w < 4 || h < 4) return
       setBox({
         width: Math.min(520, Math.max(80, w + SLACK)),
-        height: Math.min(480, Math.max(40, h + TITLE_BAND + SLACK)),
+        height: Math.min(
+          480,
+          Math.max(40, h + titleBandPx(style.titleFontSize) + SLACK),
+        ),
       })
     }
 

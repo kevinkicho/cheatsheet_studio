@@ -17,6 +17,7 @@ import {
   type CurveStyle,
 } from '../../lib/store'
 import { serialize } from '../../lib/serializer'
+import { cleanFlowchartLayout } from '../../lib/layout'
 import { layoutWithMermaid } from '../../lib/layoutFromMermaid'
 import { DIRECTIONS, THEMES, CURVE_STYLES } from '../ShapeIcons'
 
@@ -140,26 +141,43 @@ export function DiagramSettingsSection() {
       queueMicrotask(() => layoutMindmap({ fit: false }))
       return
     }
-    // Re-layout with Mermaid engine at the new direction (matches sheet card)
     const { nodes, edges, theme: t, look: l, curveStyle: c } =
       useFlowStore.getState()
     if (nodes.length === 0) return
+    // Measure sizes via Mermaid when possible, then rank with dagre
     const src = serialize(nodes, edges, {
       direction: dir,
       theme: t,
       look: l,
       curveStyle: c,
     })
-    void layoutWithMermaid(src, nodes, edges).then((laid) => {
-      useFlowStore.getState().importDiagram(laid.nodes, laid.edges, {
-        direction: dir,
-        theme: t,
-        look: l,
-        curveStyle: c,
-        diagramKind: 'flowchart',
+    void layoutWithMermaid(src, nodes, edges)
+      .then((laid) => {
+        const cleaned = cleanFlowchartLayout(
+          laid.nodes.length ? laid.nodes : nodes,
+          edges,
+          dir,
+        )
+        useFlowStore.getState().importDiagram(cleaned.nodes, cleaned.edges, {
+          direction: dir,
+          theme: t,
+          look: l,
+          curveStyle: c,
+          diagramKind: 'flowchart',
+        })
+        useFlowStore.setState((s) => ({ layoutEpoch: s.layoutEpoch + 1 }))
       })
-      useFlowStore.setState((s) => ({ layoutEpoch: s.layoutEpoch + 1 }))
-    })
+      .catch(() => {
+        const cleaned = cleanFlowchartLayout(nodes, edges, dir)
+        useFlowStore.getState().importDiagram(cleaned.nodes, cleaned.edges, {
+          direction: dir,
+          theme: t,
+          look: l,
+          curveStyle: c,
+          diagramKind: 'flowchart',
+        })
+        useFlowStore.setState((s) => ({ layoutEpoch: s.layoutEpoch + 1 }))
+      })
   }
 
   return (

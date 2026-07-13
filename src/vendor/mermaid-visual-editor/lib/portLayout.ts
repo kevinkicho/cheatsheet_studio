@@ -67,6 +67,24 @@ export function angleToPosition(deg: number): Position {
   return Position.Left
 }
 
+/**
+ * Default 4-port layout (rotation 0): port-0 top, 1 right, 2 bottom, 3 left.
+ * Used so auto-routed edges keep a stable handle id matching the face they use.
+ */
+export function positionToDefaultPortId(pos: Position): string {
+  switch (pos) {
+    case Position.Top:
+      return 'port-0'
+    case Position.Right:
+      return 'port-1'
+    case Position.Bottom:
+      return 'port-2'
+    case Position.Left:
+    default:
+      return 'port-3'
+  }
+}
+
 export type PortPlacement = {
   index: number
   id: string
@@ -131,23 +149,18 @@ function shapePerimeterPolyline(shape: NodeShape): Pt[] {
       }
       return out
     }
-    case 'stadium': {
-      // Pill: two semicircles + straight sides (horizontal capsule)
-      const n = 16
-      const r = 0.5
-      const out: Pt[] = []
-      // right semicircle
-      for (let i = 0; i <= n; i++) {
-        const a = -Math.PI / 2 + (i / n) * Math.PI
-        out.push({ x: 0.5 + r * Math.cos(a) * 0.35 + 0.15, y: 0.5 + r * Math.sin(a) })
-      }
-      // left semicircle
-      for (let i = 0; i <= n; i++) {
-        const a = Math.PI / 2 + (i / n) * Math.PI
-        out.push({ x: 0.5 + r * Math.cos(a) * 0.35 - 0.15, y: 0.5 + r * Math.sin(a) })
-      }
-      return out
-    }
+    case 'stadium':
+      // CSS stadium = border-radius:9999 pill. Connection ports must sit on
+      // mid-sides (N/E/S/W), not equal-arc along a bad capsule polyline
+      // (that produced a "tornado" spiral of 4 blue dots on Start/Done).
+      // Same outline as rectangle → port-0 top center, 1 right, 2 bottom, 3 left.
+      return [
+        { x: 0.5, y: 0 },
+        { x: 1, y: 0 },
+        { x: 1, y: 1 },
+        { x: 0, y: 1 },
+        { x: 0, y: 0 },
+      ]
     case 'diamond':
       return [
         { x: 0.5, y: 0 },
@@ -306,6 +319,30 @@ export function normalizePortHandleId(
   return legacy[handleId] ?? null
 }
 
+/**
+ * Absolute flow-space position of a port handle on a node box.
+ * Returns null if handle is missing / not a port.
+ */
+export function portFlowPoint(
+  box: { cx: number; cy: number; width: number; height: number },
+  shape: NodeShape | undefined,
+  data: FlowNodeData | undefined,
+  handleId: string | null | undefined,
+): { x: number; y: number } | null {
+  const id = normalizePortHandleId(handleId)
+  if (!id) return null
+  const layout = getPortLayout(data)
+  const ports = computePortPlacements(layout, shape ?? 'rectangle')
+  const p = ports.find((x) => x.id === id)
+  if (!p) return null
+  const left = box.cx - box.width / 2
+  const top = box.cy - box.height / 2
+  return {
+    x: left + p.px * box.width,
+    y: top + p.py * box.height,
+  }
+}
+
 function nodeCenter(n: Node<FlowNodeData>): { x: number; y: number } {
   const w =
     typeof n.width === 'number'
@@ -349,9 +386,15 @@ export function pickFacingPortId(
 }
 
 /**
- * Ensure every edge ends on a valid `port-N`.
+ * Ensure every edge ends on a valid `port-N` on its own source/target nodes.
+ * Never reassigns edge.source / edge.target.
+ *
  * When port layout changes (rotate/count), keep the same port index if still
  * valid so endpoints move with the dots; re-pick only if missing/out of range.
+ * Manual (user-plugged) edges keep their handles whenever still in range.
+ *
+ * @param opts.forceFacing — always re-pick mid-side ports facing the other node
+ *   (Mermaid-style after free-form moves). Default keeps stable port indices.
  */
 export function reconcileEdgeHandles<
   E extends {
@@ -359,8 +402,14 @@ export function reconcileEdgeHandles<
     target: string
     sourceHandle?: string | null
     targetHandle?: string | null
+    data?: { manualConnect?: boolean }
   },
->(nodes: Node<FlowNodeData>[], edges: E[]): E[] {
+>(
+  nodes: Node<FlowNodeData>[],
+  edges: E[],
+  opts?: { forceFacing?: boolean },
+): E[] {
+  const forceFacing = opts?.forceFacing === true
   const byId = new Map(nodes.map((n) => [n.id, n]))
   return edges.map((e) => {
     const src = byId.get(e.source)
@@ -374,6 +423,10 @@ export function reconcileEdgeHandles<
       return e
     }
 
+    const manual = e.data?.manualConnect === true
+    // Never force-facing on user plugs — they chose the ports
+    const mayForce = forceFacing && !manual
+
     const srcLayout = getPortLayout(src.data)
     const tgtLayout = getPortLayout(tgt.data)
 
@@ -383,13 +436,22 @@ export function reconcileEdgeHandles<
     const srcIdx = sh ? Number(sh.replace('port-', '')) : NaN
     const tgtIdx = th ? Number(th.replace('port-', '')) : NaN
 
-    // Keep index if still valid — rotation moves the dot; edge follows same port-N
-    if (!Number.isFinite(srcIdx) || srcIdx < 0 || srcIdx >= srcLayout.count) {
+    if (
+      mayForce ||
+      !Number.isFinite(srcIdx) ||
+      srcIdx < 0 ||
+      srcIdx >= srcLayout.count
+    ) {
       sh = pickFacingPortId(src, tgt)
     } else {
       sh = `port-${srcIdx}`
     }
-    if (!Number.isFinite(tgtIdx) || tgtIdx < 0 || tgtIdx >= tgtLayout.count) {
+    if (
+      mayForce ||
+      !Number.isFinite(tgtIdx) ||
+      tgtIdx < 0 ||
+      tgtIdx >= tgtLayout.count
+    ) {
       th = pickFacingPortId(tgt, src)
     } else {
       th = `port-${tgtIdx}`

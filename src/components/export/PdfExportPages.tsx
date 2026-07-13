@@ -2,6 +2,7 @@ import type { CanvasItem, SheetCanvas, TitleAlign } from '@/types'
 import {
   DEFAULT_CANVAS,
   DEFAULT_MARGINS,
+  DEFAULT_TITLE_FONT_SIZE,
   clampGridOpacity,
   normalizeGridExtent,
 } from '@/types'
@@ -99,10 +100,12 @@ function ExportCard({
           <div
             style={{
               flexShrink: 0,
-              height: 16,
+              height: Math.round(
+                (style.titleFontSize ?? DEFAULT_TITLE_FONT_SIZE) * 1.6,
+              ),
               marginBottom: 2,
               padding: '0 2px',
-              fontSize: 10,
+              fontSize: style.titleFontSize ?? DEFAULT_TITLE_FONT_SIZE,
               fontWeight: 500,
               letterSpacing: '0.04em',
               textTransform: 'uppercase',
@@ -111,7 +114,7 @@ function ExportCard({
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
               textAlign: titleAlignCss(item.titleAlign),
-              lineHeight: '16px',
+              lineHeight: 1.6,
               pointerEvents: 'none',
             }}
           >

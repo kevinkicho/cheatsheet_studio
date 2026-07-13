@@ -60,7 +60,10 @@ export type BorderStroke =
   | 'none'
 
 export interface ItemStyle {
+  /** Body / content font size (px). Default 18. */
   fontSize?: number
+  /** Card title bar font size (px). Default 10. */
+  titleFontSize?: number
   color?: string
   background?: string
   /**
@@ -143,9 +146,14 @@ export interface CanvasItem {
   imagePath?: string
   /**
    * Mermaid diagram source (process-chart cards).
-   * Rendered via MermaidView; persisted with the sheet payload.
+   * Kept for re-open / library; free-form cards prefer `processFlow` for paint.
    */
   mermaidSource?: string
+  /**
+   * Free-form editor snapshot (nodes/edges/positions). When present, canvas and
+   * export render this (matches interactive editor) instead of re-laying out Mermaid.
+   */
+  processFlow?: import('@/lib/processFlowSnapshot').ProcessFlowSnapshot
   /** Mermaid theme id for this card (default dark). */
   mermaidTheme?: MermaidThemeId
   /** Last diagram kind used in the editor (templates). */
@@ -349,6 +357,7 @@ export const DEFAULT_BORDER_COLOR = 'rgba(99, 102, 241, 0.55)'
 
 export const DEFAULT_ITEM_STYLE: ItemStyle = {
   fontSize: 18,
+  titleFontSize: 10,
   color: '#e8eaed',
   background: 'rgba(30, 32, 40, 0.92)',
   borderEnabled: true,
@@ -361,4 +370,13 @@ export const DEFAULT_ITEM_STYLE: ItemStyle = {
    * Legacy sheets with 4–12px padding are normalized down to 0 on load.
    */
   padding: 0,
+}
+
+/** Default title bar size (matches legacy text-[10px] cards). */
+export const DEFAULT_TITLE_FONT_SIZE = 10
+
+/** Approximate title row height for a given title font size (line-height + margin). */
+export function titleBandPx(titleFontSize?: number): number {
+  const fs = titleFontSize ?? DEFAULT_TITLE_FONT_SIZE
+  return Math.round(fs * 1.6) + 2
 }

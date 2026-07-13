@@ -1,7 +1,7 @@
 # Process charts
 
-CheatSheet Studio process charts are **Mermaid diagrams** authored in the right
-sidebar **Process** tool and placed as canvas cards.
+CheatSheet Studio process charts are authored in the right sidebar **Process**
+tool and placed as canvas cards.
 
 **Mermaid version:** 11.x (`package.json`)  
 **Authoring:** interactive visual editor (vendored
@@ -17,28 +17,38 @@ sidebar **Process** tool and placed as canvas cards.
    - **Mind map** — radial hierarchy, promote/demote, bang/cloud shapes
 3. Edit on the **dark** React Flow canvas (never a static Mermaid preview pane —
    the editor *is* the preview). Toolbar: **Inspector**, **Select (V)**,
-   **Pan (H)**, shapes, **zoom fit** (min zoom ~5%), diagram **Reset**.
-4. **Cloud library** (signed in): **Save new** / **Update saved** / **Load…**
-   stores named Mermaid sources under the user’s `flowcharts` collection in
-   Firestore. Load replaces the editor (with a replace warning when dirty).
-5. Set a **title**, then **Add to canvas** (or **Update card** when a process
+   **Pan (H or Shift+drag)**, shapes, **zoom fit**, diagram **Reset**.
+4. Drag **port → port** to connect. Lines use orthogonal **smooth-step “pipe”**
+   curves. Drop a link on empty canvas → new rectangle + connection.
+5. **Cloud library** (signed in): **Save new** / **Update saved** / **Load…**
+   stores Mermaid source **and** flowchart `processFlow` snapshots under the
+   user’s `flowcharts` collection. Load restores free-form layout when present.
+6. Set a **title**, then **Add to canvas** (or **Update card** when a process
    card is selected).
-6. On the board, process cards use the same solid panel chrome as equations.
-   Diagrams paint as **SVG `fillContainer`** (vector at card size — see
-   [vector-graphics.md](./vector-graphics.md)).
+7. On the board, process cards use solid panel chrome. **Flowcharts** paint the
+   free-form **`processFlow` snapshot** (same geometry as the interactive
+   editor). **Mind maps** still use Mermaid SVG. Both stay vector at card size —
+   see [vector-graphics.md](./vector-graphics.md).
 
-For both kinds, Mermaid source is **derived from the visual canvas** at
-insert/update time (`getVisualEditorMermaidSource()`), so Add never depends on
-stale empty React state.
+At insert/update:
+
+| Payload | Source | Used for |
+|---------|--------|----------|
+| `mermaidSource` | `getVisualEditorMermaidSource()` | Re-open, library, mind-map cards |
+| `processFlow` | `getVisualEditorProcessFlow()` | Flowchart card paint + print export |
+
+Selecting a flowchart card loads its `processFlow` into the editor (live edits
+push back while the card stays selected). **Delete** in the editor removes only
+nodes/edges — not the canvas card.
 
 ---
 
 ## Diagram types
 
-| Kind | Interactive editor | Notes |
-|------|--------------------|--------|
-| **Flowchart** | Yes | 14 official shapes (icon-only picker); inspector colors + hierarchy N/A |
-| **Mind map** | Yes | Radial equal-slice layout; promote/demote via edge order; bang / cloud shapes |
+| Kind | Interactive editor | Card paint |
+|------|--------------------|------------|
+| **Flowchart** | Yes | `processFlow` snapshot → `ProcessFlowView` SVG |
+| **Mind map** | Yes | Mermaid SVG via `MermaidView` |
 
 Older sequence / state / class / ER / pie templates are **not** offered in the
 Process panel chips. Existing cards of other kinds remain on the board if present.
@@ -50,46 +60,54 @@ Process panel chips. Existing cards of other kinds remain on the board if presen
 | Piece | Role |
 |-------|------|
 | `CreateProcessChartPanel` | Sidebar: title, flowchart/mindmap chips, cloud library, visual editor, Add / Update |
-| `MermaidVisualEditor` | Dark React Flow host; preferredKind-authoritative import; serialize to Mermaid |
-| `layoutFromMermaid.ts` | Renders studio Mermaid SVG → measures `g.node` boxes + edge `d` paths → RF nodes/edges |
-| `portLayout.ts` | Perimeter / radial connection ports; edge handle reconciliation |
-| `mermaidTemplates.ts` | Starters for flowchart + official mindmap example |
-| `flowchartLibrary.ts` + `flowchartLibraryStore` | Firestore CRUD for named flowcharts |
-| `firestore.rules` → `flowcharts/{id}` | Owner-only read/write |
+| `MermaidVisualEditor` | Dark React Flow host; prefer `processFlow` on load; serialize Mermaid + snapshot helpers |
+| `processFlowSnapshot.ts` | Capture / restore / SVG paint for free-form flowcharts |
+| `ProcessFlowView` | Card body SVG from snapshot (viewBox includes edge U-turns) |
+| `edgePath.ts` | Shared pipe router (smooth-step); port-locked plugs; reverse multi “No” U-turn |
+| `portLayout.ts` | Perimeter ports (stadium mid-sides); handle normalize / reconcile |
+| `layout.ts` → `cleanFlowchartLayout` | Dagre stack after Mermaid size measure; face-port handles for auto edges |
+| `layoutFromMermaid.ts` | Optional Mermaid SVG measure for import sizes |
+| `flowchartLibrary.ts` + store | Firestore CRUD; persists `mermaidSource` + `processFlow` |
 | `src/vendor/mermaid-visual-editor/*` | Vendored editor + mindmap layout / nodes / edges |
-| Popovers / Import modal | Portaled to `document.body` |
-| `canvasStore.addProcessChart` | Inserts a `process-chart` card (`contentFill: true`, `autoFit: false`) |
-| `MermaidView` | Card / export SVG (`fillContainer` = vector at card size) |
-| `mermaidTheme.ts` | Studio dark init, source prep, layout-safe paint |
-| `CanvasCardBody` | Process → `MermaidView` fillContainer |
+| `canvasStore.addProcessChart` | Inserts `process-chart` with `processFlow` when captured |
+| `keyboardShortcuts` | Delete in process editor does **not** remove canvas cards |
 
-### Flowchart layout = Mermaid engine
-
-On flowchart **import**, **Auto Layout**, and **direction** change:
-
-1. Serialize the canvas (or starter) to Mermaid text.
-2. `renderMermaidSvg({ theme: 'dark', studioDark: true })` — same pipeline as sheet cards.
-3. Mount the SVG offscreen; for each `g.node`, read **center** from
-   `transform="translate(cx,cy)"` and size from local `getBBox()` (not screen CTM).
-4. Map boxes onto RF `position` / `width` / `height` (normalized with pad).
-5. Copy `path.flowchart-link` geometry onto edges as `data.mermaidPath` (offset into
-   RF space) and place edge labels from Mermaid `g.edgeLabel` translates.
-6. User drag clears Mermaid paths so free-form routing falls back to smooth-step.
-
-Goal: **editor appearance matches Add to canvas** without a separate preview pane.
+### Flowchart: editor is source of truth
 
 ```
-Process panel
-  └─ MermaidVisualEditor  →  mermaidSource string
+Process panel (React Flow editor)
+  │  nodes, edges, ports, pipe paths
+  ├─ getVisualEditorMermaidSource()  → mermaidSource (text)
+  └─ getVisualEditorProcessFlow()    → processFlow snapshot
          │
          ▼
   addProcessChart / updateItem  (type: process-chart)
          │
          ▼
-  CanvasCardBody
-    └─ MermaidView fillContainer
-         └─ renderMermaidSvg → paintStudioSvg → SVG (viewBox, 100% × 100%)
+  CanvasCardBody / export
+    └─ ProcessFlowView (flowchart with processFlow)
+    └─ MermaidView (mind map, or flowchart fallback without snapshot)
 ```
+
+1. **Import / template** — Mermaid text → optional size measure →
+   `cleanFlowchartLayout` (dagre ranks + face ports). Edges paint as smooth-step
+   pipes (not Mermaid free paths).
+2. **User plugs** — `manualConnect` + `sourceHandle` / `targetHandle` pin
+   endpoints. Routing stays locked when other edges are added.
+3. **Reverse multi-edge (e.g. No)** — same-side U-turn with clearance so pipes
+   do not cut through node bodies.
+4. **Add to canvas** — clones snapshot; card SVG uses **baked paths** and a
+   viewBox expanded for U-turn bounds so geometry matches the editor.
+
+### Interaction notes
+
+| Action | Behavior |
+|--------|----------|
+| Port → port connect | Curved pipe; `manualConnect: true` |
+| Drop link on empty | New rectangle + edge |
+| Shift + left-drag | Temporary pan (selection key null so Shift is free) |
+| Delete / Backspace | RF nodes/edges only while editor has focus or selection |
+| Auto-connect toggle | Re-layout rewire only; imports still show edges when off |
 
 ---
 
@@ -106,21 +124,9 @@ Default process cards use **studio dark** so diagrams match zinc UI chrome.
 | Edge label bg | `#3f3f46` | Yes/No chips, etc. |
 | Preview / panel bg family | `#12141a` / solid panel | Host chrome + visual editor canvas |
 
-### Render stack (`mermaidTheme.ts` + host CSS)
-
-1. **`mermaid.initialize`** — `theme: 'base'` + `themeVariables` (`MERMAID_DARK_THEME_VARIABLES`), `htmlLabels: true`.
-2. **`prepareStudioDarkSource`** — YAML frontmatter with the same palette; for
-   **flowchart/graph only**, append `classDef default …` (never for mindmap —
-   mindmap rejects `classDef`).
-3. **`mermaid.render`** — serialized queue (one site config mutation at a time).
-4. **`paintStudioSvg`** — rewrite pale fills inside Mermaid’s injected `<style>`,
-   plus id-scoped color overrides. Keep Mermaid’s stylesheet (label metrics).
-5. **Host CSS** — `color-scheme: dark` and `forced-color-adjust: none` on
-   `html` / `.mermaid-host` / SVG so Chrome Auto Dark does not invert painted fills.
-6. **`MermaidView`** — paint after render and again after React commit
-   (`useLayoutEffect`).
-
-Forest (and non-studio themes) skip the studio path when selected.
+Mind maps and Mermaid-only cards still use `mermaidTheme.ts` (`theme: base` +
+studio variables + `paintStudioSvg`). Flowchart cards with `processFlow` paint
+the same palette in `processFlowToSvg`.
 
 ---
 
@@ -130,20 +136,25 @@ Forest (and non-studio themes) skip the studio path when selected.
 |-------|-------------------------------|
 | `type` | `process-chart` |
 | `mermaidTheme` | `dark` |
+| `mermaidSource` | Serialized Mermaid text |
+| `processFlow` | Snapshot when flowchart capture succeeds |
 | `contentFill` | `true` — diagram fills the card body |
-| `autoFit` | `false` — card size is fixed at insert (default ~420×320); user resizes |
-| Render path | `MermaidView` `fillContainer` — SVG with viewBox at card display size (vector) |
-| `keepAspectRatio` | `true` by default — SVG `preserveAspectRatio` meet; stretch uses `none` |
+| `autoFit` | `false` — card size fixed at insert (~420×320); user resizes |
+| Render path | Flowchart + `processFlow` → `ProcessFlowView`; else `MermaidView` fillContainer |
+| `keepAspectRatio` | `true` by default — SVG meet; stretch uses `none` |
 
-PDF export uses the same `MermaidView` path on print pages
+PDF export uses the same paint path on print pages
 ([vector-graphics.md](./vector-graphics.md)).
 
 ---
 
 ## Unit coverage
 
-- `src/lib/mermaidTheme.test.ts` — init, prepare source, paint, classDef gating  
-- `src/lib/mermaidTemplates.test.ts` / `mermaidTemplates.render.test.ts` — templates  
+- `src/lib/processFlowSnapshot.test.ts` — capture, SVG, RF round-trip, multi No path  
+- `src/vendor/mermaid-visual-editor/lib/edgePath.test.ts` — pipe routes, locked plugs, reverse multi  
+- `src/vendor/mermaid-visual-editor/lib/portLayout.test.ts` — ports, stadium mid-sides, reconcile  
+- `src/lib/keyboardShortcuts.test.ts` — Delete does not steal process-editor focus  
+- `src/lib/mermaidTheme.test.ts` / `mermaidTemplates.test.ts` — Mermaid theme + templates  
 - `src/vendor/mermaid-visual-editor/lib/flowchartShapes.test.ts` — 14-shape contract  
 - `src/vendor/mermaid-visual-editor/lib/mindmap.test.ts` — radial layout / serialize  
 
@@ -162,16 +173,18 @@ server on `dist/`). It is **not** required for normal product use.
 | Path | Notes |
 |------|--------|
 | `src/components/tools/CreateProcessChartPanel.tsx` | Process tool shell (flowchart + mindmap chips) |
-| `src/components/tools/MermaidVisualEditor.tsx` | Visual editor host + serialize helpers |
+| `src/components/tools/MermaidVisualEditor.tsx` | Visual editor host + serialize / snapshot helpers |
+| `src/lib/processFlowSnapshot.ts` | Capture, restore, card SVG |
+| `src/components/math/ProcessFlowView.tsx` | Snapshot → SVG on canvas cards |
+| `src/vendor/mermaid-visual-editor/lib/edgePath.ts` | Shared smooth-step pipe router |
+| `src/vendor/mermaid-visual-editor/lib/portLayout.ts` | Connection ports |
+| `src/vendor/mermaid-visual-editor/lib/layout.ts` | Dagre clean stack layout |
 | `src/vendor/mermaid-visual-editor/` | Vendored MIT editor + mindmap + shapes |
-| `src/components/math/MermaidView.tsx` | SVG render + fillContainer vector paint |
+| `src/components/math/MermaidView.tsx` | Mermaid SVG (mind maps / fallback) |
 | `src/lib/mermaidTheme.ts` | Theme, prepare, paint, `renderMermaidSvg` |
-| `src/lib/mermaidTemplates.ts` | Template sources / helpers |
-| `src/components/canvas/CanvasCardBody.tsx` | Process → MermaidView fillContainer |
-| `src/components/canvas/CanvasItemView.tsx` | Card chrome + free-transform + CanvasCardBody |
+| `src/components/canvas/CanvasCardBody.tsx` | Process → ProcessFlowView or MermaidView |
 | `src/stores/canvasStore.ts` | `addProcessChart` |
-| `src/index.css` | `.mermaid-host`, forced-color-adjust |
-| `index.html` | `color-scheme` meta |
+| `src/lib/keyboardShortcuts.ts` | Canvas vs process-editor Delete isolation |
 
 ---
 
@@ -182,4 +195,4 @@ server on `dist/`). It is **not** required for normal product use.
 - [Mindmap syntax](https://mermaid.js.org/syntax/mindmap.html)  
 
 *Product behavior lives in this file, [vector-graphics.md](./vector-graphics.md),
-and the root README. Temporary debug scripts stay under `scripts/` if needed.*
+and the root README.*

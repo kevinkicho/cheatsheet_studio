@@ -213,6 +213,8 @@ interface CanvasState {
       mermaidTheme?: import('@/types').MermaidThemeId
       mermaidKind?: import('@/types').MermaidDiagramKind
       mermaidDirection?: import('@/types').MermaidFlowDirection
+      /** Free-form editor snapshot — canvas paints this (matches interactive editor). */
+      processFlow?: import('@/lib/processFlowSnapshot').ProcessFlowSnapshot
       width?: number
       height?: number
     },
@@ -939,11 +941,12 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       height: opts?.height ?? 320,
       zIndex: z,
       mermaidSource,
+      processFlow: opts?.processFlow,
       mermaidTheme: opts?.mermaidTheme ?? 'dark',
       mermaidKind: opts?.mermaidKind ?? 'flowchart',
       mermaidDirection: opts?.mermaidDirection ?? 'TD',
       autoFit: false,
-      // Scale Mermaid SVG to card via FitContent (Properties: “Scale content to fill card”)
+      // Scale diagram SVG to card via FitContent (Properties: “Scale content to fill card”)
       contentFill: true,
     })
     set((s) => ({

@@ -27,23 +27,28 @@ export const CHROME_INSETS = {
 /** Extra breathing room beyond chrome bars (px). */
 const FIT_SLACK_PX = 16
 
+/** RF `PaddingWithUnit` = number | `${number}px` | `${number}%` */
 export type FitViewPadding = {
-  top: string
-  right: string
-  bottom: string
-  left: string
+  top: `${number}px`
+  right: `${number}px`
+  bottom: `${number}px`
+  left: `${number}px`
+}
+
+function px(n: number): `${number}px` {
+  return `${n}px`
 }
 
 /**
- * React Flow fitView padding as pixel strings so chrome is discounted
+ * React Flow fitView padding as pixel units so chrome is discounted
  * independently of viewport size (fractional padding fails on narrow panels).
  */
 export function fitViewPaddingForChrome(layout: ChromeLayout): FitViewPadding {
   const insets = CHROME_INSETS[layout]
   return {
-    top: `${insets.top + FIT_SLACK_PX}px`,
-    right: `${insets.right + FIT_SLACK_PX}px`,
-    bottom: `${insets.bottom + FIT_SLACK_PX}px`,
-    left: `${insets.left + FIT_SLACK_PX}px`,
+    top: px(insets.top + FIT_SLACK_PX),
+    right: px(insets.right + FIT_SLACK_PX),
+    bottom: px(insets.bottom + FIT_SLACK_PX),
+    left: px(insets.left + FIT_SLACK_PX),
   }
 }
