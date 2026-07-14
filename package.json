@@ -37,7 +37,10 @@
     "agent:flagships": "tsx scripts/agent-flagships.ts",
     "agent:flagships:all": "tsx scripts/agent-flagships.ts --yes",
     "agent:flagships:json": "tsx scripts/agent-flagships.ts --yes --json-only",
-    "agent:flagships:ai": "tsx scripts/agent-flagships.ts --yes --ai"
+    "agent:flagships:ai": "tsx scripts/agent-flagships.ts --yes --ai",
+    "agent:everything": "tsx packages/cheatsheet-sdk/src/cli.ts everything -o examples/agent-out/everything.sheet.json",
+    "agent:everything:stats": "tsx packages/cheatsheet-sdk/src/cli.ts everything --stats",
+    "agent:everything:svg": "tsx packages/cheatsheet-sdk/src/cli.ts everything -o examples/agent-out/everything.sheet.json && tsx packages/cheatsheet-sdk/src/cli.ts export-svg examples/agent-out/everything.sheet.json -o examples/agent-out/everything.svg --keep-html"
   },
   "dependencies": {
     "@dagrejs/dagre": "^3.0.0",

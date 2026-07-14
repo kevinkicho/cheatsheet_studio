@@ -30,6 +30,7 @@ import { exportFormatMeta } from '@/lib/exportFormats'
 import {
   downloadSvgString,
   pageElementToSvgString,
+  stitchSvgPages,
   svgFilename,
 } from '@/lib/exportSvg'
 
@@ -69,6 +70,11 @@ export type SheetExportOptions = {
    * separate = one file per page.
    */
   packageMode?: ExportPackageMode
+  /**
+   * Download basename without extension (sanitized). Defaults to sheet title.
+   * Browser still appends “ (n)” if the same name already exists in Downloads.
+   */
+  fileName?: string
 }
 
 /** Normalize and clamp selected page indices against total page count. */
@@ -107,6 +113,9 @@ export async function runSheetExport(
   const backgroundMode = options.backgroundMode ?? 'transparent'
   const packageMode = options.packageMode ?? 'combined'
   const pageArrangement = options.pageArrangement ?? 'vertical'
+  // Custom stem or sheet title (sanitizeExportFilename applied at write)
+  const downloadTitle =
+    (options.fileName && options.fileName.trim()) || title || 'cheatsheet'
 
   const allRects = getExportPageRects(canvas)
   if (allRects.length === 0) {
@@ -210,7 +219,7 @@ export async function runSheetExport(
     if (format === 'pdf') {
       await writePdf(
         jobs,
-        title,
+        downloadTitle,
         itemCount,
         scale,
         colorMode,
@@ -221,7 +230,7 @@ export async function runSheetExport(
     } else if (format === 'svg') {
       await writeSvg(
         jobs,
-        title,
+        downloadTitle,
         itemCount,
         colorMode,
         captureBg,
@@ -232,7 +241,7 @@ export async function runSheetExport(
     } else {
       await writeImages(
         jobs,
-        title,
+        downloadTitle,
         format,
         itemCount,
         scale,
@@ -422,7 +431,10 @@ async function writePdf(
 /**
  * Vector SVG export — serializes the already-rendered export DOM (KaTeX + Mermaid)
  * into SVG foreignObject so zoom stays sharp (unlike PNG/JPEG).
- * Multi-page: one file per page (SVG has no native multi-page package).
+ *
+ * packageMode:
+ * - combined (“All together”) → one stitched SVG (pages stacked)
+ * - separate (“Page by page”) → one download per page
  */
 async function writeSvg(
   jobs: PageJob[],
@@ -430,12 +442,12 @@ async function writeSvg(
   itemCount: number,
   colorMode: ExportColorMode,
   backgroundColor: string | null,
-  _packageMode: ExportPackageMode,
-  _pageArrangement: ExportPageArrangement,
+  packageMode: ExportPackageMode,
+  pageArrangement: ExportPageArrangement,
   onProgress?: (p: SheetExportProgress) => void,
 ) {
   const bg = backgroundColor
-  const saved: string[] = []
+  const pageSvgs: string[] = []
 
   for (let i = 0; i < jobs.length; i++) {
     const job = jobs[i]!
@@ -447,7 +459,6 @@ async function writeSvg(
       format: 'svg',
       message: `Building SVG page ${i + 1} of ${jobs.length} (capturing diagrams)…`,
     })
-    // pageElementToSvgString is async — html2canvas each flowchart/mindmap host
     const svg = await pageElementToSvgString(job.el, {
       width: job.rect.width,
       height: job.rect.height,
@@ -456,6 +467,38 @@ async function writeSvg(
       title: jobs.length > 1 ? `${title} · p${job.label}` : title,
       diagramScale: 2,
     })
+    pageSvgs.push(svg)
+  }
+
+  if (packageMode === 'combined' && pageSvgs.length > 1) {
+    onProgress?.({
+      phase: 'write',
+      totalPages: jobs.length,
+      itemCount,
+      format: 'svg',
+      message: 'Stitching pages into one SVG…',
+    })
+    const combined = stitchSvgPages(pageSvgs, {
+      title,
+      arrangement: pageArrangement === 'asSheet' ? 'asSheet' : 'vertical',
+      origins: jobs.map((j) => ({ x: j.rect.x, y: j.rect.y })),
+      backgroundColor: bg,
+    })
+    const filename = svgFilename(title)
+    downloadSvgString(combined, filename)
+    onProgress?.({
+      phase: 'done',
+      totalPages: jobs.length,
+      itemCount,
+      format: 'svg',
+      message: doneMessage(filename, itemCount, jobs.length),
+    })
+    return
+  }
+
+  const saved: string[] = []
+  for (let i = 0; i < pageSvgs.length; i++) {
+    const job = jobs[i]!
     onProgress?.({
       phase: 'write',
       page: i + 1,
@@ -465,10 +508,10 @@ async function writeSvg(
       message: `Saving SVG page ${i + 1}…`,
     })
     const filename =
-      jobs.length > 1 ? svgFilename(title, job.label) : svgFilename(title)
-    downloadSvgString(svg, filename)
+      pageSvgs.length > 1 ? svgFilename(title, job.label) : svgFilename(title)
+    downloadSvgString(pageSvgs[i]!, filename)
     saved.push(filename)
-    if (i < jobs.length - 1) {
+    if (i < pageSvgs.length - 1) {
       await new Promise((r) => setTimeout(r, 120))
     }
   }

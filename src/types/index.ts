@@ -303,6 +303,64 @@ export interface SheetCanvas {
   printPagePositions?: PrintPageOrigin[]
   /** Content-safe margins inside each print page. */
   margins: PrintMargins
+  /**
+   * Visual group frames from Auto-layout “panels” mode (topic/folder clusters).
+   * Drawn under cards; not selectable content. Cleared/replaced on each pack.
+   */
+  layoutPanels?: LayoutPanel[]
+}
+
+/**
+ * How topic panels pack when panels chrome is on:
+ * - `rect` — full axis-aligned box around each group (includes empty corners)
+ * - `polygon` (n-gon) — chrome follows **occupied card runs** only (L / stepped
+ *   when the last row is short); denser inter-panel gap
+ */
+export type PanelShape = 'rect' | 'polygon'
+
+/**
+ * Encapsulating frame around a cluster of related cards (folder / topic).
+ * Produced by Auto-layout when group chrome includes **panels**.
+ * Multiple hierarchy levels can nest (level 1 wraps level 2).
+ */
+export interface LayoutPanel {
+  id: string
+  /** Layers folder id when grouped by folder. */
+  folderId?: string | null
+  /** Label drawn on the panel chrome (topic / category name). */
+  title?: string
+  /** When false, hide the title chip (default true). */
+  showTitle?: boolean
+  /** Bounding box (always set; used for hit-test / page clip). */
+  x: number
+  y: number
+  width: number
+  height: number
+  /** Packing/chrome style. Default rect. */
+  shape?: PanelShape
+  /**
+   * Orthogonal runs that form an L / stepped region (polygon packing).
+   * Drawn as stacked rects so panels look L-shaped without a convex hull.
+   */
+  runs?: Array<{ x: number; y: number; width: number; height: number }>
+  /** @deprecated Optional legacy convex vertices; prefer `runs`. */
+  points?: Array<{ x: number; y: number }>
+  /** Canvas item ids that belong to this panel (for re-sort / edit). */
+  memberIds?: string[]
+  /**
+   * Sort cards inside this panel only.
+   * none = pack order; name-asc / name-desc by card title.
+   */
+  contentSort?: 'none' | 'name-asc' | 'name-desc'
+  /** Accent for border/fill (css color). */
+  accent?: string
+  /** Draw order under cards (outer levels lower). */
+  zIndex?: number
+  /**
+   * Hierarchy depth this panel represents (1 = top section, 2 = subsection…).
+   * Nested multi-select group levels produce one panel layer per selected level.
+   */
+  hierarchyLevel?: 1 | 2 | 3
 }
 
 /** Minimum free-board workspace when print frame is off / for general editing. */

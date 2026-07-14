@@ -4,6 +4,7 @@ import {
   getPrintAwareSnapOrigin,
   layoutItemsInRows,
   packCheatsheetLayout,
+  relayoutPanelContents,
   snapToGridValue,
   ORGANIZE_GRID,
   type CheatsheetLayoutOptions,
@@ -142,6 +143,11 @@ interface CanvasState {
   folders: OutlinerFolder[]
   /** Multi-select: ordered list (last = primary for focus tools). */
   selectedIds: string[]
+  /**
+   * Selected layout panel id (mutually exclusive with card selection).
+   * Fine-tune title / content sort in left sidebar.
+   */
+  selectedPanelId: string | null
   dirty: boolean
   maxZ: number
   /** Undo stack (document snapshots before edits). */
@@ -208,6 +214,15 @@ interface CanvasState {
 
   /** Select one item (or clear with null). Replaces the selection. */
   select: (id: string | null) => void
+  /** Select a layout panel (clears card selection). */
+  selectPanel: (id: string | null) => void
+  /** Patch fields on one layout panel. */
+  updateLayoutPanel: (
+    id: string,
+    partial: Partial<import('@/types').LayoutPanel>,
+  ) => void
+  /** Re-shelf cards inside a panel (after contentSort / showTitle). */
+  relayoutSelectedPanel: () => void
   /** Shift+click: add if missing, remove if already selected. */
   toggleSelect: (id: string) => void
   /** Replace selection with explicit ids (marquee). */
@@ -373,6 +388,7 @@ const empty = () => ({
   items: [] as CanvasItem[],
   folders: [] as OutlinerFolder[],
   selectedIds: [] as string[],
+  selectedPanelId: null as string | null,
   dirty: false,
   maxZ: 1,
   past: [] as CanvasDocSnapshot[],
@@ -835,24 +851,30 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         gap: opts?.gap,
         columns: opts?.columns ?? 'auto',
         mode: opts?.mode ?? 'columns',
+        groupChrome: opts?.groupChrome ?? 'labels',
+        panelShape: opts?.panelShape,
+        groupSort: opts?.groupSort ?? 'none',
+        panelGroupLevel: opts?.panelGroupLevel ?? 1,
+        panelGroupLevels: opts?.panelGroupLevels,
         fitPrint: opts?.fitPrint !== false,
-        multiPage: opts?.multiPage,
+        // Default multipage so large imports do not keep empty frames
+        multiPage: opts?.multiPage !== false,
         groupByFolder: opts?.groupByFolder !== false,
+        panelPadding: opts?.panelPadding,
         folders: s.folders?.map((f) => ({
           id: f.id,
           order: f.order,
           name: f.name,
+          parentId: f.parentId,
         })),
       } satisfies CheatsheetLayoutOptions
 
       try {
         const packed = packCheatsheetLayout(s.items, configSnapshot, packOpts)
-        const pageCount = Math.max(
-          1,
-          packed.printPageCount,
-          s.canvas.printPageCount ?? 1,
-        )
+        // Use packed count as source of truth (may *decrease* after re-pack)
+        const pageCount = Math.max(1, packed.printPageCount)
         // Export-19 paint: equations natural (no fill zoom); process/figures fill.
+        // Preserve explicit hidden (e.g. heading banners when panels-only).
         const items = packed.items.map((it) => {
           if (it.hidden) return it
           const isProc =
@@ -874,15 +896,19 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
             items.filter((i) => !i.hidden).length,
             'cards',
             packOpts.density,
+            packOpts.groupChrome,
+            packed.layoutPanels.length,
+            'panels',
           )
         }
         return {
           items,
           dirty: true,
-          canvas:
-            pageCount !== (s.canvas.printPageCount ?? 1)
-              ? { ...s.canvas, printPageCount: pageCount }
-              : s.canvas,
+          canvas: {
+            ...s.canvas,
+            printPageCount: pageCount,
+            layoutPanels: packed.layoutPanels,
+          },
         }
       } catch (err) {
         console.error('[autoOrganize] pack failed, falling back to row layout', err)
@@ -947,18 +973,89 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   markClean: () => set({ dirty: false }),
 
   select: (id) =>
-    set({ selectedIds: id ? [id] : [] }),
+    set({
+      selectedIds: id ? [id] : [],
+      // Selecting a card clears panel; clearing cards also clears panel
+      selectedPanelId: null,
+    }),
+
+  selectPanel: (id) =>
+    set({
+      selectedPanelId: id,
+      selectedIds: [],
+    }),
+
+  updateLayoutPanel: (id, partial) =>
+    set((s) => {
+      const panels = s.canvas.layoutPanels ?? []
+      const prev = panels.find((p) => p.id === id)
+      if (!prev) return s
+      pushHistory(s)
+      const merged = { ...prev, ...partial }
+      // contentSort / showTitle → reflow cards in the same gesture so the
+      // user sees an immediate effect (no separate setTimeout relayout).
+      const needsRelayout =
+        partial.contentSort !== undefined || partial.showTitle !== undefined
+      if (needsRelayout) {
+        const { items, panel } = relayoutPanelContents(s.items, merged, {
+          grid: s.canvas.gridSpacing ?? 24,
+        })
+        return {
+          dirty: true,
+          items,
+          canvas: {
+            ...s.canvas,
+            layoutPanels: panels.map((p) => (p.id === id ? panel : p)),
+          },
+        }
+      }
+      return {
+        dirty: true,
+        canvas: {
+          ...s.canvas,
+          layoutPanels: panels.map((p) => (p.id === id ? merged : p)),
+        },
+      }
+    }),
+
+  relayoutSelectedPanel: () =>
+    set((s) => {
+      const id = s.selectedPanelId
+      if (!id) return s
+      const panel = (s.canvas.layoutPanels ?? []).find((p) => p.id === id)
+      if (!panel) return s
+      pushHistory(s)
+      const { items, panel: nextPanel } = relayoutPanelContents(s.items, panel, {
+        grid: s.canvas.gridSpacing ?? 24,
+      })
+      return {
+        items,
+        dirty: true,
+        canvas: {
+          ...s.canvas,
+          layoutPanels: (s.canvas.layoutPanels ?? []).map((p) =>
+            p.id === id ? nextPanel : p,
+          ),
+        },
+      }
+    }),
 
   toggleSelect: (id) =>
     set((s) => {
       if (s.selectedIds.includes(id)) {
-        return { selectedIds: s.selectedIds.filter((x) => x !== id) }
+        return {
+          selectedIds: s.selectedIds.filter((x) => x !== id),
+          selectedPanelId: null,
+        }
       }
-      return { selectedIds: [...s.selectedIds, id] }
+      return { selectedIds: [...s.selectedIds, id], selectedPanelId: null }
     }),
 
   setSelectedIds: (ids) =>
-    set({ selectedIds: [...new Set(ids)] }),
+    set({
+      selectedIds: [...new Set(ids)],
+      selectedPanelId: ids.length > 0 ? null : get().selectedPanelId,
+    }),
 
   addFromLibrary: (lib, x, y, opts) => {
     const id = createId('item')

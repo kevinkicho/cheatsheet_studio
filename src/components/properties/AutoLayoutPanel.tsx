@@ -2,9 +2,17 @@ import { useCallback, useEffect, useState } from 'react'
 import { Loader2, Sparkles, LayoutGrid } from 'lucide-react'
 import {
   DENSITY_PRESETS,
+  GROUP_CHROME_PRESETS,
+  GROUP_SORT_PRESETS,
+  PANEL_SHAPE_PRESETS,
+  panelGroupLevelOptions,
   type CheatsheetLayoutOptions,
   type ContentDensity,
+  type GroupChrome,
+  type GroupSortOrder,
+  type PanelGroupLevel,
 } from '@/lib/autoOrganize'
+import type { PanelShape } from '@/types'
 import {
   DEFAULT_OLLAMA_MODEL,
   ollamaPing,
@@ -24,12 +32,24 @@ const DENSITIES = Object.keys(DENSITY_PRESETS) as ContentDensity[]
 export function AutoLayoutPanel() {
   const items = useCanvasStore((s) => s.items)
   const canvas = useCanvasStore((s) => s.canvas)
+  const folders = useCanvasStore((s) => s.folders)
   const autoOrganize = useCanvasStore((s) => s.autoOrganize)
   const applyItemLayout = useCanvasStore((s) => s.applyItemLayout)
-  const [density, setDensity] = useState<ContentDensity>('xs')
-  const [gap, setGap] = useState(5)
-  const [columns, setColumns] = useState<number | 'auto'>('auto')
-  const [mode, setMode] = useState<'columns' | 'flow'>('columns')
+  const [density, setDensity] = useState<ContentDensity>('sm')
+  const [gap, setGap] = useState(8)
+  /** Topic chrome: labels (banner rows) vs panels (encapsulating frames). */
+  const [groupChrome, setGroupChrome] = useState<GroupChrome>('panels')
+  const [panelShape, setPanelShape] = useState<PanelShape>('rect')
+  /** Gap between panels + chrome pad (px). Drives free-flow inter-panel cells. */
+  const [panelPadding, setPanelPadding] = useState(8)
+  /**
+   * Multi-select hierarchy depths. Selecting 1+2 draws outer (top) panels
+   * wrapping inner (subsection) panels.
+   */
+  const [panelGroupLevels, setPanelGroupLevels] = useState<PanelGroupLevel[]>([
+    1,
+  ])
+  const [groupSort, setGroupSort] = useState<GroupSortOrder>('none')
   const [fitPrint, setFitPrint] = useState(true)
   const [aiHint, setAiHint] = useState(
     'Dense exam cheat sheet; keep Layers folders clustered; group by section; keep readable.',
@@ -74,16 +94,33 @@ export function AutoLayoutPanel() {
   const opts = (): CheatsheetLayoutOptions => ({
     density,
     gap,
-    columns,
-    mode,
+    // Dense mosaic only — no forced multi-column / row bands (those leave
+    // large gutters between uneven topic groups).
+    groupChrome,
+    panelShape:
+      groupChrome === 'panels' || groupChrome === 'both'
+        ? panelShape
+        : undefined,
+    panelPadding,
+    panelGroupLevels,
+    groupSort,
     fitPrint,
+    multiPage: true,
+    groupByFolder: true,
+    folders: folders?.map((f) => ({
+      id: f.id,
+      order: f.order,
+      name: f.name,
+      parentId: f.parentId,
+    })),
   })
 
   const runPack = () => {
     setError(null)
     autoOrganize(opts())
+    const chrome = GROUP_CHROME_PRESETS[groupChrome].label
     setStatus(
-      `Packed ${items.filter((i) => !i.hidden).length} cards · ${DENSITY_PRESETS[density].label} · gap ${gap}px`,
+      `Packed ${items.filter((i) => !i.hidden).length} cards · ${DENSITY_PRESETS[density].label} · ${chrome} · gap ${gap}px`,
     )
   }
 
@@ -100,21 +137,21 @@ export function AutoLayoutPanel() {
       if (result.usedPlacements && result.suggestion.placements) {
         applyItemLayout(result.suggestion.placements)
       } else {
-        // Apply full packed items via store
+        // Apply full packed items via store (incl. layout panels when chrome=panels)
         useCanvasStore.setState({
           items: result.items,
           dirty: true,
-          canvas:
-            result.printPageCount !== (canvas.printPageCount ?? 1)
-              ? { ...canvas, printPageCount: result.printPageCount }
-              : canvas,
+          canvas: {
+            ...canvas,
+            printPageCount: result.printPageCount,
+            layoutPanels: result.layoutPanels ?? [],
+          },
         })
       }
       if (result.suggestion.density) setDensity(result.suggestion.density)
       if (result.suggestion.gap != null) setGap(result.suggestion.gap)
-      if (result.suggestion.columns != null)
-        setColumns(result.suggestion.columns)
-      if (result.suggestion.mode) setMode(result.suggestion.mode)
+      if (result.suggestion.groupChrome)
+        setGroupChrome(result.suggestion.groupChrome)
 
       const note = result.suggestion.rationale
         ? ` — ${result.suggestion.rationale}`
@@ -195,36 +232,179 @@ export function AutoLayoutPanel() {
         />
       </label>
 
-      <div className="grid grid-cols-2 gap-2">
-        <label className="flex flex-col gap-1">
-          <span className="text-[10px] text-zinc-500">Columns</span>
-          <select
-            value={columns === 'auto' ? 'auto' : String(columns)}
-            onChange={(e) => {
-              const v = e.target.value
-              setColumns(v === 'auto' ? 'auto' : Number(v))
-            }}
-            className="field-input py-1 text-[11px]"
-          >
-            <option value="auto">Auto</option>
-            <option value="1">1</option>
-            <option value="2">2</option>
-            <option value="3">3</option>
-          </select>
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-[10px] text-zinc-500">Mode</span>
-          <select
-            value={mode}
-            onChange={(e) =>
-              setMode(e.target.value === 'flow' ? 'flow' : 'columns')
-            }
-            className="field-input py-1 text-[11px]"
-          >
-            <option value="columns">Multi-column</option>
-            <option value="flow">Flow wrap</option>
-          </select>
-        </label>
+      <div>
+        <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+          Group chrome
+        </p>
+        <p className="mb-1.5 text-[9px] leading-snug text-zinc-600">
+          How topics/folders are marked after packing. <span className="text-zinc-400">Topic labels</span> =
+          banner rows (current). <span className="text-zinc-400">Panels</span> =
+          encapsulating box around cards that belong together.
+        </p>
+        <div className="grid grid-cols-2 gap-1">
+          {(Object.keys(GROUP_CHROME_PRESETS) as GroupChrome[]).map((id) => {
+            const p = GROUP_CHROME_PRESETS[id]
+            const active = groupChrome === id
+            return (
+              <button
+                key={id}
+                type="button"
+                data-testid={`group-chrome-${id}`}
+                onClick={() => setGroupChrome(id)}
+                className={`rounded-md border px-2 py-1.5 text-left transition ${
+                  active
+                    ? 'border-emerald-500/50 bg-emerald-500/12 text-emerald-100'
+                    : 'border-zinc-800 bg-zinc-950/40 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200'
+                }`}
+              >
+                <span className="block text-[11px] font-medium">{p.label}</span>
+                <span className="mt-0.5 block text-[9px] leading-snug text-zinc-500">
+                  {p.hint}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {(groupChrome === 'panels' || groupChrome === 'both') && (
+        <div className="space-y-2 rounded-md border border-zinc-800 bg-zinc-950/30 p-2">
+          <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+            Panel packing
+          </p>
+          <div className="grid grid-cols-2 gap-1">
+            {(Object.keys(PANEL_SHAPE_PRESETS) as PanelShape[]).map((id) => {
+              const p = PANEL_SHAPE_PRESETS[id]
+              const active = panelShape === id
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  data-testid={`panel-shape-${id}`}
+                  onClick={() => setPanelShape(id)}
+                  className={`rounded-md border px-2 py-1.5 text-left transition ${
+                    active
+                      ? 'border-sky-500/50 bg-sky-500/12 text-sky-100'
+                      : 'border-zinc-800 bg-zinc-950/40 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200'
+                  }`}
+                >
+                  <span className="block text-[11px] font-medium">{p.label}</span>
+                  <span className="mt-0.5 block text-[9px] leading-snug text-zinc-500">
+                    {p.hint}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+          <label className="flex flex-col gap-1">
+            <span className="text-[10px] text-zinc-500">
+              Panel gap · {panelPadding}px
+              {panelPadding === 0
+                ? ' (flush)'
+                : ` (~${Math.round(panelPadding / 24)} cell${Math.round(panelPadding / 24) === 1 ? '' : 's'})`}
+            </span>
+            <input
+              type="range"
+              min={0}
+              max={48}
+              step={4}
+              value={panelPadding}
+              onChange={(e) => setPanelPadding(Number(e.target.value))}
+              className="w-full"
+              data-testid="panel-gap-slider"
+            />
+            <span className="text-[9px] text-zinc-600">
+              Space between panels in free-flow pack (0 = tight, 24 ≈ one grid
+              cell, 48 ≈ two).
+            </span>
+          </label>
+
+          <div>
+            <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+              Panel group levels
+              <span className="ml-1 font-normal normal-case text-zinc-600">
+                (multi-select)
+              </span>
+            </p>
+            <div className="grid grid-cols-3 gap-1">
+              {panelGroupLevelOptions().map((opt) => {
+                const active = panelGroupLevels.includes(opt.level)
+                return (
+                  <button
+                    key={opt.level}
+                    type="button"
+                    data-testid={`panel-group-level-${opt.level}`}
+                    aria-pressed={active}
+                    onClick={() => {
+                      setPanelGroupLevels((prev) => {
+                        if (prev.includes(opt.level)) {
+                          // Keep at least one level selected
+                          const next = prev.filter((L) => L !== opt.level)
+                          return next.length > 0 ? next : prev
+                        }
+                        return [...prev, opt.level].sort(
+                          (a, b) => a - b,
+                        ) as PanelGroupLevel[]
+                      })
+                    }}
+                    title={opt.hint}
+                    className={`rounded-md border px-2 py-1.5 text-center transition ${
+                      active
+                        ? 'border-emerald-500/50 bg-emerald-500/12 text-emerald-100'
+                        : 'border-zinc-800 bg-zinc-950/40 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200'
+                    }`}
+                  >
+                    <span className="block text-[11px] font-medium">
+                      {opt.label}
+                    </span>
+                    {active && (
+                      <span className="mt-0.5 block text-[8px] text-emerald-400/90">
+                        on
+                      </span>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+            <p className="mt-1 text-[9px] leading-snug text-zinc-600">
+              {panelGroupLevels.length > 1
+                ? `Nested: L${panelGroupLevels.join('+L')} — outer wraps inner (e.g. “1.” around “1.1” / “1.2”).`
+                : (panelGroupLevelOptions().find(
+                    (o) => o.level === panelGroupLevels[0],
+                  )?.hint ?? 'Select one or more levels.')}
+            </p>
+          </div>
+        </div>
+      )}
+
+      <div>
+        <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+          Group sort
+        </p>
+        <div className="grid grid-cols-1 gap-1">
+          {(Object.keys(GROUP_SORT_PRESETS) as GroupSortOrder[]).map((id) => {
+            const p = GROUP_SORT_PRESETS[id]
+            const active = groupSort === id
+            return (
+              <button
+                key={id}
+                type="button"
+                data-testid={`group-sort-${id}`}
+                onClick={() => setGroupSort(id)}
+                className={`rounded-md border px-2 py-1.5 text-left transition ${
+                  active
+                    ? 'border-violet-500/50 bg-violet-500/12 text-violet-100'
+                    : 'border-zinc-800 bg-zinc-950/40 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200'
+                }`}
+              >
+                <span className="block text-[11px] font-medium">{p.label}</span>
+                <span className="mt-0.5 block text-[9px] leading-snug text-zinc-500">
+                  {p.hint}
+                </span>
+              </button>
+            )
+          })}
+        </div>
       </div>
 
       <label className="flex items-center gap-2 text-xs text-zinc-300">
@@ -234,8 +414,15 @@ export function AutoLayoutPanel() {
           onChange={(e) => setFitPrint(e.target.checked)}
           className="rounded border-zinc-600"
         />
-        Fit into print box (shrink if needed)
+        Fit into print box when single-page (shrink if needed)
       </label>
+      <p className="text-[9px] leading-snug text-zinc-600">
+        Always <span className="text-zinc-400">free-flow</span>.
+        <span className="text-zinc-400"> Levels</span> multi-select for nested
+        frames (L1 wraps L2).
+        <span className="text-zinc-400"> N-gon</span> = L/stepped chrome on card
+        runs (not a full empty box).
+      </p>
 
       <button
         type="button"

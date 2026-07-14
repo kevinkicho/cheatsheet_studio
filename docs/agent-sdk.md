@@ -70,21 +70,70 @@ npm run agent:flagship:validate   # pack + validate + summarize
 
 This path never requires a service account in the browser.
 
-### Layout philosophy (grid pack)
+### Kitchen-sink sheet (full catalog stress test)
+
+Generate a sheet with **every** seed equation/table/figure **plus** process
+blocks, grouped into Layers folders by subject → topic:
+
+```bash
+# Full catalog (~165 seed + process charts) → multipage sheet JSON
+npm run agent:everything
+# → examples/agent-out/everything.sheet.json
+
+npm run agent:everything:stats   # counts by type/subject
+
+# Filters
+npm run cheatsheet -- everything --subject finance -o out/fin-all.sheet.json
+npm run cheatsheet -- everything --type equation --type process --limit 80 -o out/stress.sheet.json
+npm run cheatsheet -- everything --no-layout -o out/raw.sheet.json
+```
+
+**Layout:** `everything` runs the SDK **dense shelf pack** (side-by-side mosaic),
+not the Studio Auto-layout button. Studio packing is `packCheatsheetLayout`
+(24px grid) — Import → **Auto-layout** for that. Older CLI `layout` without
+`--pack` used a column waterfall that looked like no packing on large sheets.
+
+**Agent SVG (headless — no Studio UI):**
+
+```bash
+# One shot: compose everything + Playwright SVG export
+npm run agent:everything:svg
+# → examples/agent-out/everything.sheet.json
+# → examples/agent-out/everything.svg (+ .vector.html, .print.html if --keep-html)
+
+# Or two steps
+npm run agent:everything
+npm run cheatsheet -- export-svg \
+  examples/agent-out/everything.sheet.json \
+  -o examples/agent-out/everything.svg \
+  --keep-html
+```
+
+Requires Chromium once: `npx playwright install chromium`.  
+Full command reference: [cli.md](./cli.md#kitchen-sink-everything--svg-export).
+
+Studio path: **Import JSON** → **Auto-layout** (Studio grid pack) → **Export** → SVG/PDF.
+
+### Layout philosophy (grid-cell area pack)
 
 Studio Auto-layout (`packCheatsheetLayout` in `src/lib/autoOrganize.ts`) is
-**grid-first**. Agents should author content so packing works well:
+**area-proportional** free-flow packing. Full UI controls:
+**[auto-layout.md](./auto-layout.md)**.
 
-1. **Select & group** — use outline `folder` blocks (Layers folders) and section headings  
-2. **Ideal size** — each card gets a content-native aspect (`estimateIdealBlockSize`)  
-3. **Area budget** — shrink-only if total size exceeds ~90% of the printable page (never inflate past ideal — empty guts inside cards)  
-4. **Grid cells** — default **24px** unit; every edge snaps  
-5. **Pack** — section bands + occupancy grid (bottom-left)  
-6. **Readable floor** — title font ≥ **10px**, body ≥ **12px**  
-7. **Paint** — equations/tables natural (`contentFill` off); process/figures fill  
+Agents should author content so packing works well:
 
-CLI/SDK dense pack (`cheatsheet-pack`) is related but not identical code; prefer
-Studio Auto-layout after Import for final WYSIWYG. Density: `xs` | `sm` | `md` | `lg`.
+1. **Select & group** — outline nested `folder` blocks (Layers) so **panel group levels** 1/2/3 can nest  
+2. **Unit area** — each card → ideal size → **grid cells** (default **24px**); topic area = Σ cells  
+3. **Topic share** — `topicCells / totalCells` drives how much of the multipage board that category gets  
+4. **Global scale** — fit total cell area into ≈ N pages (never grow past ideal; readable floor)  
+5. **Natural topic blocks** — shelf-pack cards inside each folder group (not fixed columns)  
+6. **Free-flow region place** — maxrects hole-fill + gravity (not row/column bands)  
+7. **Readable floor** — title font ≥ **10px**, body ≥ **12px**  
+8. **Paint** — equations/tables natural (`contentFill` off); process/figures fill  
+
+CLI/SDK dense pack is related but not identical; prefer Studio Auto-layout after
+Import for final WYSIWYG. Density: `xs` | `sm` | `md` | `lg`. Nested Layers
+folders enable multi-select **L1 ⊃ L2** panel chrome in the Auto layout panel.
 
 ### Outline compose (agents)
 

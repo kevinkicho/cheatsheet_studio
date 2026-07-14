@@ -39,6 +39,8 @@ import {
   acceptUsefulDiagramPng,
   installExportCaptureCover,
   flattenForeignObjectsToSvgText,
+  stitchSvgPages,
+  parseSvgOuterSize,
 } from '@/lib/exportSvg'
 
 describe('exportSvg page background', () => {
@@ -56,6 +58,56 @@ describe('exportSvg page background', () => {
       title: 't',
     })
     expect(svg).toContain(`fill="${SVG_BOARD_BG}"`)
+  })
+})
+
+describe('stitchSvgPages (All together)', () => {
+  const page = (w: number, h: number, id: string) =>
+    `<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><title>${id}</title><style><![CDATA[ .x { color: red; } ]]></style><rect width="100%" height="100%" fill="#111"/><text>${id}</text></svg>`
+
+  it('parses outer size from viewBox', () => {
+    expect(parseSvgOuterSize(page(816, 1056, 'p1'))).toEqual({
+      width: 816,
+      height: 1056,
+    })
+  })
+
+  it('stacks two pages into one taller SVG via <image> data URIs (no nested CDATA)', () => {
+    const out = stitchSvgPages([page(100, 50, 'a'), page(100, 50, 'b')], {
+      title: 'combined',
+      arrangement: 'vertical',
+    })
+    expect(out).toContain('viewBox="0 0 100 100"')
+    expect(out).toContain('x="0" y="0"')
+    expect(out).toContain('x="0" y="50"')
+    expect(out).toContain('multi-page SVG')
+    // Outer wrapper only — pages embedded as images, not nested <svg> with CDATA
+    expect(out.match(/<\?xml/g)?.length).toBe(1)
+    expect((out.match(/<image\b/g) || []).length).toBe(2)
+    expect(out).toContain('data:image/svg+xml')
+    // Outer document must not contain page CDATA (that broke Firefox/XML viewers)
+    expect(out).not.toContain('<![CDATA[')
+    expect((out.match(/<\/svg>/g) || []).length).toBe(1)
+  })
+
+  it('returns single page unchanged', () => {
+    const p = page(200, 100, 'only')
+    expect(stitchSvgPages([p])).toBe(p)
+  })
+
+  it('outer stitched SVG stays well-formed with CDATA-heavy pages', () => {
+    // Simulate export pages that each ship a big CDATA CSS block
+    const heavy = (id: string) =>
+      `<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg" width="80" height="40" viewBox="0 0 80 40"><style type="text/css"><![CDATA[
+.foo { color: red; }
+.bar > :not(:last-child) { margin: 0; }
+]]></style><text>${id}</text></svg>`
+    const out = stitchSvgPages([heavy('p1'), heavy('p2'), heavy('p3')])
+    expect(out).not.toContain('<![CDATA[')
+    expect((out.match(/<image\b/g) || []).length).toBe(3)
+    // Minimal outer structure: open/close balanced
+    expect((out.match(/<svg\b/g) || []).length).toBe(1)
+    expect((out.match(/<\/svg>/g) || []).length).toBe(1)
   })
 })
 

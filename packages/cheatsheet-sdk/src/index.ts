@@ -31,6 +31,13 @@ export { composeFromOutline, appendOutlineToSheet } from './compose'
 export type { SheetOutline, OutlineBlock } from './outline'
 
 export {
+  composeEverything,
+  everythingCatalogStats,
+  packEverythingSheet,
+} from './compose-everything'
+export type { ComposeEverythingOptions } from './compose-everything'
+
+export {
   loadSeedCatalog,
   searchCatalog,
   searchBlocks,

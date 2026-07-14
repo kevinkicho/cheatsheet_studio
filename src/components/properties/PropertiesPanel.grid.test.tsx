@@ -14,16 +14,17 @@ describe('PropertiesPanel — sheet grid settings (no selection)', () => {
     cleanup()
   })
 
-  it('sheet properties and grid settings start collapsed', () => {
+  it('sheet properties collapsed; auto layout open; grid sibling collapsed', () => {
     render(<PropertiesPanel />)
     expect(screen.getByText('Sheet properties')).toBeInTheDocument()
-    expect(screen.getByText(/Grid settings/i)).toBeInTheDocument()
-    // Content hidden until expanded
+    expect(screen.getByTestId('auto-layout-toggle')).toBeInTheDocument()
+    // Grid is a sibling of Auto layout (same hierarchy), starts collapsed
+    expect(screen.getByTestId('grid-settings-toggle')).toBeInTheDocument()
     expect(screen.queryByText('Full page')).not.toBeInTheDocument()
     expect(screen.queryByLabelText(/Show grid/i)).not.toBeInTheDocument()
   })
 
-  it('shows grid covers options when grid settings expanded', () => {
+  it('shows grid covers options when nested grid settings expanded', () => {
     render(<PropertiesPanel />)
     fireEvent.click(screen.getByRole('button', { name: /Grid settings/i }))
     expect(screen.getByText('Full page')).toBeInTheDocument()
@@ -81,5 +82,12 @@ describe('PropertiesPanel — sheet grid settings (no selection)', () => {
     const before = useCanvasStore.getState().canvas.showGrid
     fireEvent.click(checkbox)
     expect(useCanvasStore.getState().canvas.showGrid).toBe(!before)
+  })
+
+  it('collapsing auto layout does not hide grid settings sibling', () => {
+    render(<PropertiesPanel />)
+    expect(screen.getByTestId('grid-settings-toggle')).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('auto-layout-toggle'))
+    expect(screen.getByTestId('grid-settings-toggle')).toBeInTheDocument()
   })
 })

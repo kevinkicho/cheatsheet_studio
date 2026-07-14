@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { ChevronDown, ChevronRight, Scan, Trash2 } from 'lucide-react'
 import { AutoLayoutPanel } from '@/components/properties/AutoLayoutPanel'
+import { PanelProperties } from '@/components/properties/PanelProperties'
 import type {
   BorderStroke,
   CanvasItem,
@@ -54,6 +55,7 @@ function commonValue<T>(
 
 export function PropertiesPanel() {
   const selectedIds = useCanvasStore((s) => s.selectedIds)
+  const selectedPanelId = useCanvasStore((s) => s.selectedPanelId)
   const items = useCanvasStore((s) => s.items)
   const title = useCanvasStore((s) => s.title)
   const canvas = useCanvasStore((s) => s.canvas)
@@ -68,6 +70,10 @@ export function PropertiesPanel() {
   const selected = items.filter((i) => selectedIds.includes(i.id))
   const multi = selected.length > 1
   const single = selected.length === 1 ? selected[0] : null
+  const selectedPanel =
+    selectedPanelId != null
+      ? (canvas.layoutPanels ?? []).find((p) => p.id === selectedPanelId)
+      : undefined
 
   const [sheetPropsOpen, setSheetPropsOpen] = useState(false)
   const [gridSettingsOpen, setGridSettingsOpen] = useState(false)
@@ -76,6 +82,15 @@ export function PropertiesPanel() {
   const [titleOpen, setTitleOpen] = useState(false)
   const [sizeOpen, setSizeOpen] = useState(false)
   const [contentOpen, setContentOpen] = useState(false)
+
+  // Panel selected → panel editor in left sidebar
+  if (selected.length === 0 && selectedPanel) {
+    return (
+      <div className="flex h-full flex-col overflow-y-auto">
+        <PanelProperties panel={selectedPanel} />
+      </div>
+    )
+  }
 
   if (selected.length === 0) {
     return (
@@ -113,7 +128,7 @@ export function PropertiesPanel() {
           </div>
         )}
 
-        {/* Auto layout (collapsible) — cheatsheet packing + Ollama */}
+        {/* Auto layout (collapsible) — same hierarchy as Grid settings */}
         <button
           type="button"
           onClick={() => setAutoLayoutOpen((o) => !o)}
@@ -131,16 +146,17 @@ export function PropertiesPanel() {
           </span>
         </button>
         {autoLayoutOpen && (
-          <div className="min-h-0 max-h-[55%] shrink-0 overflow-y-auto border-b border-zinc-800">
+          <div className="min-h-0 max-h-[50%] shrink overflow-y-auto border-b border-zinc-800">
             <AutoLayoutPanel />
           </div>
         )}
 
-        {/* Grid settings (collapsible) */}
+        {/* Grid settings — sibling of Auto layout (not nested) */}
         <button
           type="button"
           onClick={() => setGridSettingsOpen((o) => !o)}
           className="flex shrink-0 items-center gap-1.5 border-b border-zinc-800 bg-zinc-900/80 px-3 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-zinc-300 hover:bg-zinc-900"
+          data-testid="grid-settings-toggle"
         >
           {gridSettingsOpen ? (
             <ChevronDown className="h-3.5 w-3.5 text-zinc-500" />
@@ -269,18 +285,15 @@ export function PropertiesPanel() {
             </div>
 
             <p className="text-xs leading-relaxed text-zinc-500">
-              Select a card to edit it. Hold{' '}
-              <kbd className="rounded bg-zinc-800 px-1 text-[10px] text-zinc-300">
-                Shift
-              </kbd>{' '}
-              and click to select multiple cards, then edit them together here.
+              Click a layout panel to edit its title / card sort. Select a card
+              for card properties.
             </p>
           </div>
         )}
 
-        {!sheetPropsOpen && !gridSettingsOpen && !autoLayoutOpen && (
+        {!sheetPropsOpen && !autoLayoutOpen && !gridSettingsOpen && (
           <p className="p-3 text-xs text-zinc-600">
-            Expand a section above, or select a card on the canvas.
+            Expand a section above, click a panel, or select a card.
           </p>
         )}
       </div>

@@ -32,6 +32,8 @@ export type AiLayoutSuggestion = {
   gap?: number
   columns?: number | 'auto'
   mode?: 'columns' | 'flow'
+  /** Topic chrome from model or UI preference. */
+  groupChrome?: import('@/lib/autoOrganize').GroupChrome
   fitPrint?: boolean
   /** Optional freeform note from the model (shown in UI). */
   rationale?: string
@@ -44,6 +46,8 @@ export type AiLayoutResult = {
   /** Items after applying AI params and/or placements. */
   items: CanvasItem[]
   printPageCount: number
+  /** Group frames from packer (panels chrome). */
+  layoutPanels?: import('@/types').LayoutPanel[]
   model: string
   /** true when model returned usable per-card positions. */
   usedPlacements: boolean
@@ -70,36 +74,58 @@ function summarizeItems(items: CanvasItem[]) {
 }
 
 const SYSTEM = `You are a print cheatsheet layout expert for CheatSheet Studio.
-Goal: pack many math/science cards into a letter page content box so they stay readable but tight.
-Return ONLY valid JSON (no markdown). Prefer multi-column sectioned layouts.
-Density: xs (densest midterm) | sm (recommended) | md | lg (roomy).
-Do not invent card ids — only use ids from the user payload.`
+Goal: pack many math/science/finance cards into letter-size print frames as a readable exam cheat sheet.
+Rules:
+- Return ONLY valid JSON (no markdown fences).
+- Prefer multipage over shrinking cards until formulas are unreadable. Never recommend crushing KaTeX below readable size.
+- Keep related cards together (same folder/topic). Headings mark section starts.
+- Density changes **card size / font**: xs=tight but readable, sm=recommended, md=larger, lg=roomiest. Prefer sm or md unless user asks for densest.
+- gap: 6–16px between clusters (avoid 2–4px micro-gaps that stack cards illegibly).
+- groupChrome: labels | panels | both | none.
+- Prefer density/gap/groupChrome knobs and let the app packer run — only emit placements if covering ≥70% of card ids with roomy boxes (not micro-rects).
+- Never invent card ids.`
 
 function buildUserPrompt(
   items: ReturnType<typeof summarizeItems>,
   box: { left: number; top: number; width: number; height: number },
   hint?: string,
+  preferred?: Partial<CheatsheetLayoutOptions>,
 ): string {
   return JSON.stringify(
     {
       task: 'cheatsheet_layout',
+      problem:
+        'Minimize empty gutters; cluster by topic/folder; readable midterm density; multipage OK.',
       contentBox: {
         x: box.left,
         y: box.top,
         width: box.width,
         height: box.height,
+        note: 'One printable page content area; multipage continues downward by page height.',
       },
+      cardCount: items.length,
       cards: items,
-      userHint: hint ?? 'Dense exam cheat sheet; keep related cards together.',
+      uiPreferred: {
+        density: preferred?.density ?? null,
+        gap: preferred?.gap ?? null,
+        columns: preferred?.columns ?? null,
+        mode: preferred?.mode ?? null,
+        groupChrome: preferred?.groupChrome ?? 'labels',
+        multiPage: preferred?.multiPage !== false,
+      },
+      userHint:
+        hint ??
+        'Dense exam cheat sheet; keep Layers folders clustered; group by section; keep readable.',
       respondWith: {
         density: 'xs|sm|md|lg',
         gap: 'number px 4-24',
         columns: '1|2|3|auto',
         mode: 'columns|flow',
+        groupChrome: 'labels|panels|both|none',
         fitPrint: true,
-        rationale: 'short string',
+        rationale: 'short string explaining density + chrome choice',
         placements:
-          'optional array of {id,x,y,width?,height?} all inside contentBox; include every card id if used',
+          'optional [{id,x,y,width?,height?}] — only if covering most cards; else omit and use knobs',
       },
     },
     null,
@@ -170,6 +196,15 @@ function normalizeSuggestion(
     }
   }
 
+  const chromeRaw = raw.groupChrome
+  const groupChrome =
+    chromeRaw === 'labels' ||
+    chromeRaw === 'panels' ||
+    chromeRaw === 'both' ||
+    chromeRaw === 'none'
+      ? chromeRaw
+      : undefined
+
   return {
     density: dens,
     gap:
@@ -180,6 +215,7 @@ function normalizeSuggestion(
           : 8,
     columns,
     mode: raw.mode === 'flow' ? 'flow' : 'columns',
+    groupChrome,
     fitPrint: raw.fitPrint !== false,
     rationale:
       typeof raw.rationale === 'string' ? raw.rationale.slice(0, 280) : undefined,
@@ -211,10 +247,13 @@ export async function suggestCheatsheetLayoutWithOllama(
       suggestion: { density: 'sm', gap: 8, columns: 'auto', mode: 'columns' },
       items,
       printPageCount: canvas.printPageCount ?? 1,
+      layoutPanels: canvas.layoutPanels ?? [],
       model: opts.model ?? DEFAULT_OLLAMA_MODEL,
       usedPlacements: false,
     }
   }
+
+  const preferred = opts.preferred
 
   const { content, model } = await ollamaChat({
     baseUrl: opts.baseUrl ?? resolveOllamaBaseUrl(),
@@ -226,7 +265,7 @@ export async function suggestCheatsheetLayoutWithOllama(
       { role: 'system', content: SYSTEM },
       {
         role: 'user',
-        content: buildUserPrompt(summary, box, opts.hint),
+        content: buildUserPrompt(summary, box, opts.hint, preferred),
       },
     ],
   })
@@ -236,12 +275,23 @@ export async function suggestCheatsheetLayoutWithOllama(
   const suggestion = normalizeSuggestion(parsed, cardIds, box)
 
   // Soft-merge UI preferences when model omits fields
-  if (opts.preferred?.density && !parsed.density) {
-    suggestion.density = opts.preferred.density
+  if (preferred?.density && !parsed.density) {
+    suggestion.density = preferred.density
   }
-  if (opts.preferred?.gap != null && parsed.gap == null) {
-    suggestion.gap = opts.preferred.gap
+  if (preferred?.gap != null && parsed.gap == null) {
+    suggestion.gap = preferred.gap
   }
+  if (preferred?.columns != null && parsed.columns == null) {
+    suggestion.columns = preferred.columns
+  }
+  if (preferred?.mode && !parsed.mode) {
+    suggestion.mode = preferred.mode
+  }
+  if (preferred?.groupChrome && !suggestion.groupChrome) {
+    suggestion.groupChrome = preferred.groupChrome
+  }
+
+  const groupChrome = suggestion.groupChrome ?? preferred?.groupChrome ?? 'labels'
 
   if (suggestion.placements && suggestion.placements.length > 0) {
     const byId = new Map(suggestion.placements.map((p) => [p.id, p]))
@@ -277,35 +327,46 @@ export async function suggestCheatsheetLayoutWithOllama(
         columns: suggestion.columns,
         mode: suggestion.mode,
         fitPrint: true,
+        multiPage: preferred?.multiPage !== false,
+        groupChrome,
+        groupByFolder: preferred?.groupByFolder !== false,
+        folders: preferred?.folders,
       })
       return {
-        suggestion,
+        suggestion: { ...suggestion, groupChrome },
         items: packed.items,
         printPageCount: packed.printPageCount,
+        layoutPanels: packed.layoutPanels,
         model,
         usedPlacements: false,
       }
     }
     return {
-      suggestion,
+      suggestion: { ...suggestion, groupChrome },
       items: next,
       printPageCount: Math.max(1, canvas.printPageCount ?? 1),
+      layoutPanels: canvas.layoutPanels ?? [],
       model,
       usedPlacements: true,
     }
   }
 
   const packed = packCheatsheetLayout(items, canvas, {
-    density: suggestion.density ?? 'sm',
-    gap: suggestion.gap,
-    columns: suggestion.columns ?? 'auto',
-    mode: suggestion.mode ?? 'columns',
+    density: suggestion.density ?? preferred?.density ?? 'sm',
+    gap: suggestion.gap ?? preferred?.gap,
+    columns: suggestion.columns ?? preferred?.columns ?? 'auto',
+    mode: suggestion.mode ?? preferred?.mode ?? 'columns',
     fitPrint: suggestion.fitPrint !== false,
+    multiPage: preferred?.multiPage !== false,
+    groupChrome,
+    groupByFolder: preferred?.groupByFolder !== false,
+    folders: preferred?.folders,
   })
   return {
-    suggestion,
+    suggestion: { ...suggestion, groupChrome },
     items: packed.items,
     printPageCount: packed.printPageCount,
+    layoutPanels: packed.layoutPanels,
     model,
     usedPlacements: false,
   }

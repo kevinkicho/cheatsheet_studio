@@ -38,6 +38,37 @@ npm run cheatsheet -- export-jpg out/sheet.json -o out/sheet.jpg
 Flagships use **Studio blocks** (seed equations/figures + process flowcharts/mind maps).  
 User: **Import** `*.sheet.json` → polish → Studio **Export PDF** (WYSIWYG).
 
+### 0b. Everything (max layout stress)
+
+```bash
+# Full Studio catalog (seed + process) in subject/topic folders
+# Applies dense shelf pack (side-by-side mosaic), multipage
+npm run agent:everything
+# → examples/agent-out/everything.sheet.json
+
+npm run agent:everything:stats
+npm run cheatsheet -- everything --subject finance -o out/fin-all.sheet.json
+npm run cheatsheet -- layout out/sheet.json --pack   # re-pack any sheet densely
+```
+
+**Layout:** CLI dense pack ≠ Studio Auto-layout button. After Import, press
+**Auto-layout** for the browser’s 24px grid packer.
+
+**Agent SVG (headless, no Studio UI):**
+
+```bash
+npm run agent:everything:svg
+# sheet + SVG under examples/agent-out/
+
+# or:
+npm run agent:everything
+npx playwright install chromium   # once
+npm run cheatsheet -- export-svg examples/agent-out/everything.sheet.json \
+  -o examples/agent-out/everything.svg --keep-html
+```
+
+CLI reference: [docs/cli.md](../../../docs/cli.md).
+
 ### 1. Topic pack (fastest)
 
 ```bash
@@ -178,20 +209,23 @@ import {
 - Studio export: PDF / **SVG** (vector) / PNG / JPEG
 - Never commit Firebase service account JSON; `push` is optional Admin only
 
-## Layout philosophy (grid pack)
+## Layout philosophy (grid-cell area pack)
 
-Studio Auto layout (`packCheatsheetLayout`) is **grid-first**:
+Studio Auto layout (`packCheatsheetLayout`) is **area-proportional free-flow**:
 
-1. **Select & group** — folders / headings = topics (agent should author with folders)
-2. **Ideal size** — each block gets a library-like aspect (`estimateIdealBlockSize`)
-3. **Area budget** — scale all blocks so total area ≈ 90% of the printable page
-4. **Grid cells** — `ORGANIZE_GRID` (24px) is the atomic unit; every edge snaps
-5. **Pack** — section bands + bottom-left occupancy on the grid
-6. **Readable floor** — never shrink title text below app default (10px) or body below 12px
+1. **Select & group** — nested folders / headings = topics (author with folders)
+2. **Unit area** — each card → ideal size → grid cells (24px); topic share = topic cells / total
+3. **Global scale** — fit total cell area into N pages (never grow past ideal)
+4. **Natural topic blocks** — shelf-pack cards inside each folder group
+5. **Free-flow** — maxrects hole-fill + gravity (not row/column bands)
+6. **Readable floor** — title ≥ 10px, body ≥ 12px
+7. **UI extras** — nested panel levels (L1⊃L2), n-gon L-chrome, group sort — see [docs/auto-layout.md](../../../docs/auto-layout.md)
 
-Agent workflow: compose with folders → `autoLayout` / `layout --dense` → user Auto layout in Studio if needed.
+Agent workflow: compose with **nested folders** → Import → Studio **Auto-layout** for final mosaic.
 
 ## Docs
 
+- [docs/auto-layout.md](../../../docs/auto-layout.md) — Studio Auto-layout (panels, levels, n-gon)
+- [docs/cli.md](../../../docs/cli.md) — full CLI command guide (everything + export-svg)
 - [docs/agent-sdk.md](../../../docs/agent-sdk.md)
 - [packages/cheatsheet-sdk/README.md](../../../packages/cheatsheet-sdk/README.md)

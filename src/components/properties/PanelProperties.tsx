@@ -1,0 +1,102 @@
+import { LayoutTemplate } from 'lucide-react'
+import type { LayoutPanel } from '@/types'
+import { useCanvasStore } from '@/stores/canvasStore'
+
+/**
+ * Fine-tune a selected layout panel (left sidebar when a panel is selected).
+ */
+export function PanelProperties({ panel }: { panel: LayoutPanel }) {
+  const updateLayoutPanel = useCanvasStore((s) => s.updateLayoutPanel)
+  const selectPanel = useCanvasStore((s) => s.selectPanel)
+  const memberCount = panel.memberIds?.length ?? 0
+  const showTitle = panel.showTitle !== false
+  const contentSort = panel.contentSort ?? 'none'
+
+  return (
+    <div className="space-y-3 p-3" data-testid="panel-properties">
+      <div className="flex items-start gap-2">
+        <LayoutTemplate className="mt-0.5 h-4 w-4 shrink-0 text-indigo-400" />
+        <div className="min-w-0">
+          <p className="text-xs font-semibold text-zinc-200">Panel</p>
+          <p className="truncate text-[11px] text-zinc-500">
+            {panel.title || panel.id}
+          </p>
+          <p className="mt-0.5 text-[10px] text-zinc-600">
+            {memberCount} card{memberCount === 1 ? '' : 's'}
+            {panel.folderId ? ` · folder ${panel.folderId}` : ''}
+          </p>
+        </div>
+      </div>
+
+      <label className="flex flex-col gap-1">
+        <span className="text-[10px] text-zinc-500">Title</span>
+        <input
+          type="text"
+          className="field-input text-xs"
+          value={panel.title ?? ''}
+          onChange={(e) =>
+            updateLayoutPanel(panel.id, { title: e.target.value })
+          }
+        />
+      </label>
+
+      <label className="flex items-center gap-2 text-xs text-zinc-300">
+        <input
+          type="checkbox"
+          checked={showTitle}
+          onChange={(e) =>
+            updateLayoutPanel(panel.id, { showTitle: e.target.checked })
+          }
+          className="rounded border-zinc-600"
+        />
+        Show title chip
+      </label>
+
+      <div>
+        <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+          Sort cards in panel
+        </p>
+        <div className="flex flex-col gap-1">
+          {(
+            [
+              ['none', 'No sorting (keep order)'],
+              ['name-asc', 'Name A→Z'],
+              ['name-desc', 'Name Z→A'],
+            ] as const
+          ).map(([id, label]) => {
+            const active = contentSort === id
+            return (
+              <button
+                key={id}
+                type="button"
+                data-testid={`panel-content-sort-${id}`}
+                onClick={() => {
+                  // Store reflows cards immediately when contentSort changes
+                  updateLayoutPanel(panel.id, { contentSort: id })
+                }}
+                className={`rounded-md border px-2 py-1.5 text-left text-[11px] transition ${
+                  active
+                    ? 'border-violet-500/50 bg-violet-500/12 text-violet-100'
+                    : 'border-zinc-800 bg-zinc-950/40 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200'
+                }`}
+              >
+                {label}
+              </button>
+            )
+          })}
+        </div>
+        <p className="mt-1 text-[9px] leading-snug text-zinc-600">
+          Re-packs only this panel’s cards inside its box (shelf left→right).
+        </p>
+      </div>
+
+      <button
+        type="button"
+        onClick={() => selectPanel(null)}
+        className="w-full rounded-md border border-zinc-800 px-2 py-1.5 text-[11px] text-zinc-400 hover:border-zinc-700 hover:text-zinc-200"
+      >
+        Deselect panel
+      </button>
+    </div>
+  )
+}

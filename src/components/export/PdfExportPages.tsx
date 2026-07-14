@@ -1,4 +1,9 @@
-import type { CanvasItem, SheetCanvas, TitleAlign } from '@/types'
+import type {
+  CanvasItem,
+  LayoutPanel,
+  SheetCanvas,
+  TitleAlign,
+} from '@/types'
 import {
   DEFAULT_CANVAS,
   DEFAULT_MARGINS,
@@ -241,6 +246,19 @@ export function PdfExportPages({
               />
             )}
 
+            {/* Group panels under cards (board → page local coords) */}
+            {(c.layoutPanels ?? [])
+              .filter((p) => panelIntersectsPage(p, page))
+              .map((p) => (
+                <ExportLayoutPanel
+                  key={p.id}
+                  panel={p}
+                  x={p.x - page.x}
+                  y={p.y - page.y}
+                  pageOrigin={{ x: page.x, y: page.y }}
+                />
+              ))}
+
             {items.map((it) => (
               <ExportCard
                 key={it.id}
@@ -249,9 +267,137 @@ export function PdfExportPages({
                 y={it.exportY}
               />
             ))}
+
+            {/* Titles after cards so headers are never covered in export */}
+            {(c.layoutPanels ?? [])
+              .filter((p) => panelIntersectsPage(p, page))
+              .map((p) => (
+                <ExportLayoutPanelTitle
+                  key={`${p.id}-title`}
+                  panel={p}
+                  pageOrigin={{ x: page.x, y: page.y }}
+                />
+              ))}
           </div>
         )
       })}
+    </div>
+  )
+}
+
+function panelIntersectsPage(
+  p: LayoutPanel,
+  page: PageRect,
+): boolean {
+  return (
+    p.x < page.x + page.width &&
+    p.x + p.width > page.x &&
+    p.y < page.y + page.height &&
+    p.y + p.height > page.y
+  )
+}
+
+function ExportLayoutPanel({
+  panel,
+  pageOrigin,
+}: {
+  panel: LayoutPanel
+  x: number
+  y: number
+  pageOrigin: { x: number; y: number }
+}) {
+  const accent = panel.accent ?? 'rgba(99, 102, 241, 0.55)'
+  const fill = /rgba?\(/i.test(accent)
+    ? accent.replace(/[\d.]+\s*\)$/, '0.07)')
+    : 'rgba(99, 102, 241, 0.06)'
+  const runs =
+    panel.runs && panel.runs.length > 0
+      ? panel.runs
+      : [{ x: panel.x, y: panel.y, width: panel.width, height: panel.height }]
+
+  return (
+    <div
+      data-export-layout-panel={panel.id}
+      data-layout-panel-shape={panel.shape ?? 'rect'}
+    >
+      {runs.map((r, i) => (
+        <div
+          key={`${panel.id}-run-${i}`}
+          style={{
+            position: 'absolute',
+            left: r.x - pageOrigin.x,
+            top: r.y - pageOrigin.y,
+            width: r.width,
+            height: r.height,
+            boxSizing: 'border-box',
+            border: `1.5px solid ${accent}`,
+            borderRadius: 6,
+            background: fill,
+            zIndex: 0,
+            pointerEvents: 'none',
+          }}
+        />
+      ))}
+    </div>
+  )
+}
+
+function ExportLayoutPanelTitle({
+  panel,
+  pageOrigin,
+}: {
+  panel: LayoutPanel
+  x?: number
+  y?: number
+  pageOrigin: { x: number; y: number }
+}) {
+  if (panel.showTitle === false || !panel.title) return null
+  const accent = panel.accent ?? 'rgba(99, 102, 241, 0.55)'
+  // N-gon: title on topmost-leftmost run (AABB corner may sit in a hole).
+  const box = (() => {
+    if (panel.runs && panel.runs.length > 0) {
+      const topY = Math.min(...panel.runs.map((r) => r.y))
+      const anchor = [...panel.runs]
+        .filter((r) => Math.abs(r.y - topY) < 0.5)
+        .sort((a, b) => a.x - b.x)[0]!
+      return {
+        x: anchor.x - pageOrigin.x,
+        y: anchor.y - pageOrigin.y,
+        maxW: Math.max(40, anchor.width - 4),
+      }
+    }
+    return {
+      x: panel.x - pageOrigin.x,
+      y: panel.y - pageOrigin.y,
+      maxW: Math.max(40, panel.width - 4),
+    }
+  })()
+  return (
+    <div
+      data-export-layout-panel-title={panel.id}
+      style={{
+        position: 'absolute',
+        left: box.x + 2,
+        top: box.y + 1,
+        maxWidth: box.maxW,
+        padding: '2px 6px',
+        fontSize: 9,
+        fontWeight: 600,
+        letterSpacing: '0.04em',
+        textTransform: 'uppercase',
+        color: '#e0e7ff',
+        lineHeight: 1.25,
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        background: 'rgba(15, 17, 21, 0.88)',
+        borderRadius: 3,
+        border: `1px solid ${accent}`,
+        zIndex: 50,
+        pointerEvents: 'none',
+      }}
+    >
+      {panel.title}
     </div>
   )
 }

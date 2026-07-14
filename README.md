@@ -49,7 +49,7 @@ folders, and sync sheets per Google account.
 | Per-page / printable / whole-board grids | **Implemented** |
 | PDF / PNG / JPEG export (print pages, WYSIWYG capture) | **Implemented** |
 | **SVG export** (file:// friendly; process charts as high-contrast embeds) | **Implemented** |
-| **Grid auto-layout** (folder sections, area-aware pack, readable min fonts) | **Implemented** |
+| **Grid auto-layout** (free-flow pack, nested panel levels, n-gon L-chrome) | **Implemented** |
 | Library cards + catalog list (multi-sort) | **Implemented** |
 | Favorites | **Library only** (♥ on library cards; not canvas Item Properties) |
 | Nested outliner folders + multi-select | **Implemented** |
@@ -59,7 +59,7 @@ folders, and sync sheets per Google account.
 | Process charts (flowchart pipe editor + processFlow cards; mind maps) | **Implemented** |
 | My Sheets preview + card detail | **Implemented** |
 | Agent Import JSON (toast, drag-drop, friendly errors) | **Implemented** |
-| Headless SDK/CLI + flagship finance-midterm pack | **Implemented** |
+| Headless SDK/CLI + flagship packs + **everything** kitchen-sink pack | **Implemented** |
 | Color pickers (defaults + recent) | **Implemented** |
 | Collapsible left / right / bottom chrome | **Implemented** |
 | Unit + component tests (Vitest) | **Vitest** |
@@ -70,10 +70,19 @@ folders, and sync sheets per Google account.
 serves **live source**. `firebase serve` → [http://localhost:5000](http://localhost:5000)
 serves **last `npm run build`** only. Rebuild before testing Hosting-style ports.
 
-**Docs:** [docs/README.md](./docs/README.md) ·
-Process: [docs/process-charts.md](./docs/process-charts.md) ·
-Vector: [docs/vector-graphics.md](./docs/vector-graphics.md) ·
-Agent SDK/CLI: [docs/agent-sdk.md](./docs/agent-sdk.md) (`packages/cheatsheet-sdk` — **does not alter the web UI**)
+### Documentation
+
+| Doc | Description |
+|-----|-------------|
+| [docs/README.md](./docs/README.md) | Docs index |
+| [docs/auto-layout.md](./docs/auto-layout.md) | **Studio Auto-layout** (free-flow, nested panel levels, n-gon, sort) |
+| [docs/cli.md](./docs/cli.md) | **CLI command guide** (packs, `everything`, export-svg/pdf, agents) |
+| [docs/agent-sdk.md](./docs/agent-sdk.md) | Headless SDK API, MCP, layout philosophy |
+| [docs/vector-graphics.md](./docs/vector-graphics.md) | Vector policy + Studio SVG export |
+| [docs/process-charts.md](./docs/process-charts.md) | Process / mind-map editor |
+| [docs/flagship.md](./docs/flagship.md) | Agent pack → Import → Export |
+
+Also: Process · Vector · Agent SDK under `docs/` (`packages/cheatsheet-sdk` CLI **does not alter the web UI**).
 
 ---
 
@@ -89,14 +98,18 @@ Agent SDK/CLI: [docs/agent-sdk.md](./docs/agent-sdk.md) (`packages/cheatsheet-sd
 - Grid on/off, snap-to-grid, tunable spacing (left **Grid settings**)  
 - **Grid covers:** Full page · Printable area (margins) · Whole board  
 - Soft opacity scale: slider **0–100% → CSS α 0–0.3**  
-- **Auto-layout** (canvas toolbar grid button + left **Auto layout** panel):
-  - Packs into the **printable content box** (page − margins)
-  - **Grid unit** = canvas grid spacing (default **24px**); positions snap to the grid
-  - Groups by **Layers folders** / section headings first
-  - Sizes cards from **content-native ideals** (equation / table / process / figure); **never grows** past ideal (avoids empty guts inside cards)
-  - Shrinks only if content overflows the page; title font floor **≥ 10px**, body **≥ 12px**
-  - Equations/tables paint at **natural size** (`contentFill` off); process/figures **fill** the card
-  - Density presets: Extra small → Large (panel); toolbar defaults to **Small**
+- **Auto-layout** (toolbar grid button + left **Auto layout** panel) — full detail: [docs/auto-layout.md](docs/auto-layout.md)
+  - Packs into the **printable content box** (page − margins), **multipage** by default
+  - **Grid unit** = canvas grid spacing (default **24px**); unit area = one cell
+  - Groups by **Layers folders** / headings; area-proportional scale (title ≥ **10px**, body ≥ **12px**)
+  - **Free-flow** placement (maxrects hole-fill + gravity) — never rigid row/column bands
+  - Each topic is a **natural tight block** of cards; blocks tile densely
+  - **Group chrome:** Topic labels · **Panels** · both · none
+  - **Panel packing:** **Rectangle** (full AABB) vs **N-gon** (chrome follows card runs — L/stepped when the last row is short)
+  - **Panel gap** (0–48px) between frames; **Panel group levels** multi-select **1 / 2 / 3** for nested hierarchy (e.g. L1 wraps L2)
+  - **Group sort:** none (densest) · A→Z / Z→A soft reading flow (earlier → top-left, later → bottom-right)
+  - Click a panel (Select tool) → left **Panel** properties (title, sort cards inside panel)
+  - Equations/tables **natural** paint; process/figures **fill**; density xs→lg (toolbar default **Small**)
 - When **print frame is on**, board scroll size is limited to the print layout (+ pad); freeform size returns when the frame is off  
 - **Library drag → canvas:** drop uses the **live drag-preview size and position** (WYSIWYG; no second autoFit jump after paste)  
 
@@ -321,8 +334,10 @@ firebase serve    # http://localhost:5000 — must rebuild to see latest code
 | `npm run emulators` / `emulators:auth` | Start Firebase emulators |
 | `npm run dev:emulators` | Vite with emulator env flags |
 | `npm run seed` | Seed `libraryItems` via Admin SDK |
-| `npm run cheatsheet -- …` | Headless sheet CLI (agents) — see [docs/agent-sdk.md](./docs/agent-sdk.md) |
+| `npm run cheatsheet -- …` | Headless sheet CLI (agents) — see [docs/cli.md](./docs/cli.md) |
 | `npm run cheatsheet -- doctor` | SDK health check (packs, catalog, cloud env) |
+| `npm run agent:everything` | Full-catalog kitchen-sink → `examples/agent-out/everything.sheet.json` |
+| `npm run agent:everything:svg` | Kitchen-sink sheet **+** CLI SVG export (Playwright) |
 | `npm run test:sdk` | Unit tests for `@cheatsheet-studio/sdk` |
 | `npm run sdk:build` | Build publishable SDK package (`dist/` + catalog snapshot) |
 | `npm run agent:pdf-demo` | Pack sample sheet + export PDF (needs Playwright Chromium) |
@@ -393,10 +408,19 @@ In the app:
 - **Export → PDF** — print-page capture after import polish  
 
 Topic packs: `npm run cheatsheet -- packs` then `pack finance-midterm -o out.json`.  
+
+**Kitchen-sink + SVG (agents):** full catalog stress sheet, then headless vector export:
+
+```bash
+npx playwright install chromium   # once
+npm run agent:everything:svg
+# → examples/agent-out/everything.sheet.json + everything.svg
+```
+
 MCP: see [`.mcp.json.example`](./.mcp.json.example) · `npm run cheatsheet:mcp`.  
 
 TypeScript: `composeFromOutline` / `composeTopicPack` / `createSheet()`.  
-Full notes: [docs/agent-sdk.md](./docs/agent-sdk.md) · [packages/cheatsheet-sdk/README.md](./packages/cheatsheet-sdk/README.md).
+CLI guide: [docs/cli.md](./docs/cli.md) · SDK notes: [docs/agent-sdk.md](./docs/agent-sdk.md) · [packages/cheatsheet-sdk/README.md](./packages/cheatsheet-sdk/README.md).
 
 ---
 

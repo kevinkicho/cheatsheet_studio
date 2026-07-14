@@ -1193,3 +1193,112 @@ export function downloadSvgString(svg: string, filename: string): void {
 export function svgFilename(title: string, page?: number): string {
   return sanitizeExportFilename(title, 'svg', page)
 }
+
+/**
+ * Parse outer size of a standalone page SVG from pageElementToSvgString.
+ */
+export function parseSvgOuterSize(svg: string): { width: number; height: number } {
+  const vb = svg.match(/viewBox\s*=\s*["']0\s+0\s+([\d.]+)\s+([\d.]+)["']/i)
+  if (vb) {
+    return {
+      width: Math.max(1, Math.round(Number(vb[1]))),
+      height: Math.max(1, Math.round(Number(vb[2]))),
+    }
+  }
+  const w = svg.match(/\bwidth\s*=\s*["']([\d.]+)["']/i)
+  const h = svg.match(/\bheight\s*=\s*["']([\d.]+)["']/i)
+  return {
+    width: Math.max(1, Math.round(Number(w?.[1] ?? 816))),
+    height: Math.max(1, Math.round(Number(h?.[1] ?? 1056))),
+  }
+}
+
+/**
+ * Encode a standalone page SVG as a data URI for embedding via `<image>`.
+ * Prefer UTF-8 percent-encoding (no binary btoa) so Node tests + browsers work.
+ */
+export function svgStringToDataUri(svg: string): string {
+  const cleaned = svg.replace(/^\uFEFF?/, '').trim()
+  // encodeURIComponent is XML-safe inside href="..."
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(cleaned)}`
+}
+
+/**
+ * Stitch multiple page SVGs into one file (export “All together”).
+ *
+ * **Why not nested `<svg>`?** Each page embeds a large `<style><![CDATA[…]]>`
+ * block + XHTML foreignObject. Nesting those under one root confuses strict
+ * XML viewers (Firefox: “Unclosed <![CDATA[”, “Unexpected end of stream”).
+ *
+ * **Approach:** embed each page as a self-contained `<image href="data:image/svg+xml,…">`.
+ * The outer document is tiny, well-formed SVG with no nested CDATA.
+ */
+export function stitchSvgPages(
+  pages: string[],
+  opts?: {
+    title?: string
+    /** vertical stack (default) or board-relative asSheet via origins */
+    arrangement?: 'vertical' | 'asSheet'
+    /** Board origins for asSheet (same order as pages). */
+    origins?: Array<{ x: number; y: number }>
+    backgroundColor?: string | null
+  },
+): string {
+  if (pages.length === 0) {
+    throw new Error('stitchSvgPages: no pages')
+  }
+  if (pages.length === 1) return pages[0]!
+
+  const title = (opts?.title ?? 'cheatsheet').replace(/[<>&]/g, '')
+  const sizes = pages.map(parseSvgOuterSize)
+  const arrangement = opts?.arrangement ?? 'vertical'
+  const bg = resolveSvgPageBackground(opts?.backgroundColor)
+
+  let placements: Array<{ x: number; y: number; w: number; h: number }>
+  if (arrangement === 'asSheet' && opts?.origins?.length === pages.length) {
+    const minX = Math.min(...opts.origins.map((o) => o.x))
+    const minY = Math.min(...opts.origins.map((o) => o.y))
+    placements = opts.origins.map((o, i) => ({
+      x: o.x - minX,
+      y: o.y - minY,
+      w: sizes[i]!.width,
+      h: sizes[i]!.height,
+    }))
+  } else {
+    let y = 0
+    placements = sizes.map((s) => {
+      const p = { x: 0, y, w: s.width, h: s.height }
+      y += s.height
+      return p
+    })
+  }
+
+  const totalW = Math.max(...placements.map((p) => p.x + p.w), 1)
+  const totalH = Math.max(...placements.map((p) => p.y + p.h), 1)
+
+  const images = pages
+    .map((svg, i) => {
+      const p = placements[i]!
+      const href = svgStringToDataUri(svg)
+      // href (SVG2) + xlink:href (older viewers). preserveAspectRatio=none so
+      // letter pages fill their slots exactly.
+      return `  <!-- page ${i + 1} -->
+  <image
+    x="${p.x}" y="${p.y}"
+    width="${p.w}" height="${p.h}"
+    preserveAspectRatio="none"
+    href="${href}"
+    xlink:href="${href}"
+  />`
+    })
+    .join('\n')
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="${SVG_NS}" xmlns:xlink="${XLINK_NS}" width="${totalW}" height="${totalH}" viewBox="0 0 ${totalW} ${totalH}">
+  <title>${escapeXmlText(title)}</title>
+  <desc>CheatSheet Studio multi-page SVG (all together). ${pages.length} pages as embedded images (avoids nested CDATA/XML errors).</desc>
+  <rect width="100%" height="100%" fill="${escapeXmlAttr(bg)}"/>
+${images}
+</svg>
+`
+}

@@ -91,6 +91,8 @@ export function ExportDialog({
     useState<ExportPageArrangement>('vertical')
   const [packageMode, setPackageMode] =
     useState<ExportPackageMode>('combined')
+  /** Download basename without extension (browser may append “ (n)” if exists). */
+  const [fileName, setFileName] = useState(title)
 
   // Reset selection + defaults when dialog opens or page count changes
   useEffect(() => {
@@ -102,7 +104,8 @@ export function ExportDialog({
     setBackgroundMode('transparent')
     setPageArrangement('vertical')
     setPackageMode('combined')
-  }, [open, pages])
+    setFileName(title || 'cheatsheet')
+  }, [open, pages, title])
 
   // SVG opens in browsers as white paper if transparent — prefer board color
   useEffect(() => {
@@ -234,6 +237,7 @@ export function ExportDialog({
         backgroundMode,
         pageArrangement,
         packageMode,
+        fileName: fileName.trim() || title || 'cheatsheet',
       },
       onProgress,
     )
@@ -612,6 +616,35 @@ export function ExportDialog({
                     )
                   })}
                 </div>
+              </fieldset>
+
+              {/* File name */}
+              <fieldset className="min-w-0">
+                <legend className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                  File name
+                </legend>
+                <label className="block">
+                  <span className="sr-only">Export file name</span>
+                  <div className="flex items-center gap-1 rounded-md border border-zinc-800 bg-zinc-900/60 px-2 py-1.5 focus-within:border-indigo-500/50">
+                    <input
+                      type="text"
+                      data-testid="export-file-name"
+                      value={fileName}
+                      disabled={busy}
+                      onChange={(e) => setFileName(e.target.value)}
+                      placeholder={title || 'cheatsheet'}
+                      className="min-w-0 flex-1 bg-transparent text-xs text-zinc-100 outline-none placeholder:text-zinc-600"
+                      spellCheck={false}
+                    />
+                    <span className="shrink-0 text-[10px] text-zinc-500">
+                      .{format === 'jpeg' ? 'jpg' : format}
+                    </span>
+                  </div>
+                  <span className="mt-1 block text-[10px] leading-snug text-zinc-600">
+                    Downloads use this name. If the file already exists, the
+                    browser usually adds “ (1)”, “ (2)”, …
+                  </span>
+                </label>
               </fieldset>
 
               {/* Package mode — files */}

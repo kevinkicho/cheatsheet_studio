@@ -32,11 +32,12 @@ Commands:
   add-catalog    Same as add-blocks
   packs          List packs (--json, --subject mathematics)
   pack           Compose pack → sheet (or --all -o dir/)
+  everything     Kitchen-sink sheet: FULL catalog + dense shelf pack (subject/topic folders)
   merge          Merge multiple sheet JSON files into one
   append-outline Append outline blocks onto an existing sheet
   doctor         Health-check SDK (catalog, packs, cloud env)
   add-equation | add-table | add-process | add-figure
-  layout         Auto-pack items (multi-column when tall)
+  layout         Pack sheet: --pack (dense shelf) or legacy column waterfall
   validate       Check sheet JSON shape
   summarize      Print summary (--verbose lists items)
   export-html    Sheet JSON → print HTML (vector in browser — zoom forever)
@@ -52,8 +53,15 @@ Examples:
   npm run cheatsheet -- blocks --type equation --query quadratic
   npm run cheatsheet -- add-blocks out/sheet.json --id math-quad --id proc-npv-screen --id fig-unit-circle
   npm run cheatsheet -- pack calc-derivatives -o out/calc.sheet.json
+  npm run cheatsheet -- everything -o examples/agent-out/everything.sheet.json
+  npm run cheatsheet -- everything --stats
+  npm run cheatsheet -- everything --subject finance --limit 40 -o out/fin-stress.sheet.json
+  npm run cheatsheet -- export-svg examples/agent-out/everything.sheet.json -o examples/agent-out/everything.svg
+  npm run agent:everything:svg
   npm run cheatsheet -- doctor
   npm run cheatsheet -- mcp
+
+Full CLI guide: docs/cli.md
 
 Web: Import/Export JSON · Ctrl+Shift+E / Ctrl+Shift+I
 
@@ -326,6 +334,81 @@ async function run() {
       return
     }
 
+    if (cmd === 'everything' || cmd === 'pack-everything') {
+      const { composeEverything, everythingCatalogStats } = await import(
+        './compose-everything'
+      )
+      const statsOnly = args.includes('--stats')
+      const subjects = argValues(args, '--subject')
+      const typesRaw = argValues(args, '--type')
+      const types = typesRaw.filter((t): t is 'equation' | 'table' | 'figure' | 'process' =>
+        ['equation', 'table', 'figure', 'process'].includes(t),
+      )
+      const limitRaw = argValue(args, '--limit')
+      const limit = limitRaw ? Math.max(1, parseInt(limitRaw, 10) || 0) : undefined
+      const noLayout = args.includes('--no-layout')
+      const title = argValue(args, '--title')
+      const densityRaw = argValue(args, '--density') as
+        | 'xs'
+        | 'sm'
+        | 'md'
+        | 'lg'
+        | undefined
+      const density =
+        densityRaw && ['xs', 'sm', 'md', 'lg'].includes(densityRaw)
+          ? densityRaw
+          : undefined
+      const out = argValue(args, '-o') ?? argValue(args, '--out')
+
+      if (statsOnly) {
+        const stats = await everythingCatalogStats({
+          subjects: subjects.length ? subjects : undefined,
+          types: types.length ? types : undefined,
+          limit,
+        })
+        if (args.includes('--json')) {
+          console.log(JSON.stringify(stats, null, 2))
+        } else {
+          console.log(`Catalog match: ${stats.total} items`)
+          console.log('By type:', stats.byType)
+          console.log('By subject:', stats.bySubject)
+        }
+        return
+      }
+
+      if (!out) {
+        console.error(
+          'Usage: everything -o <sheet.json> [--subject finance]... [--type equation]... [--limit N]\n' +
+            '                    [--no-layout] [--density xs|sm|md|lg] [--title "..."]\n' +
+            '       everything --stats [--subject finance] [--json]\n' +
+            'Builds a kitchen-sink sheet with every seed + process block (folders by subject/topic).\n' +
+            'Default layout: dense shelf pack (side-by-side mosaic), not single-column waterfall.',
+        )
+        process.exit(1)
+      }
+
+      const sheet = await composeEverything({
+        title,
+        noLayout,
+        limit,
+        density,
+        subjects: subjects.length ? subjects : undefined,
+        types: types.length ? types : undefined,
+      })
+      writeSheetFile(out, sheet)
+      console.log(`Everything sheet → ${out}`)
+      console.log(summarizeSheet(sheet))
+      const vis = sheet.items.filter((i) => !i.hidden)
+      const xs = new Set(vis.map((i) => Math.round(i.x / 20)))
+      console.log(
+        `Pack: ${vis.length} cards, ~${xs.size} column slots, ${sheet.canvas.printPageCount ?? 1} page(s)`,
+      )
+      console.log(
+        '\nDense pack applied (SDK shelf mosaic). For Studio’s exact grid packer: Import → Auto-layout → Export.',
+      )
+      return
+    }
+
     if (cmd === 'doctor') {
       const { runDoctor } = await import('./doctor')
       const report = await runDoctor()
@@ -413,9 +496,35 @@ async function run() {
       const file = args[1]
       if (!file) {
         console.error(
-          'Usage: layout <sheet.json> [--columns 1|2|3] [--dense] [--mode columns|single|sections]',
+          'Usage: layout <sheet.json> [--pack] [--density xs|sm|md|lg] [--columns 1|2|3] [--dense] [--mode columns|single|sections]\n' +
+            '  --pack   Dense shelf mosaic (recommended; matches cheatsheet intent)\n' +
+            '  default  Legacy column waterfall (layout.ts)',
         )
         process.exit(1)
+      }
+      const usePack =
+        args.includes('--pack') ||
+        args.includes('--shelf') ||
+        args.includes('--mosaic')
+      if (usePack) {
+        const { packEverythingSheet } = await import('./compose-everything')
+        const densityRaw = argValue(args, '--density') as
+          | 'xs'
+          | 'sm'
+          | 'md'
+          | 'lg'
+          | undefined
+        const density =
+          densityRaw && ['xs', 'sm', 'md', 'lg'].includes(densityRaw)
+            ? densityRaw
+            : 'sm'
+        const next = packEverythingSheet(readSheetFile(file), {
+          density,
+          fitOnePage: args.includes('--fit-one-page'),
+        })
+        writeSheetFile(file, next)
+        console.log('Packed (shelf mosaic)', summarizeSheet(next))
+        return
       }
       const colsRaw = argValue(args, '--columns')
       const columns = colsRaw ? Number(colsRaw) : undefined
@@ -435,7 +544,7 @@ async function run() {
         })
         .build()
       writeSheetFile(file, next)
-      console.log('Laid out', summarizeSheet(next))
+      console.log('Laid out (column waterfall)', summarizeSheet(next))
       return
     }
 

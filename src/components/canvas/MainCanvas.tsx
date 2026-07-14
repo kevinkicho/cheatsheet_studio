@@ -48,6 +48,7 @@ import { useCanvasStore } from '@/stores/canvasStore'
 import { useUiStore, ZOOM_MAX, ZOOM_MIN, ZOOM_STEP } from '@/stores/uiStore'
 import { CanvasGridLayer } from './CanvasGridLayer'
 import { CanvasItemView } from './CanvasItemView'
+import { LayoutPanelsLayer } from './LayoutPanelsLayer'
 import { CanvasMinimap } from './CanvasMinimap'
 import { MultiSelectFrame } from './MultiSelectFrame'
 
@@ -955,6 +956,12 @@ export function MainCanvas() {
               </div>
             )}
 
+            {/* Topic/folder encapsulating frames (Auto-layout panels chrome) */}
+            <LayoutPanelsLayer
+              panels={canvas.layoutPanels}
+              interactive={canvasTool === 'select'}
+            />
+
             {items.map((item) => (
               <CanvasItemView
                 key={item.id}
@@ -1302,8 +1309,12 @@ export function MainCanvas() {
                 autoOrganize({
                   density: 'sm',
                   fitPrint: true,
+                  multiPage: true,
                   columns: 'auto',
                   mode: 'columns',
+                  // Toolbar: keep current “topic labels” chrome; use Auto layout
+                  // panel for panels / both / none.
+                  groupChrome: 'labels',
                 })
                 // Visible confirmation (DevTools also logs [autoOrganize])
                 const n = useCanvasStore.getState().items.filter((i) => !i.hidden)

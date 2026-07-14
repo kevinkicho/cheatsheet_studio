@@ -136,7 +136,8 @@ export const EXPORT_PACKAGE_MODES: {
   {
     id: 'combined',
     label: 'All together',
-    description: 'One file (PDF multi-page, or stitched image)',
+    description:
+      'One file (PDF multi-page, stitched PNG/JPEG, or single multi-page SVG)',
   },
   {
     id: 'separate',
