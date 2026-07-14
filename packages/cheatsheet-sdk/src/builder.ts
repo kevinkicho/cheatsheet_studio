@@ -25,6 +25,8 @@ export type AddEquationInput = {
   libraryItemId?: string
   /** Section banners set false so title text is not duplicated in the body. */
   showTitle?: boolean
+  /** Layers folder id (defaults to active folder from setActiveFolder). */
+  folderId?: string | null
 }
 
 export type AddTableInput = {
@@ -34,6 +36,7 @@ export type AddTableInput = {
   y?: number
   width?: number
   height?: number
+  folderId?: string | null
 }
 
 export type AddFigureInput = {
@@ -45,6 +48,7 @@ export type AddFigureInput = {
   y?: number
   width?: number
   height?: number
+  folderId?: string | null
 }
 
 export type AddProcessInput = {
@@ -59,6 +63,7 @@ export type AddProcessInput = {
   y?: number
   width?: number
   height?: number
+  folderId?: string | null
 }
 
 /**
@@ -74,6 +79,8 @@ export class SheetBuilder {
   private nextZ = 1
   private cursorY = 48
   private cursorX = 48
+  /** New cards join this folder when folderId is omitted (agent layers). */
+  private activeFolderId: string | null = null
 
   constructor(opts?: {
     title?: string
@@ -120,6 +127,7 @@ export class SheetBuilder {
     // Compact defaults for multi-column cheatsheets
     const width = input.width ?? 300
     const height = input.height ?? 72
+    const folderId = this.resolveFolderId(input.folderId)
     const item: CanvasItem = {
       id: createId('eq'),
       type: 'equation',
@@ -135,6 +143,7 @@ export class SheetBuilder {
       contentFill: true,
       keepAspectRatio: true,
       showTitle: input.showTitle !== false,
+      folderId: folderId ?? undefined,
       style: { ...DEFAULT_ITEM_STYLE, fontSize: 14, titleFontSize: 9 },
     }
     this.items.push(item)
@@ -145,6 +154,7 @@ export class SheetBuilder {
   addTable(input: AddTableInput): this {
     const width = input.width ?? 340
     const height = input.height ?? 140
+    const folderId = this.resolveFolderId(input.folderId)
     const item: CanvasItem = {
       id: createId('tbl'),
       type: 'table',
@@ -159,6 +169,7 @@ export class SheetBuilder {
       contentFill: true,
       keepAspectRatio: true,
       showTitle: true,
+      folderId: folderId ?? undefined,
       style: { ...DEFAULT_ITEM_STYLE },
     }
     this.items.push(item)
@@ -169,6 +180,7 @@ export class SheetBuilder {
   addFigure(input: AddFigureInput): this {
     const width = input.width ?? 240
     const height = input.height ?? 220
+    const folderId = this.resolveFolderId(input.folderId)
     const item: CanvasItem = {
       id: createId('fig'),
       type: 'figure',
@@ -185,6 +197,7 @@ export class SheetBuilder {
       contentFill: true,
       keepAspectRatio: true,
       showTitle: true,
+      folderId: folderId ?? undefined,
       style: { ...DEFAULT_ITEM_STYLE },
     }
     this.items.push(item)
@@ -193,10 +206,11 @@ export class SheetBuilder {
   }
 
   addProcess(input: AddProcessInput & { libraryItemId?: string }): this {
-    // Denser defaults for cheatsheet packing (was 480×360)
-    const width = input.width ?? 300
-    const height = input.height ?? 220
+    // Room for Mermaid — too-small boxes clip diagrams in export
     const kind = input.mermaidKind ?? 'flowchart'
+    const width = input.width ?? (kind === 'mindmap' ? 340 : 300)
+    const height = input.height ?? (kind === 'mindmap' ? 260 : 220)
+    const folderId = this.resolveFolderId(input.folderId)
     const item: CanvasItem = {
       id: createId('proc'),
       type: 'process-chart',
@@ -216,6 +230,7 @@ export class SheetBuilder {
       contentFill: true,
       keepAspectRatio: true,
       showTitle: true,
+      folderId: folderId ?? undefined,
       style: { ...DEFAULT_ITEM_STYLE },
     }
     this.items.push(item)
@@ -233,6 +248,24 @@ export class SheetBuilder {
       parentId: parentId ?? null,
     })
     return id
+  }
+
+  /**
+   * Cards added after this (without explicit folderId) join the folder.
+   * Pass null to return to root (ungrouped).
+   */
+  setActiveFolder(folderId: string | null): this {
+    this.activeFolderId = folderId
+    return this
+  }
+
+  getActiveFolder(): string | null {
+    return this.activeFolderId
+  }
+
+  private resolveFolderId(explicit?: string | null): string | null | undefined {
+    if (explicit !== undefined) return explicit
+    return this.activeFolderId
   }
 
   /**

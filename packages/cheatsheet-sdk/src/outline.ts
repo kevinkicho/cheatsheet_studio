@@ -4,6 +4,10 @@
  *
  * Prefer Studio blocks via `catalog` / `blocks` so equations, figures, and
  * process charts match the app library quality.
+ *
+ * **Folders (layers):** wrap related blocks in `type: "folder"`. Studio Layers
+ * and cheatsheet packing collocate same-folder cards into tight clusters —
+ * the main agent hook for “group similar content”.
  */
 export type OutlineBlock =
   | {
@@ -33,6 +37,23 @@ export type OutlineBlock =
       /** Section label — becomes a zero-height spacer title card (equation-style note) */
       title: string
       note?: string
+    }
+  | {
+      /**
+       * Collection / layer: children get the same `folderId` so auto-layout
+       * packs them together (tight shelf) before the next folder.
+       */
+      type: 'folder'
+      /** Display name in Layers panel */
+      name: string
+      /**
+       * Optional section banner (heading card) at the top of this folder.
+       * Defaults to `name` when `banner` is true or omitted with a numbered name.
+       */
+      heading?: string
+      /** When true, emit a divider banner using `heading` or `name`. Default: true if heading set. */
+      banner?: boolean
+      blocks: OutlineBlock[]
     }
   | {
       /** Pull one Studio block (equation/table/figure/process) by id or title */

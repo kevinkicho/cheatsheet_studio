@@ -97,13 +97,53 @@ export function getExportMargins(canvas: SheetCanvas) {
 }
 
 /**
- * Wait for layout, fonts, KaTeX, and images inside a root before capture.
+ * True when Mermaid process charts in the export root still need time.
+ * Studio canvas can show finished SVGs while export clone is mid-render —
+ * without this wait, PDF/PNG cheatsheets capture empty process cards.
+ */
+export function isMermaidExportPending(root: HTMLElement): boolean {
+  const text = root.textContent ?? ''
+  if (/Rendering…|Rendering\.\.\./i.test(text)) return true
+  if (/Mermaid error:/i.test(text)) return false
+
+  const hosts = Array.from(
+    root.querySelectorAll<HTMLElement>('[data-testid="mermaid-view"]'),
+  )
+  if (hosts.length === 0) {
+    // Process cards with mermaid source still mounting (no host yet)
+    const needsMermaid = root.querySelectorAll(
+      '[data-export-needs-mermaid="1"]',
+    ).length
+    return needsMermaid > 0
+  }
+
+  for (const host of hosts) {
+    if (host.getAttribute('data-mermaid-ready') === 'true') {
+      const svg = host.querySelector('svg')
+      if (svg) continue
+    }
+    const svg = host.querySelector('svg')
+    if (!svg) return true
+    const vb = svg.viewBox?.baseVal
+    const hasGeom =
+      (vb && vb.width > 2 && vb.height > 2) ||
+      svg.getBoundingClientRect().width > 2 ||
+      (svg.children?.length ?? 0) > 0
+    if (!hasGeom) return true
+  }
+  return false
+}
+
+/**
+ * Wait for layout, fonts, KaTeX, images, and Mermaid process charts before capture.
  * FigureView resolves local-asset: refs asynchronously — keep waiting while
  * "Loading…" placeholders are present or <img> nodes are incomplete.
+ * MermaidView is async (renderMermaidSvg) — without waiting, export shows empty
+ * flowchart/mindmap cards that look fine on the live Studio canvas.
  */
 export async function waitForExportReady(
   root: HTMLElement,
-  timeoutMs = 10000,
+  timeoutMs = 14000,
 ): Promise<void> {
   const start = Date.now()
   if (document.fonts?.ready) {
@@ -117,15 +157,16 @@ export async function waitForExportReady(
     }
   }
 
-  // Allow React commit + KaTeX + FitContent layout effects
+  // Allow React commit + KaTeX + FitContent + Mermaid mount
   await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
-  await new Promise((r) => setTimeout(r, 50))
+  await new Promise((r) => setTimeout(r, 80))
 
   while (Date.now() - start < timeoutMs) {
     const imgs = Array.from(root.querySelectorAll('img'))
     const pendingImgs = imgs.filter((img) => !img.complete)
     const stillLoadingText = /Loading…|Loading\.\.\./i.test(root.textContent ?? '')
-    if (pendingImgs.length === 0 && !stillLoadingText) break
+    const mermaidPending = isMermaidExportPending(root)
+    if (pendingImgs.length === 0 && !stillLoadingText && !mermaidPending) break
 
     if (pendingImgs.length > 0) {
       await Promise.all(
@@ -139,11 +180,11 @@ export async function waitForExportReady(
         ),
       )
     } else {
-      await new Promise((r) => setTimeout(r, 80))
+      await new Promise((r) => setTimeout(r, 100))
     }
   }
 
-  // Extra frame so FitContent scale settles after images/fonts
+  // Extra frames so FitContent / SVG viewBox settle after mermaid paint
   await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
-  await new Promise((r) => setTimeout(r, 60))
+  await new Promise((r) => setTimeout(r, 120))
 }

@@ -32,7 +32,7 @@ export function AutoLayoutPanel() {
   const [mode, setMode] = useState<'columns' | 'flow'>('columns')
   const [fitPrint, setFitPrint] = useState(true)
   const [aiHint, setAiHint] = useState(
-    'Dense exam cheat sheet; group by section; keep readable.',
+    'Dense exam cheat sheet; keep Layers folders clustered; group by section; keep readable.',
   )
   const [ollamaOk, setOllamaOk] = useState<boolean | null>(null)
   const [ollamaModels, setOllamaModels] = useState<string[]>([])
@@ -148,7 +148,9 @@ export function AutoLayoutPanel() {
       <p className="text-[10px] leading-snug text-zinc-500">
         Pack cards into the <span className="text-zinc-400">print margins</span>{' '}
         like a real cheat sheet — tight but readable. Density uses semantic
-        sizes (not free-form font numbers).
+        sizes (not free-form font numbers). Cards that share a{' '}
+        <span className="text-zinc-400">Layers folder</span> stay clustered
+        together (agent collections).
       </p>
 
       <div>

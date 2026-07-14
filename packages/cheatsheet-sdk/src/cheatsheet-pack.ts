@@ -42,9 +42,87 @@ const DENSITY: Record<
   lg: { font: 14, title: 10, gap: 8, pad: 6, scale: 1.08 },
 }
 
-function isHeading(it: CanvasItem): boolean {
-  const t = it.latex?.trim() ?? ''
-  return t.startsWith('\\text{') && t.length < 120
+/**
+ * Build pack sections: folder clusters first (when any folderId), then headings.
+ */
+export function buildPackSections(
+  items: CanvasItem[],
+  folders: Array<{ id: string; order?: number }> = [],
+): Array<{ heading?: CanvasItem; body: CanvasItem[] }> {
+  const hasFolders = items.some((i) => Boolean(i.folderId))
+  const groups: CanvasItem[][] = []
+
+  if (hasFolders) {
+    const orderMap = new Map(folders.map((f) => [f.id, f.order ?? 0]))
+    const firstIndex = new Map<string | null, number>()
+    items.forEach((it, i) => {
+      const k = it.folderId ?? null
+      if (!firstIndex.has(k)) firstIndex.set(k, i)
+    })
+    const keys = Array.from(firstIndex.keys()).sort((a, b) => {
+      if (a == null && b == null) return 0
+      if (a == null) return 1
+      if (b == null) return -1
+      const oa = orderMap.has(a) ? orderMap.get(a)! : firstIndex.get(a)!
+      const ob = orderMap.has(b) ? orderMap.get(b)! : firstIndex.get(b)!
+      if (oa !== ob) return oa - ob
+      return (firstIndex.get(a) ?? 0) - (firstIndex.get(b) ?? 0)
+    })
+    for (const k of keys) {
+      groups.push(items.filter((i) => (i.folderId ?? null) === k))
+    }
+  } else {
+    groups.push(items)
+  }
+
+  const sections: Array<{ heading?: CanvasItem; body: CanvasItem[] }> = []
+  for (const group of groups) {
+    let cur: { heading?: CanvasItem; body: CanvasItem[] } = { body: [] }
+    for (const it of group) {
+      if (isHeading(it)) {
+        if (cur.heading || cur.body.length) sections.push(cur)
+        cur = { heading: it, body: [] }
+      } else {
+        cur.body.push(it)
+      }
+    }
+    if (cur.heading || cur.body.length) sections.push(cur)
+  }
+  if (sections.length === 0) sections.push({ body: items })
+  return sections
+}
+
+/**
+ * Section divider / banner cards — full-width bands, not formula cards.
+ * Match: \text{…}, \textbf{\\text{…}}, numbered titles ("1. …"), or showTitle:false text banners.
+ */
+export function isHeading(it: CanvasItem): boolean {
+  const title = (it.title ?? '').trim()
+  const latex = (it.latex ?? '').trim()
+  if (it.type === 'process-chart' || it.mermaidSource || it.tableMarkdown) {
+    return false
+  }
+  // Numbered section labels: "1. Time value of money"
+  if (/^\d+\.\s+\S/.test(title) && latex.includes('\\text{') && latex.length < 160) {
+    return true
+  }
+  // Banner-only equation cards (title hidden; latex is the section label)
+  if (
+    it.showTitle === false &&
+    latex.includes('\\text{') &&
+    latex.length < 160 &&
+    !it.imageUrl
+  ) {
+    return true
+  }
+  // Plain \text{…} or \textbf{\text{…}} section labels
+  if (
+    (/^\\text\{/.test(latex) || /^\\textbf\{\\text\{/.test(latex)) &&
+    latex.length < 160
+  ) {
+    return true
+  }
+  return false
 }
 
 function isProcess(it: CanvasItem): boolean {
@@ -79,14 +157,41 @@ export function estimateBlockSize(
   }
 
   if (isProcess(it)) {
+    const src = it.mermaidSource ?? ''
     const mind =
-      it.mermaidKind === 'mindmap' || it.mermaidSource?.includes('mindmap')
-    // Process charts need real space — too-small boxes look "empty" after scale-to-fit
-    const w = Math.min(maxW, Math.round((mind ? 260 : 230) * Math.max(s, 0.9)))
-    const lines = (it.mermaidSource ?? '').split('\n').filter(Boolean).length
+      it.mermaidKind === 'mindmap' || /\bmindmap\b/i.test(src)
+    // Horizontal (LR) flowcharts need width; vertical (TD) need height
+    const lr =
+      it.mermaidDirection === 'LR' ||
+      it.mermaidDirection === 'RL' ||
+      /flowchart\s+LR/i.test(src) ||
+      /flowchart\s+RL/i.test(src)
+    const lines = src.split('\n').filter(Boolean).length
+    if (mind) {
+      const w = Math.min(maxW, Math.round(360 * Math.max(s, 0.95)))
+      const h = Math.min(
+        400,
+        Math.max(260, Math.round((160 + lines * 16) * Math.max(s, 0.95))),
+      )
+      return { w, h }
+    }
+    if (lr) {
+      // Full-ish width + enough height so export embeds stay readable
+      const w = Math.min(
+        maxW,
+        Math.round(Math.max(420, maxW * 0.92) * Math.max(s, 0.95)),
+      )
+      const h = Math.min(
+        180,
+        Math.max(120, Math.round((90 + lines * 12) * Math.max(s, 0.95))),
+      )
+      return { w, h }
+    }
+    // TD flowcharts
+    const w = Math.min(maxW, Math.round(300 * Math.max(s, 0.95)))
     const h = Math.min(
-      300,
-      Math.max(mind ? 170 : 150, Math.round((110 + lines * 14) * Math.max(s, 0.9))),
+      380,
+      Math.max(220, Math.round((160 + lines * 20) * Math.max(s, 0.95))),
     )
     return { w, h }
   }
@@ -290,22 +395,10 @@ export function packCheatsheetDocument(
     const positions = new Map<string, { x: number; y: number }>()
     let y = 0
 
-    // Split into sections by heading cards (preserve order)
+    // Prefer Layers folders (folderId) so agents collocate related blocks,
+    // then heading bands within each folder. Falls back to headings only.
     type Sec = { heading?: CanvasItem; body: CanvasItem[] }
-    const sections: Sec[] = []
-    let cur: Sec = { body: [] }
-    for (const it of visible) {
-      if (isHeading(it)) {
-        if (cur.heading || cur.body.length) sections.push(cur)
-        cur = { heading: it, body: [] }
-      } else {
-        cur.body.push(it)
-      }
-    }
-    if (cur.heading || cur.body.length) sections.push(cur)
-    if (sections.length === 0) {
-      sections.push({ body: visible })
-    }
+    const sections = buildPackSections(visible, sheet.folders ?? [])
 
     for (const sec of sections) {
       if (sec.heading) {

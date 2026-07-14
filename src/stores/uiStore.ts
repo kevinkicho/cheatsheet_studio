@@ -53,7 +53,7 @@ interface UiState {
   libraryEquationsOnly: boolean
   /**
    * Library item ids the user starred (persisted). Filter "Favorites" uses this.
-   * Separate from canvas-card `starred` (sheet-local).
+   * Favorites are library-only (not canvas Item Properties).
    */
   libraryFavoriteIds: string[]
   /** When true, library list shows only favorited catalog items. */

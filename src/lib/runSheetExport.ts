@@ -27,6 +27,11 @@ import type {
   ExportPageArrangement,
 } from '@/lib/exportFormats'
 import { exportFormatMeta } from '@/lib/exportFormats'
+import {
+  downloadSvgString,
+  pageElementToSvgString,
+  svgFilename,
+} from '@/lib/exportSvg'
 
 export type SheetExportProgress = {
   phase: 'prepare' | 'capture' | 'write' | 'done' | 'error'
@@ -132,18 +137,20 @@ export async function runSheetExport(
   }
 
   // Export canvas clone: grid + background modes
+  // SVG: always use board dark (file:// white paper is unusable for dark cards)
+  const forceDarkBoard = format === 'svg'
   const exportCanvas: SheetCanvas = {
     ...canvas,
     showGrid,
     background:
-      backgroundMode === 'transparent'
-        ? 'transparent'
-        : canvas.background || '#0f1115',
+      forceDarkBoard || backgroundMode !== 'transparent'
+        ? canvas.background || '#0f1115'
+        : 'transparent',
   }
   const captureBg: string | null =
-    backgroundMode === 'transparent'
-      ? null
-      : exportCanvas.background || '#0f1115'
+    forceDarkBoard || backgroundMode !== 'transparent'
+      ? exportCanvas.background || '#0f1115'
+      : null
 
   onProgress?.({
     phase: 'prepare',
@@ -159,13 +166,15 @@ export async function runSheetExport(
   const host = document.createElement('div')
   host.setAttribute('data-pdf-export-host', 'true')
   host.setAttribute('aria-hidden', 'true')
+  // Off-screen but painted (z-index:-1 can yield blank html2canvas / SVG captures)
   host.style.cssText = [
     'position:fixed',
-    'left:0',
+    'left:-12000px',
     'top:0',
-    'z-index:-1',
+    'z-index:0',
     'pointer-events:none',
     'opacity:1',
+    'visibility:visible',
   ].join(';')
   document.body.appendChild(host)
 
@@ -180,6 +189,10 @@ export async function runSheetExport(
       )
     })
     await waitForExportReady(host)
+    // Brief settle for Mermaid paintStudioSvg layout effect + FO metrics
+    if (format === 'svg') {
+      await new Promise((r) => setTimeout(r, 180))
+    }
 
     const pageEls = Array.from(
       host.querySelectorAll<HTMLElement>('[data-pdf-page]'),
@@ -203,6 +216,17 @@ export async function runSheetExport(
         colorMode,
         captureBg,
         packageMode,
+        onProgress,
+      )
+    } else if (format === 'svg') {
+      await writeSvg(
+        jobs,
+        title,
+        itemCount,
+        colorMode,
+        captureBg,
+        packageMode,
+        pageArrangement,
         onProgress,
       )
     } else {
@@ -392,6 +416,72 @@ async function writePdf(
     itemCount,
     format: 'pdf',
     message: doneMessage(filename, itemCount, jobs.length),
+  })
+}
+
+/**
+ * Vector SVG export — serializes the already-rendered export DOM (KaTeX + Mermaid)
+ * into SVG foreignObject so zoom stays sharp (unlike PNG/JPEG).
+ * Multi-page: one file per page (SVG has no native multi-page package).
+ */
+async function writeSvg(
+  jobs: PageJob[],
+  title: string,
+  itemCount: number,
+  colorMode: ExportColorMode,
+  backgroundColor: string | null,
+  _packageMode: ExportPackageMode,
+  _pageArrangement: ExportPageArrangement,
+  onProgress?: (p: SheetExportProgress) => void,
+) {
+  const bg = backgroundColor
+  const saved: string[] = []
+
+  for (let i = 0; i < jobs.length; i++) {
+    const job = jobs[i]!
+    onProgress?.({
+      phase: 'capture',
+      page: i + 1,
+      totalPages: jobs.length,
+      itemCount,
+      format: 'svg',
+      message: `Building SVG page ${i + 1} of ${jobs.length} (capturing diagrams)…`,
+    })
+    // pageElementToSvgString is async — html2canvas each flowchart/mindmap host
+    const svg = await pageElementToSvgString(job.el, {
+      width: job.rect.width,
+      height: job.rect.height,
+      backgroundColor: bg,
+      colorMode,
+      title: jobs.length > 1 ? `${title} · p${job.label}` : title,
+      diagramScale: 2,
+    })
+    onProgress?.({
+      phase: 'write',
+      page: i + 1,
+      totalPages: jobs.length,
+      itemCount,
+      format: 'svg',
+      message: `Saving SVG page ${i + 1}…`,
+    })
+    const filename =
+      jobs.length > 1 ? svgFilename(title, job.label) : svgFilename(title)
+    downloadSvgString(svg, filename)
+    saved.push(filename)
+    if (i < jobs.length - 1) {
+      await new Promise((r) => setTimeout(r, 120))
+    }
+  }
+
+  onProgress?.({
+    phase: 'done',
+    totalPages: jobs.length,
+    itemCount,
+    format: 'svg',
+    message:
+      saved.length === 1
+        ? doneMessage(saved[0]!, itemCount, 1)
+        : `Saved ${saved.length} SVG files — check Downloads`,
   })
 }
 

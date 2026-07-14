@@ -56,4 +56,49 @@ describe('packCheatsheetLayout', () => {
     const a = out.items.find((i) => i.id === 'a')!
     expect(h1.y).toBeLessThanOrEqual(a.y)
   })
+
+  it('packs xs density denser than lg (less dead vertical space)', () => {
+    const items = Array.from({ length: 10 }, (_, i) =>
+      card(`e${i}`, { width: 140, height: 70 }),
+    )
+    const xs = packCheatsheetLayout(items, DEFAULT_CANVAS, {
+      density: 'xs',
+      columns: 2,
+      fitPrint: false,
+    })
+    const lg = packCheatsheetLayout(items, DEFAULT_CANVAS, {
+      density: 'lg',
+      columns: 1,
+      fitPrint: false,
+    })
+    const span = (list: typeof xs.items) => {
+      const maxY = list.reduce((m, i) => Math.max(m, i.y + i.height), 0)
+      const minY = list.reduce((m, i) => Math.min(m, i.y), Infinity)
+      return maxY - minY
+    }
+    expect(span(xs.items)).toBeLessThan(span(lg.items))
+  })
+
+  it('collocates same-folder cards before the next folder', () => {
+    const items = [
+      card('a1', { folderId: 'f2', title: 'a1' }),
+      card('b1', { folderId: 'f1', title: 'b1' }),
+      card('a2', { folderId: 'f2', title: 'a2' }),
+      card('b2', { folderId: 'f1', title: 'b2' }),
+    ]
+    const out = packCheatsheetLayout(items, DEFAULT_CANVAS, {
+      density: 'sm',
+      columns: 2,
+      fitPrint: false,
+      folders: [
+        { id: 'f1', order: 0 },
+        { id: 'f2', order: 1 },
+      ],
+    })
+    const byId = Object.fromEntries(out.items.map((i) => [i.id, i]))
+    // Folder f1 (order 0) should sit above f2
+    const maxF1 = Math.max(byId.b1!.y + byId.b1!.height, byId.b2!.y + byId.b2!.height)
+    const minF2 = Math.min(byId.a1!.y, byId.a2!.y)
+    expect(maxF1).toBeLessThanOrEqual(minF2 + 2)
+  })
 })

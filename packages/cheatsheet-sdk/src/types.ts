@@ -103,6 +103,7 @@ export interface CanvasItem {
   keepAspectRatio?: boolean
   transparentBackground?: boolean
   hidden?: boolean
+  /** @deprecated Canvas favorites removed; library favorites are separate. */
   starred?: boolean
   locked?: boolean
   folderId?: string | null

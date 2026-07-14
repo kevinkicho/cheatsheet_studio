@@ -129,13 +129,24 @@ export function layoutSheet(
 }
 
 function isHeadingLike(it: CanvasItem): boolean {
+  if (it.mermaidSource || it.tableMarkdown || it.type === 'process-chart') {
+    return false
+  }
   if (it.type === 'equation' && it.latex) {
-    // SDK headings are text-only equation cards like \text{Section}
+    // SDK headings: \text{Section} or \textbf{\text{Section}}
     const t = it.latex.trim()
-    if (/^\\text\{/.test(t) && t.length < 80) return true
+    if (
+      (/^\\text\{/.test(t) || /^\\textbf\{\\text\{/.test(t)) &&
+      t.length < 160
+    ) {
+      return true
+    }
+    if (it.showTitle === false && t.includes('\\text{') && t.length < 160) {
+      return true
+    }
   }
   const title = (it.title ?? '').trim()
-  if (/^\d+\.\s/.test(title)) return true
+  if (/^\d+\.\s+\S/.test(title) && it.latex?.includes('\\text{')) return true
   if (/^(core|section|chapter|part)\b/i.test(title) && !it.tableMarkdown) {
     if (it.type === 'equation' && it.latex?.includes('\\text{')) return true
   }

@@ -1,50 +1,68 @@
 {
   "id": "finance-midterm",
   "title": "Finance — Midterm Review",
-  "description": "Flagship: Studio finance blocks + NPV flowchart + finance mind map + cash-flow figure.",
+  "description": "Flagship: folders (layers) group TVM / projects / risk so pack collocates related blocks + NPV flowchart + mind map.",
   "subjects": ["finance", "economics"],
   "outline": {
     "title": "Finance Midterm — Cheat Sheet",
-    "notes": "Built from Studio blocks (equations/figures/process) — agent → Import → Export",
+    "notes": "Folders = Layers collections — agent groups similar cards; Auto layout packs each folder as a tight cluster.",
     "autoLayout": true,
     "printSizeId": "letter",
     "orientation": "portrait",
     "blocks": [
-      { "type": "heading", "title": "1. Time value of money" },
       {
-        "type": "catalog",
-        "ids": [
-          "fin-pv",
-          "fin-fv",
-          "fin-annuity",
-          "fin-annuity-fv",
-          "fin-perp",
-          "fin-ear",
-          "fin-continuous"
+        "type": "folder",
+        "name": "1. Time value of money",
+        "heading": "1. Time value of money",
+        "banner": true,
+        "blocks": [
+          {
+            "type": "catalog",
+            "ids": [
+              "fin-pv",
+              "fin-fv",
+              "fin-annuity",
+              "fin-annuity-fv",
+              "fin-perp",
+              "fin-ear",
+              "fin-continuous"
+            ]
+          },
+          { "type": "catalog", "id": "fin-compound" },
+          { "type": "catalog", "id": "fig-cashflow" }
         ]
       },
-      { "type": "catalog", "id": "fin-compound" },
-      { "type": "catalog", "id": "fig-cashflow" },
-      { "type": "heading", "title": "2. Project appraisal" },
       {
-        "type": "catalog",
-        "ids": ["fin-npv", "fin-irr"]
+        "type": "folder",
+        "name": "2. Project appraisal",
+        "heading": "2. Project appraisal",
+        "banner": true,
+        "blocks": [
+          { "type": "catalog", "ids": ["fin-npv", "fin-irr"] },
+          {
+            "type": "table",
+            "title": "Accept / reject rules",
+            "markdown": "| Metric | Accept if | Watch out |\n|--------|-----------|----------|\n| NPV | NPV > 0 | Scale / mutually exclusive |\n| IRR | IRR > r | Multiple IRRs |\n| PI | PI > 1 | Capital rationing |"
+          },
+          { "type": "catalog", "id": "proc-npv-screen" }
+        ]
       },
       {
-        "type": "table",
-        "title": "Accept / reject rules",
-        "markdown": "| Metric | Accept if | Watch out |\n|--------|-----------|----------|\n| NPV | NPV > 0 | Scale / mutually exclusive |\n| IRR | IRR > r | Multiple IRRs |\n| PI | PI > 1 | Capital rationing |"
-      },
-      { "type": "catalog", "id": "proc-npv-screen" },
-      { "type": "heading", "title": "3. Risk, return & capital" },
-      {
-        "type": "catalog",
-        "ids": ["fin-capm", "fin-beta", "fin-wacc", "fin-sharpe", "fin-gordon"]
-      },
-      { "type": "catalog", "id": "fin-ratios" },
-      { "type": "catalog", "id": "proc-capm-apply" },
-      { "type": "catalog", "id": "proc-mind-finance-topics" },
-      { "type": "catalog", "id": "proc-exam-checklist" }
+        "type": "folder",
+        "name": "3. Risk, return & capital",
+        "heading": "3. Risk, return & capital",
+        "banner": true,
+        "blocks": [
+          {
+            "type": "catalog",
+            "ids": ["fin-capm", "fin-beta", "fin-wacc", "fin-sharpe", "fin-gordon"]
+          },
+          { "type": "catalog", "id": "fin-ratios" },
+          { "type": "catalog", "id": "proc-capm-apply" },
+          { "type": "catalog", "id": "proc-mind-finance-topics" },
+          { "type": "catalog", "id": "proc-exam-checklist" }
+        ]
+      }
     ]
   }
 }

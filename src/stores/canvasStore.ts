@@ -282,8 +282,6 @@ interface CanvasState {
   bringToFront: (id: string) => void
   sendToBack: (id: string) => void
   toggleItemHidden: (id: string) => void
-  /** Star/favorite a canvas card (sheet-local). */
-  toggleItemStarred: (id: string) => void
   toggleItemLocked: (id: string) => void
   /** Mass-set hidden for all items in a folder (null = root / ungrouped). */
   setFolderHidden: (folderId: string | null, hidden: boolean) => void
@@ -849,6 +847,12 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           mode: opts.mode ?? 'columns',
           fitPrint: opts.fitPrint !== false,
           multiPage: opts.multiPage,
+          groupByFolder: opts.groupByFolder !== false,
+          folders: s.folders?.map((f) => ({
+            id: f.id,
+            order: f.order,
+            name: f.name,
+          })),
         })
         const pageCount = Math.max(
           1,
@@ -1404,14 +1408,6 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     set((s) => ({
       items: s.items.map((i) =>
         i.id === id ? { ...i, hidden: !i.hidden } : i,
-      ),
-      dirty: true,
-    })),
-
-  toggleItemStarred: (id) =>
-    set((s) => ({
-      items: s.items.map((i) =>
-        i.id === id ? { ...i, starred: !i.starred } : i,
       ),
       dirty: true,
     })),

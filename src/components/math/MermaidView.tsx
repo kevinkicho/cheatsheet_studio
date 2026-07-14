@@ -169,6 +169,12 @@ export function MermaidView({
     if (!studioDark || !markup || !hostRef.current) return
     const svg = hostRef.current.querySelector('svg')
     if (svg) paintStudioSvg(svg)
+    // Re-paint after layout settles (mindmap/flowchart metrics)
+    const t = window.setTimeout(() => {
+      const s = hostRef.current?.querySelector('svg')
+      if (s) paintStudioSvg(s)
+    }, 50)
+    return () => window.clearTimeout(t)
   }, [markup, studioDark])
 
   // Keep preserveAspect in sync if SVG already mounted
@@ -205,6 +211,7 @@ export function MermaidView({
           data-testid="mermaid-view"
           data-mermaid-dark={studioDark ? 'true' : 'false'}
           data-mermaid-fill="true"
+          data-mermaid-ready={markup && !busy && !error ? 'true' : 'false'}
           dangerouslySetInnerHTML={markup ? { __html: markup } : undefined}
         />
       </div>
@@ -229,6 +236,7 @@ export function MermaidView({
           className="mermaid-host origin-top-left"
           data-testid="mermaid-view"
           data-mermaid-dark={studioDark ? 'true' : 'false'}
+          data-mermaid-ready={markup && !busy && !error ? 'true' : 'false'}
           style={{
             transform: s === 1 ? undefined : `scale(${s})`,
             transformOrigin: 'top left',

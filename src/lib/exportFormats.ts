@@ -1,5 +1,5 @@
 /** Supported print-page export formats. */
-export type ExportFormat = 'pdf' | 'png' | 'jpeg'
+export type ExportFormat = 'pdf' | 'png' | 'jpeg' | 'svg'
 
 /** Raster color treatment after capture. */
 export type ExportColorMode = 'color' | 'greyscale' | 'bw'
@@ -18,6 +18,7 @@ export type ExportPageArrangement = 'asSheet' | 'vertical'
  * One download vs one file per page.
  * PDF “combined” = multi-page PDF; “separate” = one PDF per page.
  * PNG/JPEG “combined” = one stitched image; “separate” = one image per page.
+ * SVG “combined” = pages stacked in one SVG; “separate” = one SVG per page.
  */
 export type ExportPackageMode = 'combined' | 'separate'
 
@@ -34,6 +35,13 @@ export const EXPORT_FORMATS: {
     description: 'Multi-page document (print-ready)',
     extension: 'pdf',
     mime: 'application/pdf',
+  },
+  {
+    id: 'svg',
+    label: 'SVG',
+    description: 'Vector (sharp zoom; KaTeX + diagrams)',
+    extension: 'svg',
+    mime: 'image/svg+xml',
   },
   {
     id: 'png',

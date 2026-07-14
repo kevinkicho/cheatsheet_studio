@@ -143,8 +143,8 @@ export interface CanvasItem {
   /** When true, card is hidden on the canvas (Outliner eye off). Default false. */
   hidden?: boolean
   /**
-   * When true, card is starred/favorited (Layers + library favorites filter).
-   * Default false. Sheet-persisted with the item.
+   * @deprecated Canvas-card favorites removed — use library hearts only
+   * (`uiStore.libraryFavoriteIds`). Kept optional for older sheet JSON.
    */
   starred?: boolean
   /** When true, card cannot be moved/resized (Outliner lock). Default false. */

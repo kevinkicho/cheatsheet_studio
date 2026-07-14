@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   getExportPageRects,
+  isMermaidExportPending,
   itemIntersectsPage,
   itemsForPage,
   sanitizeExportFilename,
@@ -99,5 +100,29 @@ describe('exportPdf helpers', () => {
         page,
       ),
     ).toHaveLength(1)
+  })
+
+  it('isMermaidExportPending waits for process cards and Rendering…', () => {
+    const root = document.createElement('div')
+    expect(isMermaidExportPending(root)).toBe(false)
+
+    root.innerHTML = '<span>Rendering…</span>'
+    expect(isMermaidExportPending(root)).toBe(true)
+
+    root.innerHTML =
+      '<div data-export-needs-mermaid="1"></div>'
+    expect(isMermaidExportPending(root)).toBe(true)
+
+    root.innerHTML = `
+      <div data-testid="mermaid-view" data-mermaid-ready="true">
+        <svg viewBox="0 0 100 80" width="100" height="80"><g></g></svg>
+      </div>
+    `
+    expect(isMermaidExportPending(root)).toBe(false)
+
+    root.innerHTML = `
+      <div data-testid="mermaid-view" data-mermaid-ready="false"></div>
+    `
+    expect(isMermaidExportPending(root)).toBe(true)
   })
 })

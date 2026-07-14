@@ -63,7 +63,6 @@ export function PropertiesPanel() {
   const updateItemsStyle = useCanvasStore((s) => s.updateItemsStyle)
   const fitItemsToContent = useCanvasStore((s) => s.fitItemsToContent)
   const removeItems = useCanvasStore((s) => s.removeItems)
-  const toggleItemStarred = useCanvasStore((s) => s.toggleItemStarred)
   const toggleItemHidden = useCanvasStore((s) => s.toggleItemHidden)
 
   const selected = items.filter((i) => selectedIds.includes(i.id))
@@ -399,20 +398,6 @@ export function PropertiesPanel() {
               </p>
             )}
             <div className="flex flex-wrap gap-1.5">
-              <button
-                type="button"
-                title="Star / unstar (favorites)"
-                onClick={() => {
-                  for (const id of ids) toggleItemStarred(id)
-                }}
-                className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] ${
-                  selected.every((i) => i.starred)
-                    ? 'border-amber-500/40 bg-amber-500/15 text-amber-200'
-                    : 'border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200'
-                }`}
-              >
-                ★ Star
-              </button>
               <button
                 type="button"
                 title="Hide / show on canvas (Layers eye)"

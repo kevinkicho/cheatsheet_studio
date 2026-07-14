@@ -63,6 +63,7 @@ export function ProcessFlowView({
       title={title}
       role="img"
       aria-label={title ?? 'Process chart'}
+      data-testid="process-flow-view"
       style={{
         width: '100%',
         height: '100%',

@@ -4,6 +4,7 @@ import {
   ChevronDown,
   Cloud,
   Download,
+  FileJson,
   FilePlus2,
   LayoutGrid,
   Layers,
@@ -62,6 +63,8 @@ export function TopBar({ onImportFeedback }: TopBarProps = {}) {
   const view = useUiStore((s) => s.view)
   const setView = useUiStore((s) => s.setView)
   const importInputRef = useRef<HTMLInputElement>(null)
+  const sheetJsonMenuRef = useRef<HTMLDivElement>(null)
+  const [sheetJsonOpen, setSheetJsonOpen] = useState(false)
 
   const {
     importFile,
@@ -79,6 +82,30 @@ export function TopBar({ onImportFeedback }: TopBarProps = {}) {
     return () =>
       window.removeEventListener('cheatsheet:import-sheet-json', open)
   }, [user, importBusy])
+
+  useEffect(() => {
+    if (!sheetJsonOpen) return
+    const onDoc = (e: MouseEvent) => {
+      const el = sheetJsonMenuRef.current
+      if (el && !el.contains(e.target as Node)) setSheetJsonOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSheetJsonOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [sheetJsonOpen])
+
+  const importModeLabel =
+    importMode === 'replace'
+      ? 'Import → replace'
+      : importMode === 'append'
+        ? 'Import → append'
+        : 'Import → new'
 
   const leftOpen = useUiStore((s) => s.leftOpen)
   const rightOpen = useUiStore((s) => s.rightOpen)
@@ -195,45 +222,107 @@ export function TopBar({ onImportFeedback }: TopBarProps = {}) {
             </span>
           </button>
 
-          <button
-            type="button"
-            title="Download sheet JSON for agents (Ctrl+Shift+E)"
-            data-testid="export-sheet-json"
-            onClick={() => downloadWorkspaceSheetJson()}
-            className="inline-flex items-center gap-1 rounded-md border border-zinc-800 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-900"
-          >
-            <Download className="h-3.5 w-3.5" />
-            <span className="hidden lg:inline">Export JSON</span>
-          </button>
-
-          <select
-            value={importMode}
-            onChange={(e) =>
-              setImportMode(e.target.value as 'new' | 'replace' | 'append')
-            }
-            disabled={!user || importBusy}
-            title="Import mode: new sheet, replace open sheet, or append cards"
-            aria-label="Import mode"
-            data-testid="import-mode-select"
-            className="hidden max-w-[6.5rem] appearance-none truncate rounded-md border border-zinc-800 bg-zinc-900 py-1 pl-1.5 pr-1 text-[10px] text-zinc-400 outline-none focus:border-indigo-500 disabled:opacity-40 sm:block"
-          >
-            <option value="new">Import → new</option>
-            <option value="replace">Import → replace</option>
-            <option value="append">Import → append</option>
-          </select>
-          <button
-            type="button"
-            title="Import agent sheet JSON (Ctrl+Shift+I) — or drop a .json file on the window"
-            data-testid="import-sheet-json"
-            disabled={!user || importBusy}
-            onClick={() => importInputRef.current?.click()}
-            className="inline-flex items-center gap-1 rounded-md border border-zinc-800 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-900 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <Upload className="h-3.5 w-3.5" />
-            <span className="hidden lg:inline">
-              {importBusy ? '…' : 'Import JSON'}
-            </span>
-          </button>
+          <div className="relative" ref={sheetJsonMenuRef}>
+            <button
+              type="button"
+              title="Sheet JSON: export, import, import mode"
+              data-testid="sheet-json-menu"
+              aria-haspopup="menu"
+              aria-expanded={sheetJsonOpen}
+              disabled={importBusy}
+              onClick={() => setSheetJsonOpen((o) => !o)}
+              className="inline-flex items-center gap-1 rounded-md border border-zinc-800 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-900 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <FileJson className="h-3.5 w-3.5" />
+              <span className="hidden lg:inline">
+                {importBusy ? 'Importing…' : 'Sheet JSON'}
+              </span>
+              <ChevronDown
+                className={`h-3 w-3 text-zinc-500 transition ${sheetJsonOpen ? 'rotate-180' : ''}`}
+              />
+            </button>
+            {sheetJsonOpen && (
+              <div
+                role="menu"
+                data-testid="sheet-json-menu-panel"
+                className="absolute left-0 top-full z-[60] mt-1 min-w-[12.5rem] rounded-md border border-zinc-700 bg-zinc-900 py-1 shadow-xl shadow-black/40"
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  data-testid="export-sheet-json"
+                  title="Download sheet JSON for agents (Ctrl+Shift+E)"
+                  onClick={() => {
+                    downloadWorkspaceSheetJson()
+                    setSheetJsonOpen(false)
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-200 hover:bg-zinc-800"
+                >
+                  <Download className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
+                  Export JSON
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  data-testid="import-sheet-json"
+                  title="Import agent sheet JSON (Ctrl+Shift+I) — or drop a .json file on the window"
+                  disabled={!user || importBusy}
+                  onClick={() => {
+                    importInputRef.current?.click()
+                    setSheetJsonOpen(false)
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-200 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <Upload className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
+                  Import JSON
+                </button>
+                <div className="my-1 border-t border-zinc-800" />
+                <div className="px-3 pb-1 pt-0.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                  Import mode
+                </div>
+                {(
+                  [
+                    ['new', 'Import → new'],
+                    ['replace', 'Import → replace'],
+                    ['append', 'Import → append'],
+                  ] as const
+                ).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={importMode === value}
+                    data-testid={`import-mode-${value}`}
+                    disabled={!user || importBusy}
+                    onClick={() => {
+                      setImportMode(value)
+                    }}
+                    className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40 ${
+                      importMode === value
+                        ? 'text-indigo-200'
+                        : 'text-zinc-300'
+                    }`}
+                  >
+                    <span
+                      className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border ${
+                        importMode === value
+                          ? 'border-indigo-400 bg-indigo-500/30'
+                          : 'border-zinc-600'
+                      }`}
+                    >
+                      {importMode === value ? (
+                        <span className="h-1.5 w-1.5 rounded-full bg-indigo-300" />
+                      ) : null}
+                    </span>
+                    {label}
+                  </button>
+                ))}
+                <p className="border-t border-zinc-800 px-3 py-1.5 text-[10px] leading-snug text-zinc-500">
+                  Active: {importModeLabel}
+                </p>
+              </div>
+            )}
+          </div>
           <input
             ref={importInputRef}
             type="file"

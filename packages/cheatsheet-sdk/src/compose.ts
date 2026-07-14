@@ -62,6 +62,32 @@ async function applyBlock(
   block: SheetOutline['blocks'][number],
 ) {
   switch (block.type) {
+    case 'folder': {
+      // Layers collection: children share folderId → pack collocates them
+      const parent = builder.getActiveFolder()
+      const fid = builder.addFolder(block.name, parent)
+      const prev = parent
+      builder.setActiveFolder(fid)
+      const wantBanner =
+        block.banner === true ||
+        (block.banner !== false && Boolean(block.heading)) ||
+        (block.banner !== false && /^\d+\.\s/.test(block.name))
+      if (wantBanner) {
+        const label = block.heading ?? block.name
+        builder.addEquation({
+          title: label,
+          latex: `\\textbf{\\text{${escapeLatexText(label)}}}`,
+          height: 26,
+          width: 720,
+          showTitle: false,
+        })
+      }
+      for (const child of block.blocks) {
+        await applyBlock(builder, child)
+      }
+      builder.setActiveFolder(prev)
+      return
+    }
     case 'catalog': {
       const ids =
         'ids' in block && Array.isArray(block.ids)
@@ -122,14 +148,14 @@ async function applyBlock(
       })
       return
     case 'heading':
-      // Banner only: latex carries the section label — do NOT also show card title
-      // (that duplicated "1. Time value of money" as title + body).
+      // Full-width divider band: latex body is the label; hide card title
+      // so "1. Time value of money" is not duplicated as title + body.
       builder.addEquation({
         title: block.title,
         latex: block.note
           ? `\\textbf{\\text{${escapeLatexText(block.note)}}}`
           : `\\textbf{\\text{${escapeLatexText(block.title)}}}`,
-        height: 28,
+        height: 26,
         width: 720,
         showTitle: false,
       })

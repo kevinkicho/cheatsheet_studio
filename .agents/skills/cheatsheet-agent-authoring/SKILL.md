@@ -58,7 +58,10 @@ npm run cheatsheet -- merge a.sheet.json b.sheet.json -o combined.sheet.json
 
 User: **My Sheets → Import JSON** → polish in Workspace.
 
-### 2. Custom outline
+### 2. Custom outline (prefer **folders** = Layers)
+
+Folders are the main agent hook for layout quality: same-folder cards pack as a
+tight cluster before the next folder. Studio Layers shows the same collections.
 
 Write `outline.json`:
 
@@ -67,14 +70,32 @@ Write `outline.json`:
   "title": "My topic",
   "autoLayout": true,
   "blocks": [
-    { "type": "heading", "title": "Section" },
-    { "type": "equation", "title": "…", "latex": "…" },
-    { "type": "table", "markdown": "| a | b |\n|---|---|" },
-    { "type": "process", "mermaid": "flowchart TD\n A-->B", "kind": "flowchart" },
-    { "type": "catalog", "id": "math-quad" }
+    {
+      "type": "folder",
+      "name": "1. Core formulas",
+      "heading": "1. Core formulas",
+      "banner": true,
+      "blocks": [
+        { "type": "catalog", "ids": ["math-quad", "math-pythag"] },
+        { "type": "equation", "title": "…", "latex": "…" }
+      ]
+    },
+    {
+      "type": "folder",
+      "name": "2. Workflows",
+      "heading": "2. Workflows",
+      "banner": true,
+      "blocks": [
+        { "type": "process", "mermaid": "flowchart TD\n A-->B", "kind": "flowchart" },
+        { "type": "table", "markdown": "| a | b |\n|---|---|" }
+      ]
+    }
   ]
 }
 ```
+
+Legacy flat outlines still work (`heading` + loose blocks). Prefer folders when
+building multi-section midterm sheets.
 
 ```bash
 npm run cheatsheet -- compose outline.json -o out/sheet.json
@@ -150,9 +171,11 @@ import {
 ## Rules of thumb
 
 - Prefer **Studio blocks** (`blocks` / `catalog`) for equations, figures, and process charts
+- Prefer **folders** (`type: "folder"`) so Auto layout / pack collocates related cards
 - Use topic packs for full midterm sheets; use blocks to customize
 - Always `validate` before telling the user to import
 - Layout is automatic; humans refine free-transform in the app
+- Studio export: PDF / **SVG** (vector) / PNG / JPEG
 - Never commit Firebase service account JSON; `push` is optional Admin only
 
 ## Docs

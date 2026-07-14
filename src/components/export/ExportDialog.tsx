@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
   CheckSquare,
+  FileCode2,
   FileDown,
   FileImage,
   FileType2,
@@ -37,6 +38,7 @@ import {
 
 const FORMAT_ICONS: Record<ExportFormat, typeof FileDown> = {
   pdf: FileType2,
+  svg: FileCode2,
   png: Image,
   jpeg: FileImage,
 }
@@ -101,6 +103,14 @@ export function ExportDialog({
     setPageArrangement('vertical')
     setPackageMode('combined')
   }, [open, pages])
+
+  // SVG opens in browsers as white paper if transparent — prefer board color
+  useEffect(() => {
+    if (!open) return
+    if (format === 'svg' && backgroundMode === 'transparent') {
+      setBackgroundMode('asShown')
+    }
+  }, [format, open, backgroundMode])
 
   useEffect(() => {
     if (!open) return

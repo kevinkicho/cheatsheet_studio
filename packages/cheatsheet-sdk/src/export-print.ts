@@ -191,13 +191,44 @@ export function sheetToPrintHtml(
   <script type="module">
     import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
     mermaid.initialize({
-      startOnLoad: true,
-      theme: '${mermaidTheme}',
+      startOnLoad: false,
+      theme: '${dark ? 'base' : mermaidTheme}',
       securityLevel: 'loose',
       fontFamily: 'ui-sans-serif, system-ui, sans-serif',
+      // Studio-like dark nodes (avoid default pale/white chips)
+      themeVariables: ${
+        dark
+          ? JSON.stringify({
+              darkMode: true,
+              background: '#12141a',
+              primaryColor: '#27272a',
+              primaryTextColor: '#f4f4f5',
+              primaryBorderColor: '#71717a',
+              secondaryColor: '#3f3f46',
+              secondaryTextColor: '#f4f4f5',
+              tertiaryColor: '#18181b',
+              lineColor: '#a1a1aa',
+              textColor: '#f4f4f5',
+              mainBkg: '#27272a',
+              nodeBorder: '#71717a',
+              clusterBkg: '#18181b',
+              clusterBorder: '#3f3f46',
+              titleColor: '#f4f4f5',
+              edgeLabelBackground: '#3f3f46',
+              nodeTextColor: '#f4f4f5',
+            })
+          : '{}'
+      },
       flowchart: { nodeSpacing: 18, rankSpacing: 22, padding: 6, useMaxWidth: true, htmlLabels: true },
       mindmap: { useMaxWidth: true, padding: 6 },
     });
+    // Explicit run is more reliable than startOnLoad in Playwright/file://
+    try {
+      await mermaid.run({ querySelector: 'pre.mermaid' });
+    } catch (e) {
+      console.warn('mermaid.run partial failure', e);
+    }
+    window.__mermaidReady = true;
   </script>
   <script>
     function renderKatex() {
@@ -347,9 +378,11 @@ export function sheetToPrintHtml(
       margin: 0;
       font-size: 9px;
       white-space: pre-wrap;
+      width: 100%;
+      height: 100%;
       max-width: 100%;
       max-height: 100%;
-      overflow: visible;
+      overflow: hidden;
       background: transparent;
       display: flex;
       align-items: center;
@@ -358,19 +391,39 @@ export function sheetToPrintHtml(
     pre.mermaid svg {
       max-width: 100% !important;
       max-height: 100% !important;
-      width: auto !important;
+      width: 100% !important;
       height: auto !important;
+      display: block;
+    }
+    img.mermaid-raster {
+      display: block;
+      max-width: 100%;
+      max-height: 100%;
+      width: auto;
+      height: auto;
+      object-fit: contain;
+      margin: 0 auto;
     }
     .card.abs[data-process="1"] .card-body {
-      align-items: stretch;
-      justify-content: stretch;
+      align-items: center;
+      justify-content: center;
+      padding: 2px 0;
     }
+    /* Section dividers: full-width band, latex label only (no card title) */
     .card.abs[data-banner="1"] {
-      background: ${dark ? 'rgba(49,46,129,0.35)' : 'rgba(99,102,241,0.08)'};
-      border-color: ${dark ? 'rgba(129,140,248,0.55)' : 'rgba(99,102,241,0.35)'};
+      background: ${dark ? 'rgba(49,46,129,0.45)' : 'rgba(99,102,241,0.12)'};
+      border-color: ${dark ? 'rgba(129,140,248,0.65)' : 'rgba(99,102,241,0.4)'};
+      border-left-width: 3px;
+      padding: 2px 8px;
+      min-height: 18px;
     }
     .card.abs[data-banner="1"] .card-body {
       justify-content: flex-start;
+      align-items: center;
+    }
+    .card.abs[data-banner="1"] .latex .katex {
+      font-size: 0.95em !important;
+      font-weight: 700;
     }
     img.fig {
       max-width: 100%;
@@ -460,18 +513,193 @@ type PlaywrightPage = {
   goto: (url: string, o?: Record<string, unknown>) => Promise<unknown>
   waitForTimeout: (ms: number) => Promise<void>
   setViewportSize: (s: { width: number; height: number }) => Promise<void>
-  evaluate: (fn: () => unknown) => Promise<unknown>
+  evaluate: (fn: (...args: never[]) => unknown, arg?: unknown) => Promise<unknown>
   locator: (sel: string) => {
     screenshot: (o: Record<string, unknown>) => Promise<Buffer>
     count: () => Promise<number>
-    first: () => { screenshot: (o: Record<string, unknown>) => Promise<Buffer> }
+    first: () => {
+      screenshot: (o: Record<string, unknown>) => Promise<Buffer>
+      count: () => Promise<number>
+    }
   }
+}
+
+/**
+ * Force studio-dark fills on Mermaid SVGs (CDN default is pale/white nodes).
+ * Also used so Playwright screenshots match Studio chrome.
+ */
+async function paintMermaidDark(page: PlaywrightPage): Promise<void> {
+  await page.evaluate(() => {
+    const nodeFill = '#27272a'
+    const nodeStroke = '#71717a'
+    const nodeText = '#f4f4f5'
+    const edge = '#a1a1aa'
+    const edgeLabelBg = '#3f3f46'
+    document
+      .querySelectorAll('pre.mermaid svg, .mermaid svg')
+      .forEach((svg) => {
+        const root = svg as SVGSVGElement
+        root.style.background = 'transparent'
+        root
+          .querySelectorAll(
+            'g.node path, g.node rect, g.node polygon, g.node circle, g.node ellipse, .mindmap-node path, .mindmap-node rect, section.mindmap-node',
+          )
+          .forEach((el) => {
+            if (el.closest('.edgePath, .flowchart-link, marker')) return
+            const f = (el.getAttribute('fill') || '').toLowerCase()
+            if (
+              !f ||
+              f === 'none' ||
+              f === '#fff' ||
+              f === '#ffffff' ||
+              f === 'white' ||
+              f === '#ececff' ||
+              f === '#eaeaea' ||
+              f === '#f4f4f4' ||
+              f === '#f9f9f9' ||
+              /^#f{3,8}$/i.test(f)
+            ) {
+              el.setAttribute('fill', nodeFill)
+              ;(el as SVGElement).style.fill = nodeFill
+            }
+            const st = (el.getAttribute('stroke') || '').toLowerCase()
+            if (!st || st === '#000' || st === 'black' || st === '#000000') {
+              el.setAttribute('stroke', nodeStroke)
+              ;(el as SVGElement).style.stroke = nodeStroke
+            }
+          })
+        root
+          .querySelectorAll(
+            '.edgePath path, .flowchart-link, path.flowchart-link, .edgePaths path',
+          )
+          .forEach((el) => {
+            el.setAttribute('fill', 'none')
+            el.setAttribute('stroke', edge)
+            ;(el as SVGElement).style.stroke = edge
+          })
+        root.querySelectorAll('marker path, .arrowheadPath').forEach((el) => {
+          el.setAttribute('fill', edge)
+          el.setAttribute('stroke', edge)
+        })
+        root
+          .querySelectorAll('.edgeLabel rect, .labelBkg, g.edgeLabel > rect')
+          .forEach((el) => {
+            el.setAttribute('fill', edgeLabelBg)
+            el.setAttribute('stroke', nodeStroke)
+          })
+        root.querySelectorAll('text, tspan').forEach((el) => {
+          el.setAttribute('fill', nodeText)
+          ;(el as SVGElement).style.fill = nodeText
+        })
+        root
+          .querySelectorAll(
+            'foreignObject div, foreignObject span, .nodeLabel',
+          )
+          .forEach((el) => {
+            const h = el as HTMLElement
+            if (!h.style) return
+            h.style.color = nodeText
+            h.style.background = 'transparent'
+            h.style.backgroundColor = 'transparent'
+          })
+      })
+  })
+  await page.waitForTimeout(60)
+}
+
+/**
+ * Replace each pre.mermaid with a PNG screenshot so SVG foreignObject export
+ * and dense clips still show diagrams (same idea as Studio SVG export).
+ * Expands process cards briefly so Mermaid isn't clipped to an empty chip.
+ */
+async function rasterizeMermaidBlocks(page: PlaywrightPage): Promise<number> {
+  // Expand process cards so diagrams have room to paint before screenshot
+  await page.evaluate(() => {
+    document.querySelectorAll('article.card[data-process="1"]').forEach((cardEl) => {
+      const card = cardEl as HTMLElement
+      card.dataset.origW = String(card.offsetWidth)
+      card.dataset.origH = String(card.offsetHeight)
+      const w = Math.max(card.offsetWidth, 300)
+      const h = Math.max(card.offsetHeight, 220)
+      card.style.width = `${w}px`
+      card.style.height = `${h}px`
+      card.style.overflow = 'visible'
+      const body = card.querySelector('.card-body') as HTMLElement | null
+      if (body) {
+        body.style.overflow = 'visible'
+        body.style.minHeight = '180px'
+      }
+      const pre = card.querySelector('pre.mermaid') as HTMLElement | null
+      if (pre) {
+        pre.style.overflow = 'visible'
+        pre.style.maxHeight = 'none'
+        pre.style.width = '100%'
+        pre.style.minHeight = '160px'
+      }
+      const svg = card.querySelector('pre.mermaid svg') as SVGSVGElement | null
+      if (svg) {
+        svg.style.maxWidth = '100%'
+        svg.style.maxHeight = 'none'
+        svg.style.width = '100%'
+        svg.style.height = 'auto'
+      }
+    })
+  })
+  await page.waitForTimeout(120)
+
+  let n = 0
+  for (let guard = 0; guard < 40; guard++) {
+    const loc = page.locator('pre.mermaid').first()
+    const count = await loc.count()
+    if (count === 0) break
+    try {
+      const buf = await loc.screenshot({
+        type: 'png',
+        omitBackground: false,
+      })
+      if (buf.length < 800) {
+        // Nearly empty — try parent card body
+        break
+      }
+      const dataUrl = `data:image/png;base64,${buf.toString('base64')}`
+      await page.evaluate((url) => {
+        const pre = document.querySelector('pre.mermaid')
+        if (!pre) return
+        const img = document.createElement('img')
+        img.src = url
+        img.alt = 'process diagram'
+        img.className = 'mermaid-raster'
+        img.setAttribute('data-mermaid-raster', '1')
+        img.style.cssText =
+          'display:block;max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;margin:0 auto;background:transparent;'
+        pre.replaceWith(img)
+      }, dataUrl as never)
+      n++
+    } catch {
+      break
+    }
+  }
+
+  // Restore original card box sizes so layout matches sheet packing
+  await page.evaluate(() => {
+    document.querySelectorAll('article.card[data-process="1"]').forEach((cardEl) => {
+      const card = cardEl as HTMLElement
+      if (card.dataset.origW) card.style.width = `${card.dataset.origW}px`
+      if (card.dataset.origH) card.style.height = `${card.dataset.origH}px`
+      card.style.overflow = 'hidden'
+    })
+  })
+  await page.waitForTimeout(80)
+  return n
 }
 
 /**
  * Scale each card's body so KaTeX / Mermaid / tables are fully visible
  * (dense pack often under-sizes height; overflow:hidden was clipping content).
- * Process charts get a slightly lower min scale so diagrams stay readable.
+ *
+ * Process charts: fit Mermaid SVG via viewBox + max dimensions (never force a
+ * min CSS scale that clips the diagram and looks empty). Equations/tables use
+ * transform scale with a modest floor.
  */
 async function fitCardContents(page: PlaywrightPage): Promise<void> {
   await page.evaluate(() => {
@@ -498,46 +726,77 @@ async function fitCardContents(page: PlaywrightPage): Promise<void> {
       const mermaidSvg = body.querySelector(
         'pre.mermaid svg, .mermaid svg',
       ) as SVGSVGElement | null
-      const target =
-        mermaidSvg ||
-        (body.querySelector(
-          '.katex-display, .katex, pre.mermaid, table, img.fig, img',
-        ) as HTMLElement | null) ||
-        body
 
-      let tw = 1
-      let th = 1
+      // Mermaid: scale the SVG into the card box (whole diagram visible)
       if (mermaidSvg) {
+        const pre = mermaidSvg.closest('pre.mermaid') as HTMLElement | null
         const vb = mermaidSvg.viewBox?.baseVal
-        tw = Math.max(
-          mermaidSvg.getBoundingClientRect().width || 0,
-          vb?.width || 0,
-          mermaidSvg.clientWidth || 0,
-          1,
-        )
-        th = Math.max(
-          mermaidSvg.getBoundingClientRect().height || 0,
-          vb?.height || 0,
-          mermaidSvg.clientHeight || 0,
-          1,
-        )
-      } else {
-        const rect = target.getBoundingClientRect()
-        tw = Math.max(
-          (target as HTMLElement).scrollWidth || 0,
-          rect.width || 0,
-          1,
-        )
-        th = Math.max(
-          (target as HTMLElement).scrollHeight || 0,
-          rect.height || 0,
-          1,
-        )
+        let vw =
+          (vb && vb.width > 0 ? vb.width : 0) ||
+          mermaidSvg.getBoundingClientRect().width ||
+          parseFloat(mermaidSvg.getAttribute('width') || '0') ||
+          400
+        let vh =
+          (vb && vb.height > 0 ? vb.height : 0) ||
+          mermaidSvg.getBoundingClientRect().height ||
+          parseFloat(mermaidSvg.getAttribute('height') || '0') ||
+          300
+        // Ensure viewBox so percentage width/height works
+        if (!mermaidSvg.getAttribute('viewBox') && vw > 0 && vh > 0) {
+          mermaidSvg.setAttribute('viewBox', `0 0 ${vw} ${vh}`)
+        }
+        // Contain: fit entire diagram in avail box (preserve aspect)
+        const fit = Math.min(1, availW / Math.max(vw, 1), availH / Math.max(vh, 1))
+        const outW = Math.max(8, Math.floor(vw * fit))
+        const outH = Math.max(8, Math.floor(vh * fit))
+        mermaidSvg.removeAttribute('width')
+        mermaidSvg.removeAttribute('height')
+        mermaidSvg.setAttribute('width', String(outW))
+        mermaidSvg.setAttribute('height', String(outH))
+        mermaidSvg.style.width = `${outW}px`
+        mermaidSvg.style.height = `${outH}px`
+        mermaidSvg.style.maxWidth = `${availW}px`
+        mermaidSvg.style.maxHeight = `${availH}px`
+        mermaidSvg.style.display = 'block'
+        if (pre) {
+          pre.style.margin = '0'
+          pre.style.width = '100%'
+          pre.style.height = '100%'
+          pre.style.maxWidth = '100%'
+          pre.style.maxHeight = '100%'
+          pre.style.overflow = 'hidden'
+          pre.style.display = 'flex'
+          pre.style.alignItems = 'center'
+          pre.style.justifyContent = 'center'
+          pre.style.background = 'transparent'
+        }
+        body.style.overflow = 'hidden'
+        body.style.alignItems = 'center'
+        body.style.justifyContent = 'center'
+        card.style.overflow = 'hidden'
+        return
       }
 
+      const target =
+        (body.querySelector(
+          '.katex-display, .katex, table, img.fig, img',
+        ) as HTMLElement | null) || body
+
+      const rect = target.getBoundingClientRect()
+      const tw = Math.max(
+        (target as HTMLElement).scrollWidth || 0,
+        rect.width || 0,
+        1,
+      )
+      const th = Math.max(
+        (target as HTMLElement).scrollHeight || 0,
+        rect.height || 0,
+        1,
+      )
+
       const scale = Math.min(1, availW / tw, availH / th)
-      // Process: never shrink below 0.42 or diagrams vanish; equations min 0.4
-      const minScale = isProcess ? 0.42 : 0.4
+      // Allow smaller scale so content is never clipped to a blank corner
+      const minScale = 0.22
       body.style.transformOrigin = 'center center'
       if (scale < 0.995) {
         body.style.transform = `scale(${Math.max(minScale, scale)})`
@@ -574,24 +833,35 @@ async function withPlaywrightPage(
       timeout: 60_000,
     })
     if (opts?.rich !== false) {
-      await page.waitForTimeout(1000)
+      await page.waitForTimeout(600)
       try {
         await page.waitForFunction(
           () => {
             const blocks = document.querySelectorAll('pre.mermaid').length
+            if (blocks === 0) return true
+            // Prefer explicit mermaid.run flag; fall back to SVG presence
+            const ready = (window as unknown as { __mermaidReady?: boolean })
+              .__mermaidReady
             const svgs = document.querySelectorAll(
               'pre.mermaid svg, .mermaid svg',
             ).length
-            return blocks === 0 || svgs > 0
+            return Boolean(ready) || svgs >= blocks
           },
-          { timeout: 14_000 },
+          { timeout: 18_000 },
         )
       } catch {
-        /* partial ok */
+        /* partial ok — fit whatever rendered */
       }
-      await page.waitForTimeout(500)
-      // Un-clip KaTeX/Mermaid that overflow dense card boxes
+      await page.waitForTimeout(400)
+      // Dark node fills (CDN mermaid defaults to pale/white chips)
+      await paintMermaidDark(page as never)
+      // Fit KaTeX/Mermaid into card boxes (mermaid via viewBox, not clip scale)
       await fitCardContents(page as never)
+      await page.waitForTimeout(120)
+      // Rasterize diagrams → <img> so PNG/SVG/PDF always show process charts
+      // (SVG foreignObject + mermaid htmlLabels otherwise blank out)
+      await rasterizeMermaidBlocks(page as never)
+      await page.waitForTimeout(80)
     }
     await run(page as never)
     await context.close()
@@ -846,7 +1116,8 @@ export async function exportSheetSvg(
         height = d.height ?? dims.height
         surfaceHtml = d.html
       },
-      1,
+      // 2× so mermaid raster screenshots are sharp enough to read
+      2,
     )
 
     // HTML→XML entity fixes (Chrome SVG parser is strict)
@@ -876,8 +1147,11 @@ export async function exportSheetSvg(
   color: ${muted}; margin-bottom: 2px; font-weight: 650; flex-shrink: 0; }
 .card-body { flex: 1; min-height: 0; overflow: hidden; display: flex; align-items: center; justify-content: center; }
 .latex .katex { font-size: 1em !important; }
-pre.mermaid { margin: 0; background: transparent; max-width: 100%; max-height: 100%; overflow: hidden; }
-pre.mermaid svg { max-width: 100% !important; height: auto !important; }
+pre.mermaid { margin: 0; background: transparent; width: 100%; height: 100%; max-width: 100%; max-height: 100%; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+pre.mermaid svg { max-width: 100% !important; max-height: 100% !important; width: 100% !important; height: auto !important; display: block; }
+img.mermaid-raster { display: block; max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; margin: 0 auto; }
+.card.abs[data-process="1"] .card-body { align-items: center; justify-content: center; }
+.card.abs[data-banner="1"] { border-left-width: 3px; padding: 2px 8px; }
 table { border-collapse: collapse; width: 100%; font-size: 0.85em; }
 th, td { border: 1px solid ${border}; padding: 1px 3px; }
 img.fig { max-width: 100%; max-height: 100%; object-fit: contain; }

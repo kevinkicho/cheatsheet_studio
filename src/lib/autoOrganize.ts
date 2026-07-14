@@ -310,6 +310,16 @@ export type CheatsheetLayoutOptions = {
   fitPrint?: boolean
   /** Prefer more pages instead of extreme shrink when overflowing. Default false. */
   multiPage?: boolean
+  /**
+   * When true (default), items that share a Layers `folderId` pack as a
+   * contiguous cluster (tight shelf) before the next folder — agent workflow.
+   */
+  groupByFolder?: boolean
+  /**
+   * Optional folder order (from sheet.folders). Lower `order` first.
+   * Ungrouped (no folderId) packs last.
+   */
+  folders?: Array<{ id: string; order?: number; name?: string }>
 }
 
 /** Maps density labels → size scale + ItemStyle font sizes (vector KaTeX/tables). */
@@ -331,7 +341,8 @@ export const DENSITY_PRESETS: Record<
     sizeScale: 0.58,
     fontSize: 11,
     titleFontSize: 8,
-    processSizeScale: 0.52,
+    // Keep process charts large enough that Mermaid nodes stay readable
+    processSizeScale: 0.72,
   },
   sm: {
     label: 'Small',
@@ -339,7 +350,7 @@ export const DENSITY_PRESETS: Record<
     sizeScale: 0.72,
     fontSize: 13,
     titleFontSize: 9,
-    processSizeScale: 0.65,
+    processSizeScale: 0.85,
   },
   md: {
     label: 'Medium',
@@ -347,7 +358,7 @@ export const DENSITY_PRESETS: Record<
     sizeScale: 0.88,
     fontSize: 15,
     titleFontSize: 10,
-    processSizeScale: 0.8,
+    processSizeScale: 0.95,
   },
   lg: {
     label: 'Large',
@@ -355,7 +366,7 @@ export const DENSITY_PRESETS: Record<
     sizeScale: 1,
     fontSize: 17,
     titleFontSize: 11,
-    processSizeScale: 0.95,
+    processSizeScale: 1,
   },
 }
 
@@ -363,10 +374,95 @@ function isProcessItem(it: CanvasItem): boolean {
   return it.type === 'process-chart' || Boolean(it.mermaidSource)
 }
 
+/**
+ * Split items into layout sections.
+ * Prefer Layers folders (folderId) so same-folder cards stay clustered;
+ * within a folder (or root), heading cards start a new band.
+ */
+export function splitCheatSections(
+  items: CanvasItem[],
+  opts: {
+    groupByFolder?: boolean
+    folders?: Array<{ id: string; order?: number }>
+  } = {},
+): CanvasItem[][] {
+  const groupByFolder = opts.groupByFolder !== false
+  const hasFolders =
+    groupByFolder && items.some((i) => Boolean(i.folderId))
+
+  if (!hasFolders) {
+    return splitByHeadings(items)
+  }
+
+  const orderMap = new Map<string, number>()
+  for (const f of opts.folders ?? []) {
+    orderMap.set(f.id, f.order ?? 0)
+  }
+
+  // Preserve first-seen order among folders, then sort by explicit order
+  const firstIndex = new Map<string | null, number>()
+  items.forEach((it, i) => {
+    const key = it.folderId ?? null
+    if (!firstIndex.has(key)) firstIndex.set(key, i)
+  })
+
+  const folderKeys = Array.from(firstIndex.keys()).sort((a, b) => {
+    if (a == null && b == null) return 0
+    if (a == null) return 1 // ungrouped last
+    if (b == null) return -1
+    const oa = orderMap.has(a) ? orderMap.get(a)! : firstIndex.get(a)!
+    const ob = orderMap.has(b) ? orderMap.get(b)! : firstIndex.get(b)!
+    if (oa !== ob) return oa - ob
+    return (firstIndex.get(a) ?? 0) - (firstIndex.get(b) ?? 0)
+  })
+
+  const sections: CanvasItem[][] = []
+  for (const key of folderKeys) {
+    const group = items.filter((i) => (i.folderId ?? null) === key)
+    // Within folder: heading bands still apply
+    for (const sub of splitByHeadings(group)) {
+      sections.push(sub)
+    }
+  }
+  return sections.length ? sections : [items]
+}
+
+function splitByHeadings(items: CanvasItem[]): CanvasItem[][] {
+  const sections: CanvasItem[][] = []
+  let cur: CanvasItem[] = []
+  for (const it of items) {
+    if (isHeadingCard(it) && cur.length > 0) {
+      sections.push(cur)
+      cur = [it]
+    } else {
+      cur.push(it)
+    }
+  }
+  if (cur.length) sections.push(cur)
+  return sections
+}
+
 function isHeadingCard(it: CanvasItem): boolean {
-  if (!it.latex) return false
-  const t = it.latex.trim()
-  return /^\\text\{/.test(t) && t.length < 100
+  if (it.mermaidSource || it.tableMarkdown || it.type === 'process-chart') {
+    return false
+  }
+  const title = (it.title ?? '').trim()
+  const t = (it.latex ?? '').trim()
+  if (!t) return false
+  // Numbered section dividers ("1. …") and \textbf{\text{…}} banners
+  if (/^\d+\.\s+\S/.test(title) && t.includes('\\text{') && t.length < 160) {
+    return true
+  }
+  if (it.showTitle === false && t.includes('\\text{') && t.length < 160) {
+    return true
+  }
+  if (
+    (/^\\text\{/.test(t) || /^\\textbf\{\\text\{/.test(t)) &&
+    t.length < 160
+  ) {
+    return true
+  }
+  return false
 }
 
 /**
@@ -387,6 +483,7 @@ export function packCheatsheetLayout(
   const gap = Math.max(2, options.gap ?? (density === 'xs' ? 6 : density === 'sm' ? 8 : 12))
   const mode = options.mode ?? 'columns'
   const fitPrint = options.fitPrint !== false
+  const groupByFolder = options.groupByFolder !== false
   const box = getContentBox(canvas)
 
   const visible = items.filter((i) => !i.hidden)
@@ -401,12 +498,39 @@ export function packCheatsheetLayout(
       : isProc
         ? preset.processSizeScale
         : preset.sizeScale
-    const minW = isHead ? 160 : isProc ? 140 : 100
-    const minH = isHead ? 28 : isProc ? 100 : 48
+    const lrProc =
+      isProc &&
+      (it.mermaidDirection === 'LR' ||
+        it.mermaidDirection === 'RL' ||
+        /flowchart\s+LR/i.test(it.mermaidSource ?? '') ||
+        /flowchart\s+RL/i.test(it.mermaidSource ?? ''))
+    const mindProc =
+      isProc &&
+      (it.mermaidKind === 'mindmap' ||
+        /\bmindmap\b/i.test(it.mermaidSource ?? ''))
+    // Process charts need real room — short LR boxes (h~70) make export embeds unreadable
+    const minW = isHead
+      ? 160
+      : isProc
+        ? lrProc
+          ? 400
+          : mindProc
+            ? 240
+            : 220
+        : 100
+    const minH = isHead
+      ? 24
+      : isProc
+        ? mindProc
+          ? 240
+          : lrProc
+            ? 100
+            : 220
+        : 48
     const maxW = isHead
       ? box.width
       : isProc
-        ? Math.min(box.width, 340)
+        ? Math.min(box.width, lrProc ? box.width : mindProc ? 420 : 340)
         : Math.min(box.width, 300)
     const w = Math.max(minW, Math.min(maxW, Math.round(it.width * scale)))
     const h = Math.max(
@@ -436,22 +560,22 @@ export function packCheatsheetLayout(
         ? guessCheatColumns(scaled.length, density, box.width)
         : Math.min(3, Math.max(1, options.columns))
 
-  // Full-width headings, multi-column body under each section
+  // xs/sm midterm sheets: shelf-wrap fills horizontal gaps (columns leave dead space)
+  const useShelf =
+    mode === 'flow' ||
+    colCount === 1 ||
+    density === 'xs' ||
+    density === 'sm'
+
+  // Folders (layers) first when present, else heading bands — agent collocation
   const placed: CanvasItem[] = []
   let cursorY = box.top
   let z = 1
 
-  const sections: CanvasItem[][] = []
-  let cur: CanvasItem[] = []
-  for (const it of scaled) {
-    if (isHeadingCard(it) && cur.length > 0) {
-      sections.push(cur)
-      cur = [it]
-    } else {
-      cur.push(it)
-    }
-  }
-  if (cur.length) sections.push(cur)
+  const sections = splitCheatSections(scaled, {
+    groupByFolder,
+    folders: options.folders,
+  })
 
   for (const section of sections) {
     const heading = section.find(isHeadingCard)
@@ -470,7 +594,8 @@ export function packCheatsheetLayout(
 
     if (body.length === 0) continue
 
-    if (mode === 'flow' || colCount === 1) {
+    // Same-folder clusters pack tightly (shelf / multi-col) as one band
+    if (useShelf) {
       let x = box.left
       let rowH = 0
       let y = cursorY

@@ -85,7 +85,14 @@ describe('@cheatsheet-studio/sdk builder', () => {
     const sheet = await composeFromOutline({
       title: 'Outline demo',
       blocks: [
-        { type: 'heading', title: 'Section A' },
+        {
+          type: 'folder',
+          name: 'Section A',
+          heading: 'Section A',
+          banner: true,
+          blocks: [{ type: 'equation', title: 'E', latex: 'x=1' }],
+        },
+        { type: 'heading', title: 'Section B' },
         { type: 'equation', latex: 'a+b', title: 'Sum' },
         {
           type: 'process',
@@ -96,6 +103,10 @@ describe('@cheatsheet-studio/sdk builder', () => {
     })
     expect(sheet.title).toBe('Outline demo')
     expect(sheet.items.length).toBeGreaterThanOrEqual(3)
+    expect(sheet.folders?.length).toBeGreaterThanOrEqual(1)
+    expect(sheet.folders?.[0]?.name).toBe('Section A')
+    const inFolder = sheet.items.filter((i) => i.folderId)
+    expect(inFolder.length).toBeGreaterThanOrEqual(1)
     expect(validateSheetDocument(sheet).ok).toBe(true)
   })
 })

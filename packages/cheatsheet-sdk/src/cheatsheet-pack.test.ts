@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createSheet } from './builder'
 import {
   estimateBlockSize,
+  isHeading,
   packSheetDocument,
   packRectsShelf,
 } from './cheatsheet-pack'
@@ -15,6 +16,44 @@ describe('cheatsheet-pack', () => {
     const sz = estimateBlockSize(it, 'sm', 720)
     expect(sz.w).toBeLessThan(280)
     expect(sz.h).toBeLessThan(80)
+  })
+
+  it('detects numbered section dividers with textbf latex', () => {
+    const sheet = createSheet({ title: 't' })
+      .addEquation({
+        title: '1. Time value of money',
+        latex: '\\textbf{\\text{1. Time value of money}}',
+        showTitle: false,
+        height: 26,
+        width: 720,
+      })
+      .addEquation({ title: 'PV', latex: 'PV=C/r' })
+      .build()
+    expect(isHeading(sheet.items[0]!)).toBe(true)
+    expect(isHeading(sheet.items[1]!)).toBe(false)
+    const packed = packSheetDocument(sheet, {
+      density: 'sm',
+      target: 'letter',
+      fitOnePage: false,
+    })
+    const banner = packed.items[0]!
+    // Full-width divider band
+    expect(banner.width).toBeGreaterThan(500)
+    expect(banner.height).toBeLessThan(40)
+    expect(banner.showTitle).toBe(false)
+  })
+
+  it('sizes process charts large enough for mermaid', () => {
+    const sheet = createSheet({ title: 't' })
+      .addProcess({
+        title: 'NPV',
+        mermaidSource: 'flowchart TD\n  A-->B-->C-->D',
+        mermaidKind: 'flowchart',
+      })
+      .build()
+    const sz = estimateBlockSize(sheet.items[0]!, 'sm', 720)
+    expect(sz.w).toBeGreaterThanOrEqual(250)
+    expect(sz.h).toBeGreaterThanOrEqual(180)
   })
 
   it('shelf packs multiple blocks side by side', () => {

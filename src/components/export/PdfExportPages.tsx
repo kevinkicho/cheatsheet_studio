@@ -51,7 +51,12 @@ function ExportCard({
   const style = item.style ?? {}
   const transparent = item.transparentBackground === true
   const showTitle = item.showTitle !== false && Boolean(item.title)
-  const pad = style.padding ?? CARD_DEFAULTS.padding
+  // Process charts need a little padding so the title row isn't flush/clipped
+  const isProcess =
+    item.type === 'process-chart' || Boolean(item.mermaidSource)
+  const pad =
+    style.padding ??
+    (isProcess ? Math.max(CARD_DEFAULTS.padding, 6) : CARD_DEFAULTS.padding)
   const border = composeBorderCss(style)
   const bg = transparent
     ? 'transparent'
@@ -64,9 +69,15 @@ function ExportCard({
   const color = sanitizeCssColor(style.color, DEFAULT_CARD_COLOR)
   const fontSize = style.fontSize ?? 18
 
+  const needsMermaid =
+    (item.type === 'process-chart' || Boolean(item.mermaidSource)) &&
+    !item.processFlow
+
   return (
     <div
       data-export-card
+      data-export-type={item.type}
+      data-export-needs-mermaid={needsMermaid ? '1' : undefined}
       style={{
         position: 'absolute',
         left: x,
@@ -98,13 +109,17 @@ function ExportCard({
       >
         {showTitle && (
           <div
+            data-export-card-title
             style={{
               flexShrink: 0,
               height: Math.round(
                 (style.titleFontSize ?? DEFAULT_TITLE_FONT_SIZE) * 1.6,
               ),
+              minHeight: Math.round(
+                (style.titleFontSize ?? DEFAULT_TITLE_FONT_SIZE) * 1.6,
+              ),
               marginBottom: 2,
-              padding: '0 2px',
+              padding: '0 4px',
               fontSize: style.titleFontSize ?? DEFAULT_TITLE_FONT_SIZE,
               fontWeight: 500,
               letterSpacing: '0.04em',

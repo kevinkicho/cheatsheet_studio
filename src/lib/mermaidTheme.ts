@@ -30,7 +30,17 @@ export const STUDIO_DARK = {
   bg: STUDIO_PREVIEW_BG,
 } as const
 
-export type StudioColors = typeof STUDIO_DARK
+/** Mutable color bag — capture may use higher-contrast values than live canvas. */
+export type StudioColors = {
+  nodeFill: string
+  nodeStroke: string
+  nodeText: string
+  edge: string
+  edgeLabelBg: string
+  clusterFill: string
+  clusterStroke: string
+  bg: string
+}
 
 export const MERMAID_DARK_THEME_VARIABLES: Record<string, string | boolean> = {
   darkMode: true,
@@ -286,6 +296,7 @@ function rewriteAndInjectStudioStyles(
       forced-color-adjust: none;
       overflow: visible;
     }
+    /* Flowchart nodes */
     #${sid} g.node > path, #${sid} g.node > rect, #${sid} g.node > polygon,
     #${sid} g.node > circle, #${sid} g.node > ellipse,
     #${sid} g.node path.label-container, #${sid} g.node rect.label-container,
@@ -308,6 +319,48 @@ function rewriteAndInjectStudioStyles(
       color: ${colors.nodeText} !important;
       background: transparent !important;
       background-color: transparent !important;
+    }
+    /* Mindmap nodes (Mermaid 11 — not g.node) */
+    #${sid}.mindmapDiagram g rect,
+    #${sid}.mindmapDiagram g polygon,
+    #${sid}.mindmapDiagram g circle,
+    #${sid}.mindmapDiagram g ellipse,
+    #${sid}.mindmapDiagram g path.mindmap-node,
+    #${sid}.mindmapDiagram g > path:not(.mindmap-edge):not([stroke-linecap]),
+    #${sid} g.mindmap-node > path,
+    #${sid} g.mindmap-node > rect,
+    #${sid} g.mindmap-node > polygon,
+    #${sid} g.mindmap-node > circle,
+    #${sid} g.mindmap-node > ellipse,
+    #${sid} section.mindmap-node,
+    #${sid} [class*="mindmap-node"] > path,
+    #${sid} [class*="mindmap-node"] > rect,
+    #${sid} [class*="section-"] > path,
+    #${sid} [class*="section-"] > rect {
+      fill: ${colors.nodeFill} !important;
+      stroke: ${colors.nodeStroke} !important;
+    }
+    #${sid}.mindmapDiagram text,
+    #${sid}.mindmapDiagram tspan,
+    #${sid} g.mindmap-node text,
+    #${sid} g.mindmap-node tspan {
+      fill: ${colors.nodeText} !important;
+      color: ${colors.nodeText} !important;
+    }
+    #${sid}.mindmapDiagram foreignObject,
+    #${sid}.mindmapDiagram foreignObject div,
+    #${sid}.mindmapDiagram foreignObject span,
+    #${sid} g.mindmap-node foreignObject,
+    #${sid} g.mindmap-node foreignObject div {
+      color: ${colors.nodeText} !important;
+      background: transparent !important;
+      background-color: transparent !important;
+    }
+    #${sid}.mindmapDiagram path[class*="edge"],
+    #${sid}.mindmapDiagram line,
+    #${sid}.mindmapDiagram polyline {
+      fill: none !important;
+      stroke: ${colors.edge} !important;
     }
     #${sid} .edgePath path, #${sid} .flowchart-link, #${sid} path.flowchart-link,
     #${sid} .edgePaths path {
@@ -346,44 +399,143 @@ function rewriteAndInjectStudioStyles(
  * Force node/edge paints — rewrite Mermaid CSS, inject overrides, set attrs.
  * Preserves Mermaid font metrics so labels stay inside node boxes.
  */
+function paintNodeGroupShapes(
+  g: Element,
+  colors: StudioColors,
+): void {
+  g.querySelectorAll('path, rect, polygon, circle, ellipse').forEach((el) => {
+    if (el.closest('.katex')) return
+    if (
+      el.closest(
+        '.edgePath, .flowchart-link, .edgePaths, marker, defs',
+      )
+    ) {
+      return
+    }
+    try {
+      const bb = (el as SVGGraphicsElement).getBBox?.()
+      if (bb && bb.width < 0.5 && bb.height < 0.5) return
+    } catch {
+      /* not rendered yet */
+    }
+    const fa = (el.getAttribute('fill') || '').toLowerCase()
+    if (NONE.has(fa)) {
+      // label-container often starts as none then CSS paints — force fill
+      const cls = (el.getAttribute('class') || '').toLowerCase()
+      if (
+        cls.includes('label-container') ||
+        cls.includes('basic') ||
+        cls.includes('mindmap') ||
+        el.parentElement?.classList.contains('node') ||
+        el.parentElement?.classList.contains('mindmap-node')
+      ) {
+        force(el, colors.nodeFill, colors.nodeStroke)
+        return
+      }
+      force(el, undefined, colors.nodeStroke)
+      return
+    }
+    // Always dark zinc for closed node/mindmap shapes (never leave white/pale)
+    force(el, colors.nodeFill, colors.nodeStroke)
+  })
+  g.querySelectorAll('text, tspan').forEach((el) => {
+    if (el.closest('.katex')) return
+    force(el, colors.nodeText, undefined, colors.nodeText)
+    el.setAttribute('fill', colors.nodeText)
+  })
+  g.querySelectorAll(
+    'foreignObject div, foreignObject span, .nodeLabel, foreignObject',
+  ).forEach((el) => {
+    const h = el as HTMLElement
+    if (!h.style) return
+    h.style.setProperty('color', colors.nodeText, 'important')
+    h.style.setProperty('background', 'transparent', 'important')
+    h.style.setProperty('background-color', 'transparent', 'important')
+  })
+}
+
+/**
+ * Force node/edge paints — rewrite Mermaid CSS, inject overrides, set attrs.
+ * Covers flowcharts (g.node) and mindmaps (mindmapDiagram / mindmap-node).
+ * Preserves Mermaid font metrics so labels stay inside node boxes.
+ */
 export function paintStudioSvg(
   root: Element,
   colors: StudioColors = STUDIO_DARK,
 ): void {
   rewriteAndInjectStudioStyles(root, colors)
 
+  // Flowchart nodes
   root.querySelectorAll('g.node').forEach((g) => {
-    g.querySelectorAll('path, rect, polygon, circle, ellipse').forEach((el) => {
-      if (el.closest('.katex')) return
-      // Skip zero-size layout helpers (often class="background")
-      try {
-        const bb = (el as SVGGraphicsElement).getBBox?.()
-        if (bb && bb.width < 0.5 && bb.height < 0.5) return
-      } catch {
-        /* not rendered yet */
-      }
-      const fa = (el.getAttribute('fill') || '').toLowerCase()
-      if (NONE.has(fa)) {
-        force(el, undefined, colors.nodeStroke)
-        return
-      }
-      force(el, colors.nodeFill, colors.nodeStroke)
-    })
-    g.querySelectorAll('text, tspan').forEach((el) => {
-      if (el.closest('.katex')) return
+    paintNodeGroupShapes(g, colors)
+  })
+
+  // Mindmap nodes — Mermaid 11 class mindmapDiagram + section/mindmap-node groups
+  const mindRoots = root.matches?.('svg.mindmapDiagram')
+    ? [root]
+    : Array.from(root.querySelectorAll('svg.mindmapDiagram, .mindmapDiagram'))
+  if (mindRoots.length === 0 && root.querySelector('[class*="mindmap"]')) {
+    mindRoots.push(root)
+  }
+  mindRoots.forEach((svg) => {
+    svg
+      .querySelectorAll(
+        'g.mindmap-node, g[class*="section-"], g[class*="mindmap"], [class*="mindmap-node"]',
+      )
+      .forEach((g) => paintNodeGroupShapes(g, colors))
+    // Fallback: any closed shape not on an edge
+    svg
+      .querySelectorAll('path, rect, polygon, circle, ellipse')
+      .forEach((el) => {
+        if (
+          el.closest(
+            '.edgePath, .flowchart-link, .edgePaths, marker, defs, line',
+          )
+        ) {
+          return
+        }
+        const fa = (el.getAttribute('fill') || '').toLowerCase()
+        if (NONE.has(fa) && !el.getAttribute('class')?.includes('node')) {
+          // skip pure connectors
+          const tag = el.tagName.toLowerCase()
+          if (tag === 'path' && !el.closest('g.mindmap-node, g.node')) {
+            const d = el.getAttribute('d') || ''
+            // thin connector-like paths often have no area fill
+            if (!d.includes('z') && !d.includes('Z')) {
+              force(el, 'none', colors.edge)
+              return
+            }
+          }
+        }
+        try {
+          const bb = (el as SVGGraphicsElement).getBBox?.()
+          if (bb && bb.width < 0.5 && bb.height < 0.5) return
+        } catch {
+          /* ignore */
+        }
+        if (NONE.has(fa) && fa === 'none') {
+          // only force if it looks like a closed node path
+          const d = (el.getAttribute('d') || '').toLowerCase()
+          if (d.includes('z') || el.tagName.toLowerCase() !== 'path') {
+            force(el, colors.nodeFill, colors.nodeStroke)
+          }
+          return
+        }
+        force(el, colors.nodeFill, colors.nodeStroke)
+      })
+    svg.querySelectorAll('text, tspan').forEach((el) => {
       force(el, colors.nodeText, undefined, colors.nodeText)
       el.setAttribute('fill', colors.nodeText)
     })
-    // htmlLabels: true — paint foreignObject label chrome
-    g.querySelectorAll('foreignObject div, foreignObject span, .nodeLabel').forEach(
-      (el) => {
+    svg
+      .querySelectorAll('foreignObject, foreignObject div, foreignObject span')
+      .forEach((el) => {
         const h = el as HTMLElement
         if (!h.style) return
         h.style.setProperty('color', colors.nodeText, 'important')
         h.style.setProperty('background', 'transparent', 'important')
         h.style.setProperty('background-color', 'transparent', 'important')
-      },
-    )
+      })
   })
 
   root
