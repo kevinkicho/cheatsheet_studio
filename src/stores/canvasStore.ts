@@ -5,6 +5,7 @@ import {
   layoutItemsInRows,
   packCheatsheetLayout,
   relayoutPanelContents,
+  translateLayoutPanelCluster,
   snapToGridValue,
   ORGANIZE_GRID,
   type AutoLayoutExportSnapshot,
@@ -235,6 +236,11 @@ interface CanvasState {
    * (n-gon outline included) to fully wrap content.
    */
   autoLayoutSelectedPanel: () => void
+  /**
+   * Move a layout panel and its member cards by (dx, dy). Nested child panels
+   * whose members are all inside this panel move with it.
+   */
+  moveLayoutPanelBy: (panelId: string, dx: number, dy: number) => void
   /** Shift+click: add if missing, remove if already selected. */
   toggleSelect: (id: string) => void
   /** Replace selection with explicit ids (marquee). */
@@ -872,6 +878,9 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         fitPrint: opts?.fitPrint !== false,
         // Default multipage so large imports do not keep empty frames
         multiPage: opts?.multiPage !== false,
+        dissolvePrintArea:
+          opts?.dissolvePrintArea === true ||
+          s.canvas.dissolvePrintArea === true,
         groupByFolder: opts?.groupByFolder !== false,
         panelPadding: opts?.panelPadding,
         folders: s.folders?.map((f) => ({
@@ -1081,6 +1090,31 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         },
       }
     }),
+
+  moveLayoutPanelBy: (panelId, dx, dy) => {
+    if (!Number.isFinite(dx) || !Number.isFinite(dy)) return
+    if (Math.abs(dx) < 0.01 && Math.abs(dy) < 0.01) return
+    set((s) => {
+      const panels = s.canvas.layoutPanels ?? []
+      if (!panels.some((p) => p.id === panelId)) return s
+      const { items, panels: nextPanels } = translateLayoutPanelCluster(
+        s.items,
+        panels,
+        panelId,
+        dx,
+        dy,
+        {
+          grid: s.canvas.gridSpacing ?? ORGANIZE_GRID,
+          panelPad: s.lastAutoLayout?.panelPadding ?? 8,
+        },
+      )
+      return {
+        items,
+        dirty: true,
+        canvas: { ...s.canvas, layoutPanels: nextPanels },
+      }
+    })
+  },
 
   toggleSelect: (id) =>
     set((s) => {

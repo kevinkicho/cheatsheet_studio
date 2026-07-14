@@ -65,9 +65,31 @@ Levels are depths in the Layers folder tree (**from the top**):
 Cards pack at the **deepest** selected level. When more than one level is on
 (e.g. L1+L2), packing is **hierarchical**: all leaf groups under the same
 outer parent are free-flowed **together first**, then those outer boxes
-free-flow on the page. That keeps “1.” cards contiguous so **level-1 panels
-never stack over “2.” / “3.”** Chrome is still drawn for **each** selected
-level (outer pad slightly larger so parents wrap children).
+free-flow on the page (**outer gap 0** so L1 frames can touch). That keeps
+“1.” cards contiguous so **level-1 panels never stack over “2.” / “3.”**
+
+Chrome rules:
+
+- **Only the outermost level strokes** — one **solid** outer perimeter
+  (AABB for multi-level; morphologically closed n-gon for single-level).
+  No internal “room walls” inside an L1.
+- Inner levels are **title chips only** (no frame fill/border).
+- **Adjacent L1 panels merge** with a generous connect distance; shared
+  internal edges are dropped. Each L1 keeps its title chip.
+- Hierarchical pack expands into residual columns, densifies voids inside
+  each L1, and prefers short/wide leaf packs.
+- With panels on, **card borders are muted** so structure reads from the
+  outer perimeter.
+
+**Multipage:** continuous pack → no content-band straddles → map onto real
+pages (margin gutters) → board-aware cleanup so cards never clip mid-page.
+
+**Dissolve print pages** (Sheet properties): merge contiguous page frames into
+one continuous printable band by freeing inter-page margin gutters (and slightly
+freeing side margins). Auto-layout packs against that **max space**; combined
+export collapses the same gutters when stitching.
+
+**Move panels:** Select tool → click a panel → drag (members + nested chrome).
 
 ### Group sort
 

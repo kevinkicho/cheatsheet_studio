@@ -1242,6 +1242,8 @@ export function stitchSvgPages(
     /** Board origins for asSheet (same order as pages). */
     origins?: Array<{ x: number; y: number }>
     backgroundColor?: string | null
+    /** Collapse px between stacked pages (top+bottom margins) when dissolving. */
+    dissolveGutterPx?: number
   },
 ): string {
   if (pages.length === 0) {
@@ -1253,6 +1255,7 @@ export function stitchSvgPages(
   const sizes = pages.map(parseSvgOuterSize)
   const arrangement = opts?.arrangement ?? 'vertical'
   const bg = resolveSvgPageBackground(opts?.backgroundColor)
+  const dissolveGutter = Math.max(0, opts?.dissolveGutterPx ?? 0)
 
   let placements: Array<{ x: number; y: number; w: number; h: number }>
   if (arrangement === 'asSheet' && opts?.origins?.length === pages.length) {
@@ -1266,9 +1269,13 @@ export function stitchSvgPages(
     }))
   } else {
     let y = 0
-    placements = sizes.map((s) => {
+    placements = sizes.map((s, i) => {
       const p = { x: 0, y, w: s.width, h: s.height }
-      y += s.height
+      const step =
+        i < sizes.length - 1 && dissolveGutter > 0
+          ? Math.max(1, s.height - dissolveGutter)
+          : s.height
+      y += step
       return p
     })
   }

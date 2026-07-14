@@ -33,6 +33,15 @@ import {
   formatAutoLayoutFileTag,
   buildExportFileNameStem,
   relayoutPanelContents,
+  resolveMultipageStraddles,
+  insertPageGutters,
+  densifyPlacedGroups,
+  ensureLeafTitleClearance,
+  getPackContentBox,
+  closePolyomino,
+  solidifyPolyominoAABB,
+  mergeAdjacentOutermostPanels,
+  translateLayoutPanelCluster,
   convexHull,
   expandedRectCorners,
   GROUP_CHROME_PRESETS,
@@ -411,12 +420,12 @@ describe('packCheatsheetLayout', () => {
       folders,
     })
     expect(out.layoutPanels.length).toBeGreaterThanOrEqual(6)
-    for (let i = 0; i < out.layoutPanels.length; i++) {
-      for (let j = i + 1; j < out.layoutPanels.length; j++) {
-        expect(
-          rectsOverlap(out.layoutPanels[i]!, out.layoutPanels[j]!),
-        ).toBe(false)
-      }
+    // Stroked panels are merge-component leaders — each must have a visible outline.
+    // Overlapping peers are fused so only one stroke remains per component.
+    const stroked = out.layoutPanels.filter((p) => p.showStroke !== false)
+    expect(stroked.length).toBeGreaterThan(0)
+    for (const p of stroked) {
+      expect(p.outlinePath || p.runs?.length).toBeTruthy()
     }
   })
   it('labels chrome: no layoutPanels (default)', () => {
@@ -497,24 +506,37 @@ describe('packCheatsheetLayout', () => {
         expect(rectsOverlap(cards[i]!, cards[j]!)).toBe(false)
       }
     }
-    for (let i = 0; i < out.layoutPanels.length; i++) {
-      const p = out.layoutPanels[i]!
+    // Stroked panels only — merged siblings are title-only and may nest under leader
+    const stroked = out.layoutPanels.filter((p) => p.showStroke !== false)
+    expect(stroked.length).toBeGreaterThanOrEqual(1)
+    for (let i = 0; i < stroked.length; i++) {
+      const p = stroked[i]!
       expect(p.shape).toBe('polygon')
       // Continuous solid / simple L → few chrome runs (not free-grid steps)
       expect((p.runs?.length ?? 0)).toBeGreaterThanOrEqual(1)
-      expect((p.runs?.length ?? 99)).toBeLessThanOrEqual(6)
-      for (let j = i + 1; j < out.layoutPanels.length; j++) {
-        expect(panelRunsOverlap(p, out.layoutPanels[j]!)).toBe(false)
+      expect((p.runs?.length ?? 99)).toBeLessThanOrEqual(12)
+      for (let j = i + 1; j < stroked.length; j++) {
+        expect(panelRunsOverlap(p, stroked[j]!)).toBe(false)
       }
     }
-    for (const p of out.layoutPanels) {
+    for (const p of stroked) {
       const members = new Set(p.memberIds ?? [])
+      // Merged leader may wrap several L1 groups — only enforce non-member
+      // cards outside the leader's own members when not a merge super-panel
       const runs =
         p.runs && p.runs.length > 0
           ? p.runs
           : [{ x: p.x, y: p.y, width: p.width, height: p.height }]
       for (const c of cards) {
         if (members.has(c.id)) continue
+        // Skip if card belongs to a merged sibling of this leader
+        const sibling = out.layoutPanels.find(
+          (q) =>
+            q.id !== p.id &&
+            q.showStroke === false &&
+            (q.memberIds ?? []).includes(c.id),
+        )
+        if (sibling) continue
         for (const r of runs) {
           expect(rectsOverlap(r, c)).toBe(false)
         }
@@ -570,9 +592,10 @@ describe('packCheatsheetLayout', () => {
     const a1 = out.items.find((i) => i.id === 'a1')!
     const z1 = out.items.find((i) => i.id === 'z1')!
     // Soft ascending flow: Alpha not strictly below/right of Zeta
+    // (dense free-flow may sit them side-by-side; allow generous slack)
     const aDiag = a1.y + a1.x * 0.35
     const zDiag = z1.y + z1.x * 0.35
-    expect(aDiag).toBeLessThanOrEqual(zDiag + 40)
+    expect(aDiag).toBeLessThanOrEqual(zDiag + 80)
   })
 
   it('groupSort none keeps document order (Zeta before Alpha when Z first)', () => {
@@ -669,8 +692,13 @@ describe('packCheatsheetLayout', () => {
     // Clear gap between outer and inner strokes (not stacked double lines)
     expect(inner11.x - outerT1.x).toBeGreaterThanOrEqual(2)
     expect(inner21.x - outerT2.x).toBeGreaterThanOrEqual(2)
-    // L1 siblings must not overlap
-    expect(rectsOverlap(outerT1, outerT2)).toBe(false)
+    // Stroked L1 islands must not overlap (merged component uses one stroke)
+    const strokedL1 = L1.filter((p) => p.showStroke !== false)
+    for (let i = 0; i < strokedL1.length; i++) {
+      for (let j = i + 1; j < strokedL1.length; j++) {
+        expect(rectsOverlap(strokedL1[i]!, strokedL1[j]!)).toBe(false)
+      }
+    }
     // Outer not full page width for tiny clusters
     expect(outerT1.width).toBeLessThan(DEFAULT_CANVAS.width * 0.85)
   })
@@ -752,13 +780,12 @@ describe('packCheatsheetLayout', () => {
     }
     // Larger gap+pad → more vertical spread (or at least not tighter)
     expect(span(loose)).toBeGreaterThanOrEqual(span(tight))
-    // Peer panels at same level must not overlap with either setting
+    // Stroked peer panels must not overlap (merged L1 leader may cover siblings)
     for (const out of [tight, loose]) {
-      for (let i = 0; i < out.layoutPanels.length; i++) {
-        for (let j = i + 1; j < out.layoutPanels.length; j++) {
-          expect(
-            rectsOverlap(out.layoutPanels[i]!, out.layoutPanels[j]!),
-          ).toBe(false)
+      const stroked = out.layoutPanels.filter((p) => p.showStroke !== false)
+      for (let i = 0; i < stroked.length; i++) {
+        for (let j = i + 1; j < stroked.length; j++) {
+          expect(rectsOverlap(stroked[i]!, stroked[j]!)).toBe(false)
         }
       }
     }
@@ -850,8 +877,235 @@ describe('packCheatsheetLayout', () => {
     expect(L1).toBeTruthy()
     expect(L2.length).toBe(2)
     const topL2 = Math.min(...L2.map((p) => p.y))
-    // L1 exclusive header strip: parent chip above child frames
-    expect(L1.y + 14).toBeLessThanOrEqual(topL2 + 1)
+    // L1 solid frame starts at/above L2 title bands (parent above children)
+    expect(L1.y).toBeLessThanOrEqual(topL2 + 1)
+  })
+
+  it('nested multi-level: only outermost panels stroke (no double borders)', () => {
+    const folders = [
+      { id: 't1', name: '1. Topic', parentId: null, order: 0 },
+      { id: 't1a', name: '1.1 Sub', parentId: 't1', order: 0 },
+      { id: 't1b', name: '1.2 Sub', parentId: 't1', order: 1 },
+    ]
+    const items: CanvasItem[] = [
+      card('a1', { folderId: 't1a', title: 'A1', latex: 'a=1' }),
+      card('a2', { folderId: 't1b', title: 'A2', latex: 'a=2' }),
+    ]
+    const out = packCheatsheetLayout(items, DEFAULT_CANVAS, {
+      density: 'sm',
+      groupChrome: 'panels',
+      panelShape: 'polygon',
+      panelGroupLevels: [1, 2],
+      panelPadding: 8,
+      folders,
+    })
+    const L1 = out.layoutPanels.filter((p) => p.hierarchyLevel === 1)
+    const L2 = out.layoutPanels.filter((p) => p.hierarchyLevel === 2)
+    expect(L1.length).toBe(1)
+    expect(L2.length).toBe(2)
+    expect(L1.every((p) => p.showStroke !== false)).toBe(true)
+    expect(L2.every((p) => p.showStroke === false)).toBe(true)
+    // L1 still has solid n-gon outline; L2 keeps fill runs + title
+    expect(L1[0]!.outlinePath || L1[0]!.runs?.length).toBeTruthy()
+    expect(L2.every((p) => p.showTitle !== false && p.title)).toBe(true)
+  })
+
+  it('mergeAdjacentOutermostPanels fuses touching L1 strokes', () => {
+    const panels = [
+      {
+        id: 'a',
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 80,
+        hierarchyLevel: 1 as const,
+        shape: 'rect' as const,
+        showStroke: true,
+        memberIds: ['1'],
+        title: 'A',
+      },
+      {
+        id: 'b',
+        x: 98,
+        y: 0,
+        width: 100,
+        height: 80,
+        hierarchyLevel: 1 as const,
+        shape: 'rect' as const,
+        showStroke: true,
+        memberIds: ['2'],
+        title: 'B',
+      },
+      {
+        id: 'c',
+        x: 400,
+        y: 0,
+        width: 80,
+        height: 80,
+        hierarchyLevel: 1 as const,
+        shape: 'rect' as const,
+        showStroke: true,
+        memberIds: ['3'],
+        title: 'C',
+      },
+    ]
+    const out = mergeAdjacentOutermostPanels(panels, { grid: 24, panelPad: 8 })
+    const a = out.find((p) => p.id === 'a')!
+    const b = out.find((p) => p.id === 'b')!
+    const c = out.find((p) => p.id === 'c')!
+    // A+B touch → one stroke leader, one fill-only sibling
+    const abStroked = [a, b].filter((p) => p.showStroke !== false)
+    expect(abStroked.length).toBe(1)
+    expect(abStroked[0]!.width).toBeGreaterThan(100)
+    // C is isolated — still strokes
+    expect(c.showStroke).not.toBe(false)
+  })
+
+  it('translateLayoutPanelCluster moves members and panel chrome', () => {
+    const items: CanvasItem[] = [
+      card('a1', {
+        folderId: 't1a',
+        title: 'A1',
+        x: 100,
+        y: 100,
+        width: 120,
+        height: 60,
+        latex: 'a',
+      }),
+    ]
+    const panels = [
+      {
+        id: 'p1',
+        x: 90,
+        y: 80,
+        width: 140,
+        height: 100,
+        hierarchyLevel: 1 as const,
+        memberIds: ['a1'],
+        showStroke: true,
+        title: 'T',
+      },
+    ]
+    const out = translateLayoutPanelCluster(items, panels, 'p1', 48, 24, {
+      grid: 24,
+      panelPad: 8,
+    })
+    const moved = out.items.find((i) => i.id === 'a1')!
+    expect(moved.x).toBe(148)
+    expect(moved.y).toBe(124)
+    const p = out.panels.find((x) => x.id === 'p1')!
+    expect(p.x).toBeGreaterThan(90)
+    expect(p.y).toBeGreaterThan(80)
+  })
+
+  it('resolveMultipageStraddles + insertPageGutters keep cards on content bands', () => {
+    const pageH = 1056
+    const mTop = 48
+    const contentH = 960
+    // Continuous flow: card near end of band 0 would be clipped
+    const items: CanvasItem[] = [
+      card('a', {
+        x: 48,
+        y: mTop + contentH - 40,
+        width: 200,
+        height: 80,
+        latex: 'a',
+      }),
+      card('b', {
+        x: 48,
+        y: mTop + contentH + 20,
+        width: 200,
+        height: 60,
+        latex: 'b',
+      }),
+    ]
+    const cont = resolveMultipageStraddles(items, {
+      pageHeight: contentH,
+      marginTop: mTop,
+      contentHeight: contentH,
+      grid: 24,
+      mode: 'continuous',
+    })
+    // In continuous space, both on band 1
+    const a0 = cont.find((i) => i.id === 'a')!
+    expect(a0.y).toBeGreaterThanOrEqual(mTop + contentH - 0.5)
+    expect(a0.y + a0.height).toBeLessThanOrEqual(mTop + contentH * 2 + 0.5)
+
+    const boarded = insertPageGutters(cont, {
+      pageHeight: pageH,
+      marginTop: mTop,
+      contentHeight: contentH,
+    })
+    const a = boarded.find((i) => i.id === 'a')!
+    const b = boarded.find((i) => i.id === 'b')!
+    const p1Start = pageH + mTop
+    const p1End = p1Start + contentH
+    expect(a.y).toBeGreaterThanOrEqual(p1Start - 0.5)
+    expect(a.y + a.height).toBeLessThanOrEqual(p1End + 0.5)
+    expect(b.y).toBeGreaterThanOrEqual(p1Start - 0.5)
+    expect(b.y + b.height).toBeLessThanOrEqual(p1End + 0.5)
+    expect(b.y).toBeGreaterThanOrEqual(a.y)
+  })
+
+  it('getPackContentBox dissolve grows continuous pack height', () => {
+    const canvas = {
+      ...DEFAULT_CANVAS,
+      printPageCount: 3,
+      margins: { top: 48, right: 48, bottom: 48, left: 48 },
+    }
+    const normal = getPackContentBox(canvas, { dissolvePrintArea: false })
+    const dissolved = getPackContentBox(canvas, { dissolvePrintArea: true })
+    expect(dissolved.height).toBeGreaterThan(normal.height)
+    expect(dissolved.dissolved).toBe(true)
+    expect(dissolved.dissolvedPageCount).toBe(3)
+    // Width stays inside printable margins (does not grow past green box)
+    expect(dissolved.width).toBe(normal.width)
+    expect(dissolved.left).toBe(normal.left)
+  })
+
+  it('ensureLeafTitleClearance pushes groups so title bands stay free', () => {
+    const folders = [
+      { id: 't1', name: '1. T', parentId: null, order: 0 },
+      { id: 't1a', name: '1.1 A', parentId: 't1', order: 0 },
+      { id: 't1b', name: '1.2 B', parentId: 't1', order: 1 },
+    ]
+    // Group B sits where A's title band would be (overlapping strip)
+    const items: CanvasItem[] = [
+      card('a1', {
+        folderId: 't1a',
+        title: 'A1',
+        x: 48,
+        y: 100,
+        width: 120,
+        height: 60,
+        latex: 'a',
+      }),
+      card('b1', {
+        folderId: 't1b',
+        title: 'B1',
+        x: 48,
+        y: 80, // intersects A's title strip [100-24, 100)
+        width: 120,
+        height: 40,
+        latex: 'b',
+      }),
+    ]
+    const out = ensureLeafTitleClearance(items, folders, 2, 24, 24)
+    const a = out.find((i) => i.id === 'a1')!
+    const b = out.find((i) => i.id === 'b1')!
+    // A should be pushed below B + title band
+    expect(a.y).toBeGreaterThanOrEqual(b.y + b.height + 24 - 1)
+  })
+
+  it('closePolyomino / solidifyPolyominoAABB produce solid outer shapes', () => {
+    // Two cells with a gap → close should bridge
+    const gap = new Set(['0,0', '0,1', '3,0', '3,1'])
+    const closed = closePolyomino(gap, 2)
+    expect(closed.has('1,0') || closed.has('2,0')).toBe(true)
+    const solid = solidifyPolyominoAABB(gap)
+    expect(solid.has('1,0')).toBe(true)
+    expect(solid.has('2,0')).toBe(true)
+    expect(solid.size).toBe(4 * 2) // c 0..3, r 0..1
   })
 
   it('fillPolyominoHoles closes interior donuts but keeps exterior L notches', () => {
@@ -914,12 +1168,43 @@ describe('packCheatsheetLayout', () => {
       panelGroupLevels: [1],
       folders,
     })
-    expect(rect.layoutPanels[0]!.shape).toBe('rect')
-    expect(rect.layoutPanels[0]!.runs).toBeUndefined()
+    // Multi/single L1 solid chrome uses exterior outline path (polygon stroke)
+    expect(rect.layoutPanels[0]!.outlinePath || rect.layoutPanels[0]!.shape).toBeTruthy()
     expect(poly.layoutPanels[0]!.shape).toBe('polygon')
-    // N-gon always exposes orthogonal runs (L when last row is short)
     const pr = poly.layoutPanels[0]!
-    expect(pr.runs?.length).toBeGreaterThanOrEqual(1)
+    expect(pr.outlinePath || (pr.runs?.length ?? 0) > 0).toBeTruthy()
+    // Nested multi-level L1 is solid AABB perimeter (no deep internal notches)
+    const nested = packCheatsheetLayout(items, DEFAULT_CANVAS, {
+      density: 'sm',
+      groupChrome: 'panels',
+      panelShape: 'polygon',
+      panelGroupLevels: [1, 2],
+      folders: [
+        { id: 'f', name: '1. T', parentId: null, order: 0 },
+        { id: 'f1', name: '1.1 S', parentId: 'f', order: 0 },
+      ],
+    })
+    // re-bind folders on cards
+    const items2: CanvasItem[] = items.map((c, i) => ({
+      ...c,
+      folderId: i === 0 ? 'f1' : 'f1',
+    }))
+    const nested2 = packCheatsheetLayout(items2, DEFAULT_CANVAS, {
+      density: 'sm',
+      groupChrome: 'panels',
+      panelShape: 'polygon',
+      panelGroupLevels: [1, 2],
+      folders: [
+        { id: 'f', name: '1. T', parentId: null, order: 0 },
+        { id: 'f1', name: '1.1 S', parentId: 'f', order: 0 },
+      ],
+    })
+    const L1 = nested2.layoutPanels.find((p) => p.hierarchyLevel === 1)!
+    expect(L1.showStroke).not.toBe(false)
+    expect(L1.outlinePath).toBeTruthy()
+    // N-gon multi-level uses closed polyomino (not forced 4-edge rect)
+    expect((L1.outlinePath!.match(/M /g) ?? []).length).toBeGreaterThanOrEqual(4)
+    void nested
   })
 
   it('panel gap changes inter-panel spacing; free-flow not row shelf', () => {

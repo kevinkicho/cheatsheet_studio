@@ -322,13 +322,26 @@ function ExportLayoutPanel({
       ? panel.runs
       : [{ x: panel.x, y: panel.y, width: panel.width, height: panel.height }]
   const useOutline = isPoly && Boolean(panel.outlinePath)
+  const drawStroke = panel.showStroke !== false
   const ox = pageOrigin.x
   const oy = pageOrigin.y
+  const level = panel.hierarchyLevel ?? 1
+
+  // Title-chip-only panels (L2 / merged siblings): nothing to paint here
+  if (!drawStroke) {
+    return (
+      <div
+        data-export-layout-panel={panel.id}
+        data-layout-panel-stroke="0"
+      />
+    )
+  }
 
   return (
     <div
       data-export-layout-panel={panel.id}
       data-layout-panel-shape={panel.shape ?? 'rect'}
+      data-layout-panel-stroke="1"
     >
       {useOutline ? (
         <>
@@ -369,7 +382,7 @@ function ExportLayoutPanel({
               d={panel.outlinePath}
               fill="transparent"
               stroke={accent}
-              strokeWidth={1.5}
+              strokeWidth={2}
               strokeLinejoin="miter"
               strokeLinecap="square"
               vectorEffect="non-scaling-stroke"
@@ -388,7 +401,7 @@ function ExportLayoutPanel({
               height: r.height,
               boxSizing: 'border-box',
               border: `1.5px solid ${accent}`,
-              borderRadius: 6,
+              borderRadius: level <= 1 ? 6 : 5,
               background: fill,
               zIndex: 0,
               pointerEvents: 'none',
@@ -412,10 +425,15 @@ function ExportLayoutPanelTitle({
   if (panel.showTitle === false || !panel.title) return null
   const accent = panel.accent ?? 'rgba(99, 102, 241, 0.55)'
   const level = panel.hierarchyLevel ?? 1
+  const isOuter = panel.showStroke !== false && level <= 1
+  // Export title layer is per-panel; L2 is inset under typical L1 chip height
   const box = {
-    x: panel.x - pageOrigin.x,
-    y: panel.y - pageOrigin.y,
-    maxW: Math.max(48, panel.width - 8),
+    x: panel.x - pageOrigin.x + (isOuter ? 6 : 8),
+    y:
+      panel.y -
+      pageOrigin.y +
+      (isOuter ? 3 : Math.max(2, level > 1 ? 4 : 2)),
+    maxW: Math.max(48, panel.width - (isOuter ? 14 : 16)),
   }
   return (
     <div
@@ -423,24 +441,25 @@ function ExportLayoutPanelTitle({
       data-layout-panel-title-level={level}
       style={{
         position: 'absolute',
-        left: box.x + 4,
-        top: box.y + 3,
+        left: box.x,
+        top: box.y,
         maxWidth: box.maxW,
-        padding: level <= 1 ? '3px 8px' : '1px 5px',
-        fontSize: level <= 1 ? 10 : 8,
-        fontWeight: level <= 1 ? 700 : 600,
+        padding: isOuter ? '2px 7px' : '1px 5px',
+        fontSize: isOuter ? 10 : 8,
+        fontWeight: isOuter ? 700 : 600,
         letterSpacing: '0.04em',
         textTransform: 'uppercase',
         color: '#e0e7ff',
-        lineHeight: 1.25,
+        lineHeight: 1.2,
         whiteSpace: 'nowrap',
         overflow: 'hidden',
         textOverflow: 'ellipsis',
-        background: 'rgba(15, 17, 21, 0.94)',
+        background: 'rgba(15, 17, 21, 0.96)',
         borderRadius: 3,
-        border: `1px solid ${accent}`,
-        // L1 above L2 so parent header stays readable when nested
-        zIndex: level <= 1 ? 60 : 50 + level,
+        border: isOuter
+          ? `1px solid ${accent}`
+          : `1px solid ${accent.replace(/[\d.]+\s*\)$/, '0.28)')}`,
+        zIndex: isOuter ? 60 : 50 + level,
         pointerEvents: 'none',
       }}
     >

@@ -98,6 +98,8 @@ export function ExportDialog({
     useState<ExportPackageMode>('combined')
   /** Download basename without extension (browser may append “ (n)” if exists). */
   const [fileName, setFileName] = useState(title)
+  /** From Sheet properties — continuous multipage band. */
+  const dissolvePrintArea = canvas.dissolvePrintArea === true
 
   // Reset selection + defaults when dialog opens or page count changes
   useEffect(() => {
@@ -109,8 +111,16 @@ export function ExportDialog({
     setBackgroundMode('transparent')
     setPageArrangement('vertical')
     setPackageMode('combined')
-    setFileName(buildExportFileNameStem(title || 'cheatsheet', lastAutoLayout))
-  }, [open, pages, title, lastAutoLayout])
+    setFileName(
+      buildExportFileNameStem(title || 'cheatsheet', {
+        ...(lastAutoLayout ?? {
+          density: 'sm',
+          groupChrome: 'labels',
+        }),
+        dissolvePrintArea: canvas.dissolvePrintArea === true,
+      }),
+    )
+  }, [open, pages, title, lastAutoLayout, canvas.dissolvePrintArea])
 
   // SVG opens in browsers as white paper if transparent — prefer board color
   useEffect(() => {
@@ -242,6 +252,7 @@ export function ExportDialog({
         backgroundMode,
         pageArrangement,
         packageMode,
+        dissolvePrintArea: multiPage && dissolvePrintArea,
         fileName: fileName.trim() || title || 'cheatsheet',
       },
       onProgress,
@@ -694,6 +705,13 @@ export function ExportDialog({
                   })}
                 </div>
               </fieldset>
+
+              {multiPage && dissolvePrintArea && (
+                <p className="rounded-md border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-2 text-[10px] leading-snug text-emerald-100/90">
+                  Dissolve print pages is on (Sheet properties) — combined export
+                  collapses inter-page margin gutters into one continuous strip.
+                </p>
+              )}
 
               {/* Page arrangement — only when multi-page + combined raster/preview */}
               {multiPage && packageMode === 'combined' && (

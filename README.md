@@ -106,9 +106,11 @@ Also: Process · Vector · Agent SDK under `docs/` (`packages/cheatsheet-sdk` CL
   - Each topic is a **natural tight block** of cards; blocks tile densely
   - **Group chrome:** Topic labels · **Panels** · both · none
   - **Panel packing:** **Rectangle** (full AABB) vs **N-gon** (chrome follows card runs — L/stepped when the last row is short)
-  - **Panel gap** (0–48px) between frames; **Panel group levels** multi-select **1 / 2 / 3** for nested hierarchy (e.g. L1 wraps L2)
+  - **Panel gap** (0–48px) between frames; **Panel group levels** multi-select **1 / 2 / 3** for nested hierarchy (e.g. L1 wraps L2; only L1 strokes — inner levels are title chips; adjacent L1s merge into one outline)
+  - **Dense free-flow** packing (maxrects + contact gravity) for topic cards and outer boxes — better right-side fill than row shelves
+  - **Multipage seams:** cards that would straddle a page break are pushed to the next content band
   - **Group sort:** none (densest) · A→Z / Z→A soft reading flow (earlier → top-left, later → bottom-right)
-  - Click a panel (Select tool) → left **Panel** properties (title, sort cards inside panel)
+  - Click a panel (Select tool) → drag to move · left **Panel** properties (title, sort cards, auto-layout inside)
   - Equations/tables **natural** paint; process/figures **fill**; density xs→lg (toolbar default **Small**)
 - When **print frame is on**, board scroll size is limited to the print layout (+ pad); freeform size returns when the frame is off  
 - **Library drag → canvas:** drop uses the **live drag-preview size and position** (WYSIWYG; no second autoFit jump after paste)  

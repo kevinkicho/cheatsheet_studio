@@ -75,6 +75,12 @@ export type SheetExportOptions = {
    * Browser still appends “ (n)” if the same name already exists in Downloads.
    */
   fileName?: string
+  /**
+   * When true, combined multi-page export stacks pages with inter-page margin
+   * gutters collapsed (continuous printable strip). Matches Auto-layout
+   * “Dissolve print pages” max-space packing.
+   */
+  dissolvePrintArea?: boolean
 }
 
 /** Normalize and clamp selected page indices against total page count. */
@@ -113,9 +119,13 @@ export async function runSheetExport(
   const backgroundMode = options.backgroundMode ?? 'transparent'
   const packageMode = options.packageMode ?? 'combined'
   const pageArrangement = options.pageArrangement ?? 'vertical'
+  const dissolvePrintArea = options.dissolvePrintArea === true
   // Custom stem or sheet title (sanitizeExportFilename applied at write)
   const downloadTitle =
     (options.fileName && options.fileName.trim()) || title || 'cheatsheet'
+  const dissolveGutterPx = dissolvePrintArea
+    ? (canvas.margins?.top ?? 48) + (canvas.margins?.bottom ?? 48)
+    : 0
 
   const allRects = getExportPageRects(canvas)
   if (allRects.length === 0) {
@@ -237,6 +247,7 @@ export async function runSheetExport(
         packageMode,
         pageArrangement,
         onProgress,
+        dissolveGutterPx,
       )
     } else {
       await writeImages(
@@ -445,6 +456,7 @@ async function writeSvg(
   packageMode: ExportPackageMode,
   pageArrangement: ExportPageArrangement,
   onProgress?: (p: SheetExportProgress) => void,
+  dissolveGutterPx = 0,
 ) {
   const bg = backgroundColor
   const pageSvgs: string[] = []
@@ -483,6 +495,7 @@ async function writeSvg(
       arrangement: pageArrangement === 'asSheet' ? 'asSheet' : 'vertical',
       origins: jobs.map((j) => ({ x: j.rect.x, y: j.rect.y })),
       backgroundColor: bg,
+      dissolveGutterPx,
     })
     const filename = svgFilename(title)
     downloadSvgString(combined, filename)

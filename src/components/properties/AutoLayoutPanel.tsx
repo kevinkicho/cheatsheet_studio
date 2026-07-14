@@ -106,6 +106,8 @@ export function AutoLayoutPanel() {
     groupSort,
     fitPrint,
     multiPage: true,
+    // Sheet properties → dissolvePrintArea
+    dissolvePrintArea: canvas.dissolvePrintArea === true,
     groupByFolder: true,
     folders: folders?.map((f) => ({
       id: f.id,
@@ -432,6 +434,12 @@ export function AutoLayoutPanel() {
         />
         Fit into print box when single-page (shrink if needed)
       </label>
+      {canvas.dissolvePrintArea ? (
+        <p className="text-[10px] leading-snug text-emerald-500/90">
+          Dissolve print pages is on (Sheet properties) — pack uses continuous
+          max space.
+        </p>
+      ) : null}
       <p className="text-[9px] leading-snug text-zinc-600">
         Always <span className="text-zinc-400">free-flow</span>.
         <span className="text-zinc-400"> Levels</span> multi-select for nested

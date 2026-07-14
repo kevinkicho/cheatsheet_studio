@@ -145,12 +145,24 @@ export function MainCanvas() {
   )
   const printPageCount = clampPrintPageCount(canvas.printPageCount ?? 1)
   const printPageLayout = normalizePrintPageLayout(canvas.printPageLayout)
-  const printPageOrigins = computePrintPageOrigins(
-    printPage,
-    printPageCount,
-    printPageLayout,
-    canvas.printPagePositions,
-  )
+  const dissolvePrintArea = canvas.dissolvePrintArea === true
+  // Dissolved vertical/horizontal stacks tile with no stack gap so the board
+  // matches continuous pack coordinates (max printable band).
+  const printPageOrigins =
+    dissolvePrintArea &&
+    printPageCount > 1 &&
+    (printPageLayout === 'vertical' || printPageLayout === 'horizontal')
+      ? Array.from({ length: printPageCount }, (_, i) =>
+          printPageLayout === 'horizontal'
+            ? { x: i * printPage.width, y: 0 }
+            : { x: 0, y: i * printPage.height },
+        )
+      : computePrintPageOrigins(
+          printPage,
+          printPageCount,
+          printPageLayout,
+          canvas.printPagePositions,
+        )
   const setPrintPagePosition = useCanvasStore((s) => s.setPrintPagePosition)
   const gridSpacing = Math.max(4, Math.min(128, gridSpacingRaw ?? 24))
   // Stored CSS opacity 0–0.3; slider shows 0–100% of that range.
@@ -801,108 +813,181 @@ export function MainCanvas() {
               board look softer than Full page / Printable for the same α.
             */}
             {showPrint &&
-              printPageOrigins.map((origin, pageIndex) => {
-                const left = origin.x
-                const top = origin.y
-                const contentW = Math.max(
-                  0,
-                  printPage.width - margins.left - margins.right,
-                )
-                const contentH = Math.max(
-                  0,
-                  printPage.height - margins.top - margins.bottom,
-                )
-                const isDragging = draggingPageIndex === pageIndex
-                const freeMode = printPageLayout === 'free'
-                return (
-                  <div key={`print-page-chrome-${pageIndex}`}>
-                    <div
-                      className={`pointer-events-none absolute z-[1] box-border border-2 border-dashed ${
-                        isDragging
-                          ? 'border-indigo-400/80'
-                          : 'border-indigo-400/50'
-                      }`}
-                      style={{
-                        left,
-                        top,
-                        width: printPage.width,
-                        height: printPage.height,
-                        // Keep fill very light so it never “eats” grid contrast
-                        background: isDragging
-                          ? 'rgba(99, 102, 241, 0.08)'
-                          : 'transparent',
-                      }}
-                    />
-                    <div
-                      className="pointer-events-none absolute z-[1] box-border border border-dashed border-emerald-400/55"
-                      style={{
-                        left: left + margins.left,
-                        top: top + margins.top,
-                        width: contentW,
-                        height: contentH,
-                      }}
-                    />
-                    {/* Label + free-mode drag handle */}
-                    <div
-                      data-print-page-handle={freeMode ? 'true' : undefined}
-                      className={`absolute z-[2] flex items-center gap-1 rounded bg-zinc-950/90 px-1.5 py-0.5 text-[10px] font-medium text-zinc-300 ring-1 ring-zinc-600/80 ${
-                        freeMode
-                          ? 'pointer-events-auto cursor-grab select-none active:cursor-grabbing hover:ring-indigo-400/60'
-                          : 'pointer-events-none'
-                      } ${isDragging ? 'ring-indigo-400/80' : ''}`}
-                      style={{ left: left + 8, top: top + 8 }}
-                      title={
-                        freeMode
-                          ? 'Drag to place this page frame'
-                          : undefined
-                      }
-                      onPointerDown={
-                        freeMode
-                          ? (e) => onPrintPageHandlePointerDown(e, pageIndex)
-                          : undefined
-                      }
-                      onPointerMove={
-                        freeMode ? onPrintPageHandlePointerMove : undefined
-                      }
-                      onPointerUp={freeMode ? endPrintPageDrag : undefined}
-                      onPointerCancel={freeMode ? endPrintPageDrag : undefined}
-                    >
-                      {freeMode && (
-                        <Move className="h-3 w-3 shrink-0 text-indigo-300" />
-                      )}
-                      {printPageCount > 1 && (
-                        <span className="mr-0.5 text-indigo-300">
-                          Page {pageIndex + 1}/{printPageCount}
+              (() => {
+                // Dissolved vertical/horizontal: one continuous frame, no inter-page borders
+                const stackDissolve =
+                  dissolvePrintArea &&
+                  printPageCount > 1 &&
+                  (printPageLayout === 'vertical' ||
+                    printPageLayout === 'horizontal')
+                if (stackDissolve) {
+                  const origin0 = printPageOrigins[0] ?? { x: 0, y: 0 }
+                  const vertical = printPageLayout === 'vertical'
+                  const outerW = vertical
+                    ? printPage.width
+                    : printPageCount * printPage.width
+                  const outerH = vertical
+                    ? printPageCount * printPage.height
+                    : printPage.height
+                  const contentW = Math.max(
+                    0,
+                    outerW - margins.left - margins.right,
+                  )
+                  const contentH = Math.max(
+                    0,
+                    outerH - margins.top - margins.bottom,
+                  )
+                  return (
+                    <div key="print-dissolved-chrome">
+                      <div
+                        className="pointer-events-none absolute z-[1] box-border border-2 border-dashed border-indigo-400/50"
+                        data-testid="print-dissolved-outer"
+                        style={{
+                          left: origin0.x,
+                          top: origin0.y,
+                          width: outerW,
+                          height: outerH,
+                        }}
+                      />
+                      <div
+                        className="pointer-events-none absolute z-[1] box-border border border-dashed border-emerald-400/55"
+                        data-testid="print-dissolved-content"
+                        style={{
+                          left: origin0.x + margins.left,
+                          top: origin0.y + margins.top,
+                          width: contentW,
+                          height: contentH,
+                        }}
+                      />
+                      <div
+                        className="pointer-events-none absolute z-[2] flex items-center gap-1 rounded bg-zinc-950/90 px-1.5 py-0.5 text-[10px] font-medium text-zinc-300 ring-1 ring-zinc-600/80"
+                        style={{
+                          left: origin0.x + 8,
+                          top: origin0.y + 8,
+                        }}
+                      >
+                        <span className="mr-0.5 text-emerald-300">
+                          Dissolved · {printPageCount} pages
                         </span>
-                      )}
-                      {formatPageSizeLabel(
-                        canvas.printSizeId ?? 'letter',
-                        canvas.orientation ?? 'portrait',
-                      )}{' '}
-                      · {printPage.width}×{printPage.height}
-                      <span className="text-zinc-500">
-                        {' '}
-                        · m {margins.top}/{margins.right}/{margins.bottom}/
-                        {margins.left}
-                      </span>
+                        {formatPageSizeLabel(
+                          canvas.printSizeId ?? 'letter',
+                          canvas.orientation ?? 'portrait',
+                        )}{' '}
+                        · {outerW}×{outerH}
+                        <span className="text-zinc-500">
+                          {' '}
+                          · m {margins.top}/{margins.right}/{margins.bottom}/
+                          {margins.left}
+                        </span>
+                      </div>
                     </div>
-                    {printPageCount > 1 &&
-                      printPageLayout === 'vertical' &&
-                      pageIndex < printPageCount - 1 && (
-                        <div
-                          className="pointer-events-none absolute z-[1] border-t border-dashed border-zinc-600/40"
-                          style={{
-                            left,
-                            top: top + printPage.height,
-                            width: printPage.width,
-                            height: PRINT_PAGE_STACK_GAP,
-                          }}
-                          aria-hidden
-                        />
-                      )}
-                  </div>
-                )
-              })}
+                  )
+                }
+
+                return printPageOrigins.map((origin, pageIndex) => {
+                  const left = origin.x
+                  const top = origin.y
+                  const contentW = Math.max(
+                    0,
+                    printPage.width - margins.left - margins.right,
+                  )
+                  const contentH = Math.max(
+                    0,
+                    printPage.height - margins.top - margins.bottom,
+                  )
+                  const isDragging = draggingPageIndex === pageIndex
+                  const freeMode = printPageLayout === 'free'
+                  return (
+                    <div key={`print-page-chrome-${pageIndex}`}>
+                      <div
+                        className={`pointer-events-none absolute z-[1] box-border border-2 border-dashed ${
+                          isDragging
+                            ? 'border-indigo-400/80'
+                            : 'border-indigo-400/50'
+                        }`}
+                        style={{
+                          left,
+                          top,
+                          width: printPage.width,
+                          height: printPage.height,
+                          background: isDragging
+                            ? 'rgba(99, 102, 241, 0.08)'
+                            : 'transparent',
+                        }}
+                      />
+                      <div
+                        className="pointer-events-none absolute z-[1] box-border border border-dashed border-emerald-400/55"
+                        style={{
+                          left: left + margins.left,
+                          top: top + margins.top,
+                          width: contentW,
+                          height: contentH,
+                        }}
+                      />
+                      <div
+                        data-print-page-handle={freeMode ? 'true' : undefined}
+                        className={`absolute z-[2] flex items-center gap-1 rounded bg-zinc-950/90 px-1.5 py-0.5 text-[10px] font-medium text-zinc-300 ring-1 ring-zinc-600/80 ${
+                          freeMode
+                            ? 'pointer-events-auto cursor-grab select-none active:cursor-grabbing hover:ring-indigo-400/60'
+                            : 'pointer-events-none'
+                        } ${isDragging ? 'ring-indigo-400/80' : ''}`}
+                        style={{ left: left + 8, top: top + 8 }}
+                        title={
+                          freeMode
+                            ? 'Drag to place this page frame'
+                            : undefined
+                        }
+                        onPointerDown={
+                          freeMode
+                            ? (e) => onPrintPageHandlePointerDown(e, pageIndex)
+                            : undefined
+                        }
+                        onPointerMove={
+                          freeMode ? onPrintPageHandlePointerMove : undefined
+                        }
+                        onPointerUp={freeMode ? endPrintPageDrag : undefined}
+                        onPointerCancel={
+                          freeMode ? endPrintPageDrag : undefined
+                        }
+                      >
+                        {freeMode && (
+                          <Move className="h-3 w-3 shrink-0 text-indigo-300" />
+                        )}
+                        {printPageCount > 1 && (
+                          <span className="mr-0.5 text-indigo-300">
+                            Page {pageIndex + 1}/{printPageCount}
+                          </span>
+                        )}
+                        {formatPageSizeLabel(
+                          canvas.printSizeId ?? 'letter',
+                          canvas.orientation ?? 'portrait',
+                        )}{' '}
+                        · {printPage.width}×{printPage.height}
+                        <span className="text-zinc-500">
+                          {' '}
+                          · m {margins.top}/{margins.right}/{margins.bottom}/
+                          {margins.left}
+                        </span>
+                      </div>
+                      {printPageCount > 1 &&
+                        printPageLayout === 'vertical' &&
+                        !dissolvePrintArea &&
+                        pageIndex < printPageCount - 1 && (
+                          <div
+                            className="pointer-events-none absolute z-[1] border-t border-dashed border-zinc-600/40"
+                            style={{
+                              left,
+                              top: top + printPage.height,
+                              width: printPage.width,
+                              height: PRINT_PAGE_STACK_GAP,
+                            }}
+                            aria-hidden
+                          />
+                        )}
+                    </div>
+                  )
+                })
+              })()}
 
             {/*
               Grids AFTER page chrome. Every extent uses the same tile bitmap
@@ -921,26 +1006,70 @@ export function MainCanvas() {
               />
             )}
             {usePerPageGrid &&
-              printPageOrigins.map((origin, pageIndex) => {
-                const rect = resolvePageGridRect(
-                  gridExtent,
-                  origin,
-                  printPage,
-                  margins,
-                )
-                if (!rect) return null
-                return (
-                  <CanvasGridLayer
-                    key={`grid-${gridExtent}-${pageIndex}-${gridSpacing}-${gridOpacity}`}
-                    left={rect.left}
-                    top={rect.top}
-                    width={rect.width}
-                    height={rect.height}
-                    spacing={gridSpacing}
-                    opacity={gridOpacity}
-                  />
-                )
-              })}
+              (dissolvePrintArea &&
+              printPageCount > 1 &&
+              (printPageLayout === 'vertical' ||
+                printPageLayout === 'horizontal') ? (
+                // One continuous grid over the dissolved printable band
+                <CanvasGridLayer
+                  key={`grid-dissolved-${gridExtent}-${gridSpacing}-${gridOpacity}`}
+                  left={
+                    gridExtent === 'printable'
+                      ? (printPageOrigins[0]?.x ?? 0) + margins.left
+                      : (printPageOrigins[0]?.x ?? 0)
+                  }
+                  top={
+                    gridExtent === 'printable'
+                      ? (printPageOrigins[0]?.y ?? 0) + margins.top
+                      : (printPageOrigins[0]?.y ?? 0)
+                  }
+                  width={
+                    printPageLayout === 'horizontal'
+                      ? printPageCount * printPage.width -
+                        (gridExtent === 'printable'
+                          ? margins.left + margins.right
+                          : 0)
+                      : printPage.width -
+                        (gridExtent === 'printable'
+                          ? margins.left + margins.right
+                          : 0)
+                  }
+                  height={
+                    printPageLayout === 'vertical'
+                      ? printPageCount * printPage.height -
+                        (gridExtent === 'printable'
+                          ? margins.top + margins.bottom
+                          : 0)
+                      : printPage.height -
+                        (gridExtent === 'printable'
+                          ? margins.top + margins.bottom
+                          : 0)
+                  }
+                  spacing={gridSpacing}
+                  opacity={gridOpacity}
+                />
+              ) : (
+                printPageOrigins.map((origin, pageIndex) => {
+                  const rect = resolvePageGridRect(
+                    gridExtent,
+                    origin,
+                    printPage,
+                    margins,
+                  )
+                  if (!rect) return null
+                  return (
+                    <CanvasGridLayer
+                      key={`grid-${gridExtent}-${pageIndex}-${gridSpacing}-${gridOpacity}`}
+                      left={rect.left}
+                      top={rect.top}
+                      width={rect.width}
+                      height={rect.height}
+                      spacing={gridSpacing}
+                      opacity={gridOpacity}
+                    />
+                  )
+                })
+              ))}
 
             {items.length === 0 && (
               <div className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-center">

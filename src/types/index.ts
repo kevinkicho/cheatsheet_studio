@@ -304,6 +304,12 @@ export interface SheetCanvas {
   /** Content-safe margins inside each print page. */
   margins: PrintMargins
   /**
+   * When true, Auto-layout and combined export treat contiguous print pages as
+   * one continuous printable band (inter-page margin gutters freed so pack /
+   * stitch space grows). Set from Sheet properties.
+   */
+  dissolvePrintArea?: boolean
+  /**
    * Visual group frames from Auto-layout “panels” mode (topic/folder clusters).
    * Drawn under cards; not selectable content. Cleared/replaced on each pack.
    */
@@ -350,6 +356,13 @@ export interface LayoutPanel {
    * do not stroke each run separately.
    */
   outlinePath?: string
+  /**
+   * When false, paint fill/title only (no border/outline stroke).
+   * Nested multi-level panels set this false on inner levels so only the
+   * outer (L1) solid frame strokes — avoids double borders.
+   * Default true.
+   */
+  showStroke?: boolean
   /** @deprecated Optional legacy convex vertices; prefer `runs` / `outlinePath`. */
   points?: Array<{ x: number; y: number }>
   /** Canvas item ids that belong to this panel (for re-sort / edit). */
@@ -427,6 +440,7 @@ export const DEFAULT_CANVAS: SheetCanvas = {
   printPageLayout: DEFAULT_PRINT_PAGE_LAYOUT,
   printPagePositions: [],
   margins: { ...DEFAULT_MARGINS },
+  dissolvePrintArea: false,
 }
 
 export const DEFAULT_BORDER_COLOR = 'rgba(99, 102, 241, 0.55)'

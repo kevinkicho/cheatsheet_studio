@@ -125,6 +125,28 @@ export function PropertiesPanel() {
                 aria-label="Sheet background"
               />
             </Field>
+            <label className="flex cursor-pointer items-start gap-2 text-[11px] text-zinc-400">
+              <input
+                type="checkbox"
+                className="mt-0.5 rounded border-zinc-600"
+                data-testid="sheet-dissolve-print-area"
+                checked={canvas.dissolvePrintArea === true}
+                onChange={(e) =>
+                  setCanvas({ dissolvePrintArea: e.target.checked })
+                }
+              />
+              <span>
+                <span className="font-medium text-zinc-300">
+                  Dissolve print pages
+                </span>
+                <span className="mt-0.5 block text-[10px] leading-snug text-zinc-500">
+                  Merge contiguous pages into one continuous printable band
+                  (no borders between pages; free inter-page gutters for height).
+                  Width stays inside the green print margins. Auto-layout and
+                  export both use this.
+                </span>
+              </span>
+            </label>
           </div>
         )}
 
