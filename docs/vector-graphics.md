@@ -132,5 +132,30 @@ casually — it is shared by equations, tables, figures, and library tiles.
 ## Export
 
 On-canvas and print layout keep **vector sources** (KaTeX, SVG, processFlow /
-Mermaid). Export to PDF/PNG/JPEG samples that high-quality layout at capture
-time for the target file format.
+Mermaid). Raster export (PDF/PNG/JPEG) captures that layout with html2canvas-pro
+via the shared `CanvasCardBody` (same paint as the export preview).
+
+### Studio SVG export
+
+Studio **Export → SVG** is a browser path (`src/lib/exportSvg.ts` +
+`runSheetExport`), not the CLI Playwright print path.
+
+| Concern | Approach |
+|---------|----------|
+| **Layout** | Same export DOM as PDF preview (`PdfExportPages`) — WYSIWYG positions |
+| **Equations / tables** | Stay in the `foreignObject` HTML tree as KaTeX / HTML (**natural size**, `contentFill: false`) so type stays sharp and is not letterboxed |
+| **Process / mind maps** | Mermaid htmlLabels use nested `foreignObject`s that break nested SVG/`file://`. Export **flattens FO labels → SVG text**, then embeds a high-contrast **PNG** (or SVG data URL for pure process-flow snapshots) inside each card as `<img>` |
+| **Contrast** | Capture palette forces readable node fills/strokes/text on dark cards |
+| **Fonts** | Collected app CSS drops local `/node_modules/katex` `@font-face` (404 on `file://`); injects **KaTeX CDN** faces |
+| **Page background** | Defaults to board dark `#0f1115` so dark cards are not on white paper |
+
+**Why not pure nested Mermaid SVG?** Mermaid’s default `htmlLabels` embeds HTML
+inside SVG. Nesting that inside our page-level `foreignObject` is fragile in
+Chrome `file://` viewers. Rasterizing only the diagram hosts (after FO flatten)
+is the reliable path.
+
+**Quality tips:** run **Auto-layout** (or pack) before export so process cards
+have enough size; open SVG in a browser with network for KaTeX CDN fonts once.
+
+Implementation: `pageElementToSvgString`, `captureDiagramHostV2`,
+`bakeDiagramSvgForCapture`, `normalizeItemForExport`.

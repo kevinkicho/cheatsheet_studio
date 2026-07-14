@@ -220,10 +220,17 @@ export function CanvasItemView({
       )
       if (contentW < 2 && contentH < 2) return
 
-      // Snug: natural content + title chrome only (minimal slack).
+      // Title is ellipsis-truncated if card is only as wide as a short formula
+      // (e.g. Continuous Compounding vs FV=PV e^{rt}). Floor width by title.
+      const tFont = style.titleFontSize ?? DEFAULT_TITLE_FONT_SIZE
+      const titleW = showTitle
+        ? Math.ceil((item.title ?? '').length * tFont * 0.58) + 12
+        : 0
+
+      // Snug: natural KaTeX/table + title chrome (minimal slack).
       const nextW = Math.min(
         MAX_AUTO_W,
-        Math.max(80, contentW + pad + AUTOFIT_SLACK_PX),
+        Math.max(80, Math.max(contentW, titleW) + pad + AUTOFIT_SLACK_PX),
       )
       const nextH = Math.min(
         MAX_AUTO_H,
@@ -236,18 +243,25 @@ export function CanvasItemView({
       const alreadySized =
         Math.abs(item.width - nextW) < 2 && Math.abs(item.height - nextH) < 2
 
-      if (sizeStable || alreadySized) {
+      // Card already matches measured content — freeze autoFit and allow fill
+      // so residual body slack can scale slightly (no flash: card already snug).
+      if (alreadySized) {
         lastFitRef.current = { w: nextW, h: nextH }
-        // Freeze autoFit once snug so contentFill may grow on user free-transform
-        if (!settled && alreadySized) {
+        if (!settled) {
           settled = true
-          updateItem(item.id, { autoFit: false })
+          updateItem(item.id, { autoFit: false, contentFill: true })
         }
         return
       }
 
+      // Measured size stable (or first good read) but card still wrong — resize.
+      // Old code returned early on sizeStable without resize, so pack heuristics
+      // left empty guts forever (Future Value / Continuous / CAPM).
       lastFitRef.current = { w: nextW, h: nextH }
       resizeItem(item.id, nextW, nextH)
+      if (sizeStable && !settled) {
+        // Next effect pass should hit alreadySized and freeze
+      }
     }
 
     measure()

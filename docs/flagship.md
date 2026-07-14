@@ -1,6 +1,6 @@
 # Flagship product path
 
-**Agent builds a midterm sheet → Import JSON → Export PDF**
+**Agent builds a midterm sheet → Import JSON → Auto-layout → Export PDF/SVG**
 
 This is the canonical story of CheatSheet Studio: headless authoring + polished UI + print delivery.
 
@@ -37,6 +37,10 @@ Output under `examples/agent-out/` (gitignored):
 | `*.pdf` / `*.png` / `*.jpg` | Shareable agent exports (not Studio WYSIWYG) |
 
 Flagships are built from **Studio blocks**: seed equations/tables/figures + curated process flowcharts and mind maps.
+
+In Studio after Import: run **Auto-layout** (toolbar grid or left panel) for the
+grid packer, then **Export → PDF** or **SVG** (WYSIWYG; SVG embeds process
+diagrams for offline viewing).
 
 ## 2. Import (Studio)
 

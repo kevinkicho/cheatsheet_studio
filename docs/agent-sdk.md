@@ -51,9 +51,9 @@ Then in the Studio (signed in):
 1. **Import JSON** (TopBar or My Sheets) — mode: **new** / **replace open** / **append cards**  
    Or **drop** the `.sheet.json` onto the window  
 2. Workspace opens; view **fits print frame**; toast confirms  
-3. Polish layout if needed → top bar **Export → PDF** (Studio WYSIWYG print pages)
+3. Polish layout if needed → top bar **Export → PDF** or **SVG** (Studio WYSIWYG print pages)
 
-**Export parity:** Studio PDF = canvas capture. CLI `export-pdf` = clean agent print layout (not pixel-identical).
+**Export parity:** Studio PDF/SVG = canvas capture host. CLI `export-pdf` = clean agent print layout (not pixel-identical). Studio SVG also embeds process diagrams for `file://` (see [vector-graphics.md](./vector-graphics.md#studio-svg-export)).
 
 ```bash
 npm run agent:flagship:validate   # pack + validate + summarize
@@ -66,9 +66,25 @@ npm run agent:flagship:validate   # pack + validate + summarize
 1. Agent writes `*.sheet.json` (or an outline + `compose`)  
 2. Human: **My Sheets → Import JSON** (or **drop** the file onto Workspace / My Sheets)  
 3. Workspace opens; sheet is created under the signed-in user (or local fallback)  
-4. Human polishes layout / process charts in the UI · **Export PDF** from the top bar  
+4. Human polishes layout / process charts in the UI · **Auto-layout** · **Export PDF/SVG**  
 
 This path never requires a service account in the browser.
+
+### Layout philosophy (grid pack)
+
+Studio Auto-layout (`packCheatsheetLayout` in `src/lib/autoOrganize.ts`) is
+**grid-first**. Agents should author content so packing works well:
+
+1. **Select & group** — use outline `folder` blocks (Layers folders) and section headings  
+2. **Ideal size** — each card gets a content-native aspect (`estimateIdealBlockSize`)  
+3. **Area budget** — shrink-only if total size exceeds ~90% of the printable page (never inflate past ideal — empty guts inside cards)  
+4. **Grid cells** — default **24px** unit; every edge snaps  
+5. **Pack** — section bands + occupancy grid (bottom-left)  
+6. **Readable floor** — title font ≥ **10px**, body ≥ **12px**  
+7. **Paint** — equations/tables natural (`contentFill` off); process/figures fill  
+
+CLI/SDK dense pack (`cheatsheet-pack`) is related but not identical code; prefer
+Studio Auto-layout after Import for final WYSIWYG. Density: `xs` | `sm` | `md` | `lg`.
 
 ### Outline compose (agents)
 

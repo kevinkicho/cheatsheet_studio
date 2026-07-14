@@ -830,48 +830,67 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           ...(s.canvas.margins ?? {}),
         },
       }
-      // Prefer denser cheatsheet pack when options provided (sidebar Auto layout).
-      // Toolbar button with no args keeps classic row flow for light tidying.
-      if (
-        opts &&
-        (opts.density ||
-          opts.columns ||
-          opts.gap != null ||
-          opts.mode ||
-          opts.fitPrint !== undefined)
-      ) {
-        const packed = packCheatsheetLayout(s.items, configSnapshot, {
-          density: opts.density ?? 'sm',
-          gap: opts.gap,
-          columns: opts.columns ?? 'auto',
-          mode: opts.mode ?? 'columns',
-          fitPrint: opts.fitPrint !== false,
-          multiPage: opts.multiPage,
-          groupByFolder: opts.groupByFolder !== false,
-          folders: s.folders?.map((f) => ({
-            id: f.id,
-            order: f.order,
-            name: f.name,
-          })),
-        })
+      const packOpts = {
+        density: opts?.density ?? 'sm',
+        gap: opts?.gap,
+        columns: opts?.columns ?? 'auto',
+        mode: opts?.mode ?? 'columns',
+        fitPrint: opts?.fitPrint !== false,
+        multiPage: opts?.multiPage,
+        groupByFolder: opts?.groupByFolder !== false,
+        folders: s.folders?.map((f) => ({
+          id: f.id,
+          order: f.order,
+          name: f.name,
+        })),
+      } satisfies CheatsheetLayoutOptions
+
+      try {
+        const packed = packCheatsheetLayout(s.items, configSnapshot, packOpts)
         const pageCount = Math.max(
           1,
           packed.printPageCount,
           s.canvas.printPageCount ?? 1,
         )
+        // Export-19 paint: equations natural (no fill zoom); process/figures fill.
+        const items = packed.items.map((it) => {
+          if (it.hidden) return it
+          const isProc =
+            it.type === 'process-chart' || Boolean(it.mermaidSource)
+          const isFig =
+            it.type === 'figure' ||
+            it.type === 'custom-image' ||
+            (Boolean(it.imageUrl) && !it.latex && !it.tableMarkdown)
+          return {
+            ...it,
+            autoFit: false,
+            contentFill: isProc || isFig,
+            contentFitKey: (it.contentFitKey ?? 0) + 1,
+          }
+        })
+        if (typeof console !== 'undefined') {
+          console.info(
+            '[autoOrganize] packed',
+            items.filter((i) => !i.hidden).length,
+            'cards',
+            packOpts.density,
+          )
+        }
         return {
-          items: packed.items,
+          items,
           dirty: true,
           canvas:
             pageCount !== (s.canvas.printPageCount ?? 1)
               ? { ...s.canvas, printPageCount: pageCount }
               : s.canvas,
         }
+      } catch (err) {
+        console.error('[autoOrganize] pack failed, falling back to row layout', err)
+        const next = layoutItemsInRows(s.items, configSnapshot, {
+          gap: opts?.gap,
+        })
+        return { items: next, dirty: true }
       }
-      const next = layoutItemsInRows(s.items, configSnapshot, {
-        gap: opts?.gap,
-      })
-      return { items: next, dirty: true }
     }),
 
   applyItemLayout: (placements) =>

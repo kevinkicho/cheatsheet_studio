@@ -54,6 +54,32 @@ export function itemIntersectsPage(
   )
 }
 
+/**
+ * Stabilize flags for export paint. Equations/tables: natural KaTeX size
+ * (contentFill false) — force-fill caused letterbox gutters vs export 19.
+ * Process/figures keep fill. Always clear autoFit (export has no measure loop).
+ */
+export function normalizeItemForExport(it: CanvasItem): CanvasItem {
+  const isEq =
+    it.type === 'equation' ||
+    it.type === 'custom-equation' ||
+    Boolean(it.latex)
+  const isTbl = it.type === 'table' || Boolean(it.tableMarkdown)
+  const isProc =
+    it.type === 'process-chart' || Boolean(it.mermaidSource || it.processFlow)
+  const isFig =
+    it.type === 'figure' ||
+    it.type === 'custom-image' ||
+    (Boolean(it.imageUrl) && !it.latex && !it.tableMarkdown)
+  if (isEq || isTbl) {
+    return { ...it, autoFit: false, contentFill: false }
+  }
+  if (isProc || isFig) {
+    return { ...it, autoFit: false, contentFill: true }
+  }
+  return { ...it, autoFit: false }
+}
+
 /** Items on a page with positions relative to the page origin. */
 export function itemsForPage(
   items: CanvasItem[],
@@ -61,11 +87,14 @@ export function itemsForPage(
 ): Array<CanvasItem & { exportX: number; exportY: number }> {
   return items
     .filter((it) => itemIntersectsPage(it, page))
-    .map((it) => ({
-      ...it,
-      exportX: it.x - page.x,
-      exportY: it.y - page.y,
-    }))
+    .map((it) => {
+      const n = normalizeItemForExport(it)
+      return {
+        ...n,
+        exportX: n.x - page.x,
+        exportY: n.y - page.y,
+      }
+    })
     .sort((a, b) => a.zIndex - b.zIndex)
 }
 

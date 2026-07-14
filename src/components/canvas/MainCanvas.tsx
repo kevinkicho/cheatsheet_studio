@@ -1295,11 +1295,20 @@ export function MainCanvas() {
               <Magnet className="h-3.5 w-3.5" />
             </ZoomBtn>
             <ZoomBtn
-              title="Auto-organize: pack cards on the print-page grid inside margins"
+              title="Auto-layout: grid-pack cards on the print page"
               onClick={() => {
                 if (items.length === 0) return
                 if (!showGrid) setCanvas({ showGrid: true })
-                autoOrganize()
+                autoOrganize({
+                  density: 'sm',
+                  fitPrint: true,
+                  columns: 'auto',
+                  mode: 'columns',
+                })
+                // Visible confirmation (DevTools also logs [autoOrganize])
+                const n = useCanvasStore.getState().items.filter((i) => !i.hidden)
+                  .length
+                console.info('[canvas] Auto-layout applied to', n, 'cards')
               }}
             >
               <LayoutGrid className="h-3.5 w-3.5" />

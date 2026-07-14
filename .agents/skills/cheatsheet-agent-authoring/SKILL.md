@@ -178,6 +178,19 @@ import {
 - Studio export: PDF / **SVG** (vector) / PNG / JPEG
 - Never commit Firebase service account JSON; `push` is optional Admin only
 
+## Layout philosophy (grid pack)
+
+Studio Auto layout (`packCheatsheetLayout`) is **grid-first**:
+
+1. **Select & group** — folders / headings = topics (agent should author with folders)
+2. **Ideal size** — each block gets a library-like aspect (`estimateIdealBlockSize`)
+3. **Area budget** — scale all blocks so total area ≈ 90% of the printable page
+4. **Grid cells** — `ORGANIZE_GRID` (24px) is the atomic unit; every edge snaps
+5. **Pack** — section bands + bottom-left occupancy on the grid
+6. **Readable floor** — never shrink title text below app default (10px) or body below 12px
+
+Agent workflow: compose with folders → `autoLayout` / `layout --dense` → user Auto layout in Studio if needed.
+
 ## Docs
 
 - [docs/agent-sdk.md](../../../docs/agent-sdk.md)

@@ -1,5 +1,10 @@
 import type { CanvasItem, PrintMargins, SheetCanvas } from '@/types'
-import { DEFAULT_MARGINS, normalizeGridExtent } from '@/types'
+import {
+  DEFAULT_MARGINS,
+  DEFAULT_TITLE_FONT_SIZE,
+  normalizeGridExtent,
+  titleBandPx,
+} from '@/types'
 import {
   clampPrintPageCount,
   computePrintPageOrigins,
@@ -465,9 +470,304 @@ function isHeadingCard(it: CanvasItem): boolean {
   return false
 }
 
+// ─── Grid area-proportional pack (agent-friendly cheatsheet layout) ─────────
+
 /**
- * Pack cards for print cheatsheets: multi-column, density-scaled sizes,
- * semantic font sizes, optional fit-to-print-box.
+ * Smallest title text we allow after pack / fit-print shrink.
+ * Matches app default card title size — the practical lower bound for
+ * “characters a human can still read on a printed midterm sheet.”
+ */
+export const MIN_READABLE_TITLE_FONT = DEFAULT_TITLE_FONT_SIZE
+
+/** Smallest body (KaTeX) font after shrink. */
+export const MIN_READABLE_BODY_FONT = 12
+
+/**
+ * When total ideal area exceeds this fraction of the page, shrink uniformly.
+ * We never *grow* past ideal — oversized cards letterbox content (empty gutters).
+ */
+export const GRID_PACK_FILL_TARGET = 0.92
+
+/**
+ * Minimum card size so the title band + one line of content stay readable.
+ * Snapped to the organize grid by callers.
+ */
+export function minReadableCardSize(
+  titleFont: number = MIN_READABLE_TITLE_FONT,
+): { w: number; h: number } {
+  const band = titleBandPx(titleFont)
+  return {
+    w: 72,
+    h: Math.max(40, band + 22),
+  }
+}
+
+function isLrProcess(it: CanvasItem): boolean {
+  return (
+    isProcessItem(it) &&
+    (it.mermaidDirection === 'LR' ||
+      it.mermaidDirection === 'RL' ||
+      /flowchart\s+LR/i.test(it.mermaidSource ?? '') ||
+      /flowchart\s+RL/i.test(it.mermaidSource ?? ''))
+  )
+}
+
+function isMindProcess(it: CanvasItem): boolean {
+  return (
+    isProcessItem(it) &&
+    (it.mermaidKind === 'mindmap' ||
+      /\bmindmap\b/i.test(it.mermaidSource ?? ''))
+  )
+}
+
+/**
+ * Ideal content-native size (export 19 baseline).
+ * Formula / diagram drives size — not title string length (that re-inflated
+ * empty shells). Never grow past this in allocateAreaOnGrid.
+ */
+export function estimateIdealBlockSize(
+  it: CanvasItem,
+  maxW: number,
+  titleFont: number = MIN_READABLE_TITLE_FONT,
+): { w: number; h: number } {
+  const min = minReadableCardSize(titleFont)
+  const band = titleBandPx(titleFont)
+  const showTitle = it.showTitle !== false && Boolean((it.title ?? '').trim())
+  const titleH = showTitle ? band : 0
+
+  if (isHeadingCard(it)) {
+    return {
+      w: Math.min(maxW, Math.max(160, Math.round(maxW * 0.98))),
+      h: Math.max(22, band + 2),
+    }
+  }
+
+  if (isProcessItem(it)) {
+    const src = it.mermaidSource ?? ''
+    const lines = Math.max(3, src.split('\n').filter(Boolean).length)
+    if (isMindProcess(it)) {
+      return {
+        w: Math.min(maxW, 200),
+        h: Math.min(220, Math.max(160, 120 + lines * 8)) + titleH,
+      }
+    }
+    if (isLrProcess(it)) {
+      return {
+        w: Math.min(maxW, Math.max(280, Math.round(maxW * 0.42))),
+        h: Math.max(min.h, 56 + titleH),
+      }
+    }
+    return {
+      w: Math.min(maxW, 160),
+      h: Math.min(260, Math.max(140, 100 + lines * 12)) + titleH,
+    }
+  }
+
+  if (it.type === 'table' || it.tableMarkdown) {
+    const rows = (it.tableMarkdown ?? '').split('\n').filter(Boolean).length
+    const cols = ((it.tableMarkdown ?? '').split('\n')[0] ?? '').split('|')
+      .length
+    return {
+      w: Math.min(maxW, Math.max(min.w, 72 + cols * 32)),
+      h: Math.max(min.h, 28 + rows * 14 + titleH),
+    }
+  }
+
+  if (it.imageUrl || it.type === 'figure') {
+    return { w: Math.min(maxW, 140), h: Math.max(min.h, 100 + titleH) }
+  }
+
+  // Equation — snug to latex (short FV / Continuous stay compact like export 19)
+  const latex = it.latex ?? ''
+  const len = latex.replace(/\\[a-zA-Z]+/g, 'X').replace(/[{}^_]/g, '').length
+  const display =
+    latex.includes('\\frac') ||
+    latex.includes('\\sum') ||
+    latex.includes('\\int') ||
+    latex.includes('\\prod') ||
+    latex.includes('\\\\')
+  const stacked = (latex.match(/\\frac/g) || []).length
+  const w = Math.min(
+    maxW,
+    Math.max(min.w, Math.min(200, 44 + len * (display ? 4.5 : 3.6))),
+  )
+  const bodyH = display ? 36 + stacked * 8 : 22
+  const h = Math.max(min.h, bodyH + titleH + 4)
+  return { w: Math.round(w), h: Math.round(h) }
+}
+
+/**
+ * Snap width/height to whole grid cells.
+ * Rounds to nearest cell (not always ceil) so we don’t inflate aspect by a full cell.
+ */
+export function snapSizeToGrid(
+  w: number,
+  h: number,
+  grid: number,
+  maxW: number,
+  maxH: number,
+): { w: number; h: number; cw: number; ch: number } {
+  const g = Math.max(4, grid)
+  const maxCw = Math.max(1, Math.floor(maxW / g))
+  const maxCh = Math.max(1, Math.floor(maxH / g))
+  let cw = Math.max(1, Math.round(w / g))
+  let ch = Math.max(1, Math.round(h / g))
+  // Never round down to 0; if very small, at least 1 cell
+  if (w > g * 0.4 && cw < 1) cw = 1
+  if (h > g * 0.4 && ch < 1) ch = 1
+  cw = Math.min(cw, maxCw)
+  ch = Math.min(ch, maxCh)
+  return { w: cw * g, h: ch * g, cw, ch }
+}
+
+/**
+ * Fit ideal sizes onto the page:
+ * - **Never grow** past ideal (avoids empty gutters inside cards)
+ * - Shrink uniformly only when total area / shelf height overflows the page
+ * - Preserve aspect ratios; enforce min-readable sizes
+ */
+export function allocateAreaOnGrid(
+  ideals: Array<{ id: string; w: number; h: number; minW: number; minH: number }>,
+  pageW: number,
+  pageH: number,
+  grid: number,
+  fillTarget = GRID_PACK_FILL_TARGET,
+): Map<string, { w: number; h: number }> {
+  const out = new Map<string, { w: number; h: number }>()
+  if (ideals.length === 0) return out
+
+  const pageArea = Math.max(1, pageW * pageH)
+  const budget = pageArea * fillTarget
+  let sum = ideals.reduce((a, b) => a + b.w * b.h, 0)
+  if (sum < 1) sum = 1
+
+  // Only shrink when over budget — never inflate past content-native ideal
+  let scale = sum > budget ? Math.sqrt(budget / sum) : 1
+  scale = Math.min(1, Math.max(0.55, scale))
+
+  const apply = (s: number) => {
+    for (const it of ideals) {
+      let w = Math.max(it.minW, Math.round(it.w * s))
+      let h = Math.max(it.minH, Math.round(it.h * s))
+      w = Math.min(pageW, w)
+      h = Math.min(pageH, h)
+      const snapped = snapSizeToGrid(w, h, grid, pageW, pageH)
+      const minSnap = snapSizeToGrid(it.minW, it.minH, grid, pageW, pageH)
+      out.set(it.id, {
+        w: Math.max(minSnap.w, snapped.w),
+        h: Math.max(minSnap.h, snapped.h),
+      })
+    }
+  }
+
+  apply(scale)
+
+  // If shelf height still overshoots the page, shrink further (not below mins)
+  for (let guard = 0; guard < 8; guard++) {
+    let estH = 0
+    let rowW = 0
+    let rowH = 0
+    const gap = Math.max(grid / 2, 6)
+    for (const it of ideals) {
+      const sz = out.get(it.id)!
+      if (rowW > 0 && rowW + sz.w > pageW) {
+        estH += rowH + gap
+        rowW = 0
+        rowH = 0
+      }
+      rowW += sz.w + gap
+      rowH = Math.max(rowH, sz.h)
+    }
+    estH += rowH
+    if (estH <= pageH * 1.02) break
+    scale *= 0.92
+    if (scale < 0.5) break
+    apply(scale)
+  }
+
+  return out
+}
+
+/**
+ * Bottom-left / shelf pack on a discrete grid: place each rect at the first
+ * free cell that fits (left→right, top→bottom).
+ */
+export function packRectsOnGrid(
+  rects: Array<{ id: string; cw: number; ch: number }>,
+  cols: number,
+  rows: number,
+): Map<string, { c: number; r: number }> {
+  const pos = new Map<string, { c: number; r: number }>()
+  if (cols < 1 || rows < 1) return pos
+
+  // Occupancy: row-major boolean grid
+  const occ: boolean[][] = Array.from({ length: rows }, () =>
+    Array.from({ length: cols }, () => false),
+  )
+
+  const fits = (c0: number, r0: number, cw: number, ch: number) => {
+    if (c0 + cw > cols || r0 + ch > rows) return false
+    for (let r = r0; r < r0 + ch; r++) {
+      for (let c = c0; c < c0 + cw; c++) {
+        if (occ[r]![c]) return false
+      }
+    }
+    return true
+  }
+
+  const mark = (c0: number, r0: number, cw: number, ch: number) => {
+    for (let r = r0; r < r0 + ch; r++) {
+      for (let c = c0; c < c0 + cw; c++) {
+        occ[r]![c] = true
+      }
+    }
+  }
+
+  // Place larger rects first for denser packing (stable by original order on ties)
+  const order = rects
+    .map((r, i) => ({ r, i, area: r.cw * r.ch }))
+    .sort((a, b) => b.area - a.area || a.i - b.i)
+
+  for (const { r } of order) {
+    const cw = Math.min(r.cw, cols)
+    const ch = Math.min(r.ch, rows)
+    let placed = false
+    for (let r0 = 0; r0 <= rows - ch && !placed; r0++) {
+      for (let c0 = 0; c0 <= cols - cw && !placed; c0++) {
+        if (fits(c0, r0, cw, ch)) {
+          mark(c0, r0, cw, ch)
+          pos.set(r.id, { c: c0, r: r0 })
+          placed = true
+        }
+      }
+    }
+    if (!placed) {
+      // Overflow: stack below known max row (multi-page signal)
+      let maxR = 0
+      for (const p of pos.values()) maxR = Math.max(maxR, p.r + 1)
+      // find max occupied row
+      for (let r0 = 0; r0 < rows; r0++) {
+        if (occ[r0]!.some(Boolean)) maxR = Math.max(maxR, r0 + 1)
+      }
+      pos.set(r.id, { c: 0, r: maxR })
+      // don't mark beyond grid — positions may exceed rows (fitPrint handles)
+    }
+  }
+
+  return pos
+}
+
+/**
+ * Pack cards for print cheatsheets using a **grid cell** model:
+ *
+ * 1. Group by folder / heading (topics)
+ * 2. Ideal size per block (heuristic seed for placement)
+ * 3. Area budget vs printable page → shrink-only if overflowing
+ * 4. Snap edges to the organize grid
+ * 5. Bottom-left pack on the occupancy grid
+ * 6. Equations/tables: autoFit=true so canvas measures real KaTeX and snugs
+ *    the card (avoids empty guts from heuristic W×H ≠ painted content)
+ * 7. Never shrink title/body fonts below readable floor
  */
 export function packCheatsheetLayout(
   items: CanvasItem[],
@@ -480,166 +780,158 @@ export function packCheatsheetLayout(
 
   const density = options.density ?? 'sm'
   const preset = DENSITY_PRESETS[density]
-  const gap = Math.max(2, options.gap ?? (density === 'xs' ? 6 : density === 'sm' ? 8 : 12))
-  const mode = options.mode ?? 'columns'
+  // Title never below app default; density may only go *up* from the floor
+  const titleFont = Math.max(MIN_READABLE_TITLE_FONT, preset.titleFontSize)
+  const bodyFont = Math.max(MIN_READABLE_BODY_FONT, preset.fontSize)
+  const grid = Math.max(4, canvas.gridSpacing ?? ORGANIZE_GRID)
+  const gapPx = Math.max(
+    grid / 2,
+    options.gap ?? (density === 'xs' ? 6 : density === 'sm' ? 8 : 12),
+  )
+  const gapCells = Math.max(0, Math.round(gapPx / grid) - 0) // visual gap via pack spacing
+  void gapCells
   const fitPrint = options.fitPrint !== false
   const groupByFolder = options.groupByFolder !== false
   const box = getContentBox(canvas)
 
   const visible = items.filter((i) => !i.hidden)
-  const hidden = items.filter((i) => i.hidden)
+  const minCard = minReadableCardSize(titleFont)
 
-  // Base sizes from current boxes, scaled by density
-  const scaled = visible.map((it) => {
-    const isProc = isProcessItem(it)
-    const isHead = isHeadingCard(it)
-    const scale = isHead
-      ? Math.min(1, preset.sizeScale * 1.05)
-      : isProc
-        ? preset.processSizeScale
-        : preset.sizeScale
-    const lrProc =
-      isProc &&
-      (it.mermaidDirection === 'LR' ||
-        it.mermaidDirection === 'RL' ||
-        /flowchart\s+LR/i.test(it.mermaidSource ?? '') ||
-        /flowchart\s+RL/i.test(it.mermaidSource ?? ''))
-    const mindProc =
-      isProc &&
-      (it.mermaidKind === 'mindmap' ||
-        /\bmindmap\b/i.test(it.mermaidSource ?? ''))
-    // Process charts need real room — short LR boxes (h~70) make export embeds unreadable
-    const minW = isHead
-      ? 160
-      : isProc
-        ? lrProc
-          ? 400
-          : mindProc
-            ? 240
-            : 220
-        : 100
-    const minH = isHead
-      ? 24
-      : isProc
-        ? mindProc
-          ? 240
-          : lrProc
-            ? 100
-            : 220
-        : 48
-    const maxW = isHead
-      ? box.width
-      : isProc
-        ? Math.min(box.width, lrProc ? box.width : mindProc ? 420 : 340)
-        : Math.min(box.width, 300)
-    const w = Math.max(minW, Math.min(maxW, Math.round(it.width * scale)))
+  // Ideal sizes (content-native aspect), then shrink-only fit onto the page
+  const ideals = visible.map((it) => {
+    const ideal = estimateIdealBlockSize(it, box.width, titleFont)
+    // Density: xs slightly tighter, lg slightly roomier — never a big inflate
+    const dScale =
+      density === 'xs' ? 0.92 : density === 'sm' ? 1 : density === 'md' ? 1.05 : 1.1
+    const w = Math.max(minCard.w, Math.round(ideal.w * dScale))
     const h = Math.max(
-      minH,
-      Math.round(
-        (isHead ? Math.min(it.height, 48) : it.height) * (isHead ? 0.85 : scale),
-      ),
+      isHeadingCard(it) ? 22 : minCard.h,
+      Math.round(ideal.h * dScale),
     )
     return {
-      ...it,
-      width: w,
-      height: h,
-      style: {
-        ...it.style,
-        fontSize: preset.fontSize,
-        titleFontSize: preset.titleFontSize,
-      },
-      autoFit: false,
-      contentFill: true,
+      id: it.id,
+      w,
+      h,
+      minW: isHeadingCard(it) ? 120 : minCard.w,
+      minH: isHeadingCard(it) ? 22 : minCard.h,
+      item: it,
     }
   })
 
-  const colCount =
-    mode === 'flow'
-      ? 1
-      : options.columns === 'auto' || options.columns == null
-        ? guessCheatColumns(scaled.length, density, box.width)
-        : Math.min(3, Math.max(1, options.columns))
+  const allocated = allocateAreaOnGrid(
+    ideals.map(({ id, w, h, minW, minH }) => ({ id, w, h, minW, minH })),
+    box.width,
+    box.height,
+    grid,
+    GRID_PACK_FILL_TARGET,
+  )
 
-  // xs/sm midterm sheets: shelf-wrap fills horizontal gaps (columns leave dead space)
-  const useShelf =
-    mode === 'flow' ||
-    colCount === 1 ||
-    density === 'xs' ||
-    density === 'sm'
+  // Section order (folders → topics) then pack each section's body on the grid
+  const sized: CanvasItem[] = ideals.map((row) => {
+    const sz = allocated.get(row.id) ?? { w: row.w, h: row.h }
+    const it = row.item
+    const isProc = isProcessItem(it)
+    const isFig = Boolean(it.imageUrl) || it.type === 'figure'
+    const isHead = isHeadingCard(it)
+    // Export-19 paint model:
+    // - equations/tables: natural size (contentFill false) — no letterbox zoom
+    // - process/figures: contentFill true (SVG fills the card)
+    // - no autoFit race
+    return {
+      ...it,
+      width: sz.w,
+      height: isHead
+        ? Math.max(22, Math.min(sz.h, titleBandPx(titleFont) + 6))
+        : sz.h,
+      style: {
+        ...it.style,
+        fontSize: bodyFont,
+        titleFontSize: titleFont,
+      },
+      autoFit: false,
+      contentFill: isProc || isFig,
+    }
+  })
 
-  // Folders (layers) first when present, else heading bands — agent collocation
-  const placed: CanvasItem[] = []
-  let cursorY = box.top
-  let z = 1
-
-  const sections = splitCheatSections(scaled, {
+  const sections = splitCheatSections(sized, {
     groupByFolder,
     folders: options.folders,
   })
+
+  const cols = Math.max(1, Math.floor(box.width / grid))
+  const rows = Math.max(1, Math.floor(box.height / grid))
+  const placed: CanvasItem[] = []
+  let z = 1
+
+  // Global occupancy across the whole page so sections share one grid
+  const occPos = new Map<string, { c: number; r: number }>()
+  const pending: Array<{ id: string; cw: number; ch: number; item: CanvasItem }> =
+    []
+
+  // Headings: full-width bands inserted as sequence constraints —
+  // pack section-by-section: heading at next free row, then body rects
+  let cursorRow = 0
 
   for (const section of sections) {
     const heading = section.find(isHeadingCard)
     const body = section.filter((i) => !isHeadingCard(i))
 
     if (heading) {
+      const hw = Math.min(
+        cols,
+        Math.max(1, Math.ceil(Math.min(heading.width, box.width) / grid)),
+      )
+      const hh = Math.max(1, Math.ceil(heading.height / grid))
+      // Find first free row for full-width-ish heading
+      let r0 = cursorRow
+      occPos.set(heading.id, { c: 0, r: r0 })
       placed.push({
         ...heading,
         x: Math.round(box.left),
-        y: Math.round(cursorY),
-        width: Math.min(heading.width, box.width),
+        y: Math.round(box.top + r0 * grid),
+        width: Math.round(Math.min(box.width, hw * grid)),
+        height: Math.round(hh * grid),
         zIndex: z++,
       })
-      cursorY += heading.height + gap
+      cursorRow = r0 + hh + Math.max(0, Math.round(gapPx / grid) - 1)
     }
 
     if (body.length === 0) continue
 
-    // Same-folder clusters pack tightly (shelf / multi-col) as one band
-    if (useShelf) {
-      let x = box.left
-      let rowH = 0
-      let y = cursorY
-      for (const it of body) {
-        if (x > box.left && x + it.width > box.left + box.width) {
-          x = box.left
-          y += rowH + gap
-          rowH = 0
-        }
-        placed.push({
-          ...it,
-          x: Math.round(x),
-          y: Math.round(y),
-          zIndex: z++,
-        })
-        x += it.width + gap
-        rowH = Math.max(rowH, it.height)
-      }
-      cursorY = y + rowH + gap
-    } else {
-      const colGap = gap
-      const colW = Math.floor(
-        (box.width - colGap * (colCount - 1)) / colCount,
-      )
-      const colHeights = Array.from({ length: colCount }, () => cursorY)
-      for (const it of body) {
-        let col = 0
-        for (let c = 1; c < colCount; c++) {
-          if (colHeights[c]! < colHeights[col]!) col = c
-        }
-        const w = Math.min(it.width, colW)
-        const x = box.left + col * (colW + colGap)
-        const y = colHeights[col]!
-        placed.push({
-          ...it,
-          x: Math.round(x),
-          y: Math.round(y),
-          width: Math.round(w),
-          zIndex: z++,
-        })
-        colHeights[col] = y + it.height + gap
-      }
-      cursorY = Math.max(...colHeights) + gap * 0.5
+    // Local pack in the remaining grid below cursorRow
+    const localRows = Math.max(1, rows - cursorRow + 40) // allow overflow rows
+    const bodyRects = body.map((it) => ({
+      id: it.id,
+      cw: Math.max(1, Math.ceil(it.width / grid)),
+      ch: Math.max(1, Math.ceil(it.height / grid)),
+      item: it,
+    }))
+    // Temporarily pack into a sub-grid of height localRows
+    const sub = packRectsOnGrid(
+      bodyRects.map(({ id, cw, ch }) => ({ id, cw, ch })),
+      cols,
+      localRows,
+    )
+    let sectionMaxR = cursorRow
+    for (const it of body) {
+      const p = sub.get(it.id) ?? { c: 0, r: 0 }
+      const absR = cursorRow + p.r
+      const absC = p.c
+      occPos.set(it.id, { c: absC, r: absR })
+      const cw = Math.max(1, Math.ceil(it.width / grid))
+      const ch = Math.max(1, Math.ceil(it.height / grid))
+      placed.push({
+        ...it,
+        x: Math.round(box.left + absC * grid),
+        y: Math.round(box.top + absR * grid),
+        width: Math.round(Math.min(box.width - absC * grid, cw * grid)),
+        height: Math.round(ch * grid),
+        zIndex: z++,
+      })
+      sectionMaxR = Math.max(sectionMaxR, absR + ch)
     }
+    cursorRow = sectionMaxR + Math.max(0, Math.round(gapPx / grid) - 1)
+    void pending
   }
 
   let result = placed
@@ -650,32 +942,44 @@ export function packCheatsheetLayout(
   )
   const contentBottom = box.top + box.height
 
+  // Fit-print: shrink only while fonts stay ≥ readable floor
   if (fitPrint && maxBottom > contentBottom + 4) {
     const overflow = maxBottom - box.top
     const avail = box.height
-    const shrink = Math.max(0.45, Math.min(1, (avail - gap) / overflow))
+    const shrink = Math.max(0.55, Math.min(1, (avail - gapPx) / overflow))
     if (shrink < 0.98) {
-      result = result.map((it) => ({
-        ...it,
-        x: Math.round(box.left + (it.x - box.left) * shrink),
-        y: Math.round(box.top + (it.y - box.top) * shrink),
-        width: Math.max(48, Math.round(it.width * shrink)),
-        height: Math.max(28, Math.round(it.height * shrink)),
-        style: {
-          ...it.style,
-          fontSize: Math.max(
-            9,
-            Math.round((it.style?.fontSize ?? preset.fontSize) * Math.sqrt(shrink)),
+      const minSz = minReadableCardSize(titleFont)
+      result = result.map((it) => {
+        const isHead = isHeadingCard(it)
+        return {
+          ...it,
+          x: Math.round(box.left + (it.x - box.left) * shrink),
+          y: Math.round(box.top + (it.y - box.top) * shrink),
+          width: Math.max(
+            isHead ? 80 : minSz.w,
+            Math.round(it.width * shrink),
           ),
-          titleFontSize: Math.max(
-            7,
-            Math.round(
-              (it.style?.titleFontSize ?? preset.titleFontSize) *
-                Math.sqrt(shrink),
+          height: Math.max(
+            isHead ? 20 : minSz.h,
+            Math.round(it.height * shrink),
+          ),
+          style: {
+            ...it.style,
+            fontSize: Math.max(
+              MIN_READABLE_BODY_FONT,
+              Math.round(
+                (it.style?.fontSize ?? bodyFont) * Math.sqrt(shrink),
+              ),
             ),
-          ),
-        },
-      }))
+            titleFontSize: Math.max(
+              MIN_READABLE_TITLE_FONT,
+              Math.round(
+                (it.style?.titleFontSize ?? titleFont) * Math.sqrt(shrink),
+              ),
+            ),
+          },
+        }
+      })
     }
     const bottom2 = result.reduce(
       (m, it) => Math.max(m, it.y + it.height),
@@ -689,23 +993,46 @@ export function packCheatsheetLayout(
     }
   }
 
+  // Snap position to grid; keep size as allocated (do NOT snapUp — that
+  // re-inflated 40px snug heights back to 48 and brought empty guts back).
+  result = result.map((it) => {
+    const snapped = snapSizeToGrid(
+      it.width,
+      it.height,
+      grid,
+      box.width,
+      box.height,
+    )
+    return {
+      ...it,
+      x: snapToGridValue(it.x, grid, box.left),
+      y: snapToGridValue(it.y, grid, box.top),
+      // Prefer allocated size; only ensure at least one cell
+      width: Math.max(grid, Math.min(box.width, snapped.w)),
+      height: Math.max(grid, snapped.h),
+    }
+  })
+
   const byId = new Map(result.map((p) => [p.id, p]))
-  const merged = [
-    ...items.map((old) => {
-      if (old.hidden) return old
-      const n = byId.get(old.id)
-      if (!n) return { ...old, autoFit: false }
-      return n
-    }),
-    // keep hidden as-is (already in items)
-  ]
-  // Avoid duplicating hidden if they were in items already
-  void hidden
+  const merged = items.map((old) => {
+    if (old.hidden) return old
+    const n = byId.get(old.id)
+    if (!n) return { ...old, autoFit: false }
+    // Bump contentFitKey so CanvasItemView remounts measure path after pack
+    const textCard = n.autoFit === true
+    return {
+      ...n,
+      contentFitKey: textCard
+        ? (old.contentFitKey ?? 0) + 1
+        : old.contentFitKey,
+    }
+  })
 
   return { items: merged, printPageCount: pageCount }
 }
 
-function guessCheatColumns(
+/** @deprecated Column guess kept for callers; grid pack ignores columns. */
+export function guessCheatColumns(
   n: number,
   density: ContentDensity,
   boxW: number,

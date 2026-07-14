@@ -25,8 +25,9 @@ A Firebase-backed app for building multi-page, print-aware cheat sheets from
 **vector equations** (KaTeX), tables, **SVG figures**, and **Mermaid process
 charts** (flowchart + mind map). Drag items from a curated library onto a
 freeform board, free-transform cards, import images (including seamless GIF
-loops), author dark-themed diagrams, export print pages to PDF/PNG/JPEG,
-organize layers in nested folders, and sync sheets per Google account.
+loops), author dark-themed diagrams, **auto-layout** into a dense print grid,
+export print pages to **PDF / PNG / JPEG / SVG**, organize layers in nested
+folders, and sync sheets per Google account.
 
 > **Firebase is required for production use.** Auth, Firestore, Storage, and
 > Hosting are part of the product. A built-in seed library loads offline;
@@ -47,7 +48,10 @@ organize layers in nested folders, and sync sheets per Google account.
 | Canvas minimap + collapsible tool strip | **Implemented** |
 | Per-page / printable / whole-board grids | **Implemented** |
 | PDF / PNG / JPEG export (print pages, WYSIWYG capture) | **Implemented** |
+| **SVG export** (file:// friendly; process charts as high-contrast embeds) | **Implemented** |
+| **Grid auto-layout** (folder sections, area-aware pack, readable min fonts) | **Implemented** |
 | Library cards + catalog list (multi-sort) | **Implemented** |
+| Favorites | **Library only** (♥ on library cards; not canvas Item Properties) |
 | Nested outliner folders + multi-select | **Implemented** |
 | Local image persistence (IndexedDB) + Storage promote | **Implemented** |
 | GIF ping-pong bake at import | **Implemented** |
@@ -85,7 +89,14 @@ Agent SDK/CLI: [docs/agent-sdk.md](./docs/agent-sdk.md) (`packages/cheatsheet-sd
 - Grid on/off, snap-to-grid, tunable spacing (left **Grid settings**)  
 - **Grid covers:** Full page · Printable area (margins) · Whole board  
 - Soft opacity scale: slider **0–100% → CSS α 0–0.3**  
-- Auto-organize packs cards into the printable content box  
+- **Auto-layout** (canvas toolbar grid button + left **Auto layout** panel):
+  - Packs into the **printable content box** (page − margins)
+  - **Grid unit** = canvas grid spacing (default **24px**); positions snap to the grid
+  - Groups by **Layers folders** / section headings first
+  - Sizes cards from **content-native ideals** (equation / table / process / figure); **never grows** past ideal (avoids empty guts inside cards)
+  - Shrinks only if content overflows the page; title font floor **≥ 10px**, body **≥ 12px**
+  - Equations/tables paint at **natural size** (`contentFill` off); process/figures **fill** the card
+  - Density presets: Extra small → Large (panel); toolbar defaults to **Small**
 - When **print frame is on**, board scroll size is limited to the print layout (+ pad); freeform size returns when the frame is off  
 - **Library drag → canvas:** drop uses the **live drag-preview size and position** (WYSIWYG; no second autoFit jump after paste)  
 
@@ -97,12 +108,18 @@ Agent SDK/CLI: [docs/agent-sdk.md](./docs/agent-sdk.md) (`packages/cheatsheet-sd
 
 ### Export (print pages)
 - Top bar **Export** opens a fixed-size dialog (portaled so it is not clipped by the top bar)  
-- **Scrollable preview** of selected print frames (light paper theme)  
-- **Formats:** PDF (multi-page), PNG, JPEG (one file per page when multi-page)  
+- **Scrollable preview** of selected print frames (matches export host paint)  
+- **Formats:** PDF (multi-page), **SVG**, PNG, JPEG (one file per page when multi-page / multi SVG)  
+- **SVG export** (Studio path):
+  - Serializes the export DOM into SVG + `foreignObject` (sharp KaTeX/type when opened in a browser)
+  - Process charts / mind maps are captured as **high-contrast diagram embeds** (FO labels flattened → PNG or vector SVG data URL) so `file://` viewers are not blank
+  - Equations/tables export at **natural size** (no force-fill letterbox); process/figures fill their cards
+  - Page board defaults to dark (`#0f1115`); KaTeX `@font-face` uses **CDN** URLs (local `/node_modules` fonts 404 on `file://`)
+  - See [docs/vector-graphics.md](docs/vector-graphics.md#studio-svg-export)
 - **Pages:** multi-select which frames to include  
 - **Color modes:** Color · Greyscale · Black & white (threshold)  
-- **Options:** show/hide print grid, transparent background (PNG), page layout packing  
-- Capture uses **html2canvas-pro** (Tailwind v4 `oklch` safe) via shared `CanvasCardBody` (matches viewport)  
+- **Options:** show/hide print grid, transparent vs board background, page packing  
+- Raster capture uses **html2canvas-pro** (Tailwind v4 `oklch` safe) via shared `CanvasCardBody` (matches viewport)  
 - Only cards that intersect the dashed print frames are included  
 
 ### Library & content
@@ -110,7 +127,8 @@ Agent SDK/CLI: [docs/agent-sdk.md](./docs/agent-sdk.md) (`packages/cheatsheet-sd
 - Built-in **seed catalog** (165 vector items: LaTeX equations, markdown tables, SVG figures) + optional Firestore seed (`npm run seed`)  
 - Bottom library: **Cards** or **List** (catalog-style split: list + resizable preview)  
 - Catalog filters: search, subject, topic, type, **♥ Favorites** (toggle again to clear the filter)  
-- **Heart** on each library card (top-left of the header row) favorites / unfavorites; no type icons on tiles; favorites persist in UI prefs  
+- **Heart** on each library card (top-left of the header row) favorites / unfavorites; favorites persist in UI prefs  
+- **Favorites are library-only** — there is no Star control on canvas **Item Properties** (canvas-card `starred` is deprecated)  
 - **Multi-column sort** (list / Insert from catalog): click headers to stack sorts (asc → desc → clear); **Clear sort / Clear all**  
 - Search ranking: title prefixes first; short queries ignore raw LaTeX  
 - Library card previews **zoom-to-fill** the thumbnail  
@@ -138,9 +156,9 @@ Agent SDK/CLI: [docs/agent-sdk.md](./docs/agent-sdk.md) (`packages/cheatsheet-sd
 - See [docs/process-charts.md](./docs/process-charts.md)  
 
 ### Layers & organization
-- Outliner with **nested folders**, reparent, **hide / lock** per item or folder (eye + lock columns; no star column in Layers)  
+- Outliner with **nested folders**, reparent, **hide / lock** per item or folder (eye + lock columns; **no star** — favorites live on library hearts)  
 - **Show hidden on canvas** checkbox (dimmed cards when on)  
-- Multi-select style/property edits (Properties: Hide, Fit, Delete; optional Star if used)  
+- Multi-select style/property edits (Properties: Hide, Fit, Delete)  
 - Color pickers: **default** swatch + **palette** + **recent** colors (localStorage)  
 - Undo / redo with history batches for continuous drag  
 

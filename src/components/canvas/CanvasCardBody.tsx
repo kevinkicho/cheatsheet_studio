@@ -148,8 +148,10 @@ export function CanvasCardBody({
       ? 'transform'
       : CARD_DEFAULTS.equationFitMethod
 
-  const atNaturalSize = item.autoFit === true || contentFill === false
-  const vectorMaxScale = atNaturalSize ? 1 : maxScale
+  // contentFill false → maxScale 1 (natural KaTeX; export-19 equation look).
+  // contentFill true → may grow into card (process/figures).
+  // Do not special-case autoFit here (offscreen measure is separate).
+  const vectorMaxScale = contentFill === false ? 1 : maxScale
 
   return (
     <FitContent
@@ -161,8 +163,7 @@ export function CanvasCardBody({
       fitMethod={vectorTextFit}
       baseFontSize={style.fontSize ?? 18}
       showBadge={showBadge && !interactiveFast}
-      // Do not put board zoom or transient flags in contentKey (avoids remeasure storms)
-      contentKey={`${item.id}-${item.latex ?? ''}-${item.tableMarkdown ?? ''}-${style.fontSize ?? ''}-fit${item.contentFitKey ?? 0}-fill${contentFill ? 1 : 0}-ar${keepAspectRatio ? 1 : 0}-t${showTitle ? 1 : 0}-m${vectorTextFit}-af${item.autoFit ? 1 : 0}`}
+      contentKey={`${item.id}-${item.latex ?? ''}-${item.tableMarkdown ?? ''}-${style.fontSize ?? ''}-fit${item.contentFitKey ?? 0}-fill${contentFill ? 1 : 0}-ar${keepAspectRatio ? 1 : 0}-t${showTitle ? 1 : 0}-m${vectorTextFit}-ms${vectorMaxScale}`}
       className="h-full w-full"
     >
       {isEquation && item.latex && (
