@@ -41,8 +41,9 @@ Implementation: `packCheatsheetLayout` in [`src/lib/autoOrganize.ts`](../src/lib
 | Control | Meaning |
 |---------|---------|
 | **Rectangle** | Full axis-aligned box around the group (empty corner included) |
-| **N-gon (L-fill)** | Chrome follows **occupied card runs** only — L / stepped when the last shelf row is short |
-| **Panel gap** | 0–48px clearance between panels (also chrome pad); `0` = flush |
+| **N-gon (L-fill)** | Dense shelf pack; chrome is a **solid** polyomino (holes filled — no donuts). Fill is painted per run; **stroke is a single exterior outline** so merged joins never show double borders. |
+| **Gap** | Free-flow air between topic groups / panel **outer** edges |
+| **Panel pad** | Chrome inset (cards → frame stroke). With panels, free-flow clearance = **gap + 2× pad** |
 
 ### Panel group levels (multi-select)
 
@@ -61,9 +62,12 @@ Levels are depths in the Layers folder tree (**from the top**):
 - **L1 + L2** — outer panel for `1.` wrapping inner panels for `1.1` / `1.2`.
 - **L1 + L2 + L3** — three nested shells.
 
-Cards always pack at the **deepest** selected level; chrome is emitted for
-**each** selected level (outer pad slightly larger so parents clearly wrap
-children).
+Cards pack at the **deepest** selected level. When more than one level is on
+(e.g. L1+L2), packing is **hierarchical**: all leaf groups under the same
+outer parent are free-flowed **together first**, then those outer boxes
+free-flow on the page. That keeps “1.” cards contiguous so **level-1 panels
+never stack over “2.” / “3.”** Chrome is still drawn for **each** selected
+level (outer pad slightly larger so parents wrap children).
 
 ### Group sort
 
@@ -82,8 +86,12 @@ Not a perfect sorted grid — a **noticeable** reading flow while still compacti
 With the **Select** tool, click a panel frame (canvas). Left sidebar shows
 **Panel** properties:
 
+- **Auto-layout inside panel** — densely repositions **and resizes** cards to
+  fill this frame, then rebuilds chrome (including n-gon outline) so the panel
+  fully wraps its content  
 - Title / show title chip  
 - **Sort cards in panel** (none / A→Z / Z→A) — re-shelves only that panel’s cards  
+
 
 ---
 
@@ -105,5 +113,31 @@ Toolbar quick pack defaults to **Small**.
    subsection frames).
 4. Use **N-gon** when groups have uneven last rows and you want L-shaped chrome
    instead of empty corners.
+
+## Export filename tags
+
+After **Apply auto layout**, Export’s default file name is:
+
+```text
+{Sheet title}__auto_{density}_{chrome}_{shape}_L{levels}_{sort}_gap{px}
+```
+
+Example:
+
+```text
+Studio Everything — Full Catalog__auto_sm_panels_ngon_L1-2_az_gap6.svg
+```
+
+| Token | Meaning |
+|-------|---------|
+| `sm` / `xs` / `md` / `lg` | Density |
+| `panels` / `labels` / `both` / `none` | Group chrome |
+| `ngon` / `rect` | Panel shape (when chrome includes panels) |
+| `L1` / `L1-2` / `L1-2-3` | Panel group levels |
+| `az` / `za` / `nosort` | Group sort |
+| `gap8` | Free-flow gap (px) |
+| `pgap8` | Panel chrome pad (px) |
+
+Share that filename when reporting layout issues so the pack settings are known.
 
 See also: root [README.md](../README.md) · [agent-sdk.md](./agent-sdk.md) · [cli.md](./cli.md).

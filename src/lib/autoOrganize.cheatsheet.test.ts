@@ -26,6 +26,12 @@ import {
   panelGroupLevelOptions,
   normalizePanelGroupLevels,
   buildNestedHierarchyPanels,
+  packClusterTight,
+  fillPolyominoHoles,
+  polyominoExteriorPathD,
+  polyominoExteriorEdges,
+  formatAutoLayoutFileTag,
+  buildExportFileNameStem,
   relayoutPanelContents,
   convexHull,
   expandedRectCorners,
@@ -630,7 +636,7 @@ describe('packCheatsheetLayout', () => {
     const t1 = top.layoutPanels.find((p) => p.folderId === 't1')!
     expect(t1.memberIds?.sort()).toEqual(['a1', 'a2'].sort())
 
-    // Nested: L1 outer + L2 inner
+    // Nested: L1 outer + L2 inner — L1 siblings must not stack
     const nested = packCheatsheetLayout(items, DEFAULT_CANVAS, {
       density: 'sm',
       groupChrome: 'panels',
@@ -640,18 +646,232 @@ describe('packCheatsheetLayout', () => {
     })
     const L1 = nested.layoutPanels.filter((p) => p.hierarchyLevel === 1)
     const L2 = nested.layoutPanels.filter((p) => p.hierarchyLevel === 2)
-    expect(L1.length).toBe(2) // Topic 1 + Topic 2
+    // Every top folder gets L1, including single-child “2.” → “2.1”
+    expect(L1.map((p) => p.folderId).sort()).toEqual(['t1', 't2'])
     expect(L2.length).toBe(3) // 1.1, 1.2, 2.1
-    // Outer wraps inner: L1 for t1 contains both a1 and a2
     const outerT1 = L1.find((p) => p.folderId === 't1')!
+    const outerT2 = L1.find((p) => p.folderId === 't2')!
     expect(outerT1.memberIds?.sort()).toEqual(['a1', 'a2'].sort())
-    // Outer box should cover inner boxes
+    expect(outerT2.memberIds).toEqual(['b1'])
+    // Outer boxes cover their inners (with nest inset air gap)
     const inner11 = L2.find((p) => p.folderId === 't1a')!
-    expect(outerT1.x).toBeLessThanOrEqual(inner11.x)
-    expect(outerT1.y).toBeLessThanOrEqual(inner11.y)
-    expect(outerT1.x + outerT1.width).toBeGreaterThanOrEqual(
+    const inner21 = L2.find((p) => p.folderId === 't2a')!
+    expect(outerT1.x).toBeLessThanOrEqual(inner11.x + 0.5)
+    expect(outerT1.y).toBeLessThanOrEqual(inner11.y + 0.5)
+    expect(outerT1.x + outerT1.width + 0.5).toBeGreaterThanOrEqual(
       inner11.x + inner11.width,
     )
+    expect(outerT2.x).toBeLessThanOrEqual(inner21.x + 0.5)
+    expect(outerT2.y).toBeLessThanOrEqual(inner21.y + 0.5)
+    expect(outerT2.x + outerT2.width + 0.5).toBeGreaterThanOrEqual(
+      inner21.x + inner21.width,
+    )
+    // Clear gap between outer and inner strokes (not stacked double lines)
+    expect(inner11.x - outerT1.x).toBeGreaterThanOrEqual(2)
+    expect(inner21.x - outerT2.x).toBeGreaterThanOrEqual(2)
+    // L1 siblings must not overlap
+    expect(rectsOverlap(outerT1, outerT2)).toBe(false)
+    // Outer not full page width for tiny clusters
+    expect(outerT1.width).toBeLessThan(DEFAULT_CANVAS.width * 0.85)
+  })
+
+  it('packClusterTight prefers compact width over full page', () => {
+    const members = [
+      { index: 0, cw: 4, ch: 3 },
+      { index: 1, cw: 4, ch: 3 },
+      { index: 2, cw: 4, ch: 2 },
+    ]
+    const tight = packClusterTight(members, 30, 0)
+    // Should not force full 30-col outer for ~12 cells of content
+    expect(tight.usedCw).toBeLessThanOrEqual(16)
+    expect(tight.usedCw * tight.usedCh).toBeLessThan(30 * 12)
+  })
+
+  it('formatAutoLayoutFileTag encodes pack knobs for shareable export names', () => {
+    const tag = formatAutoLayoutFileTag({
+      density: 'sm',
+      groupChrome: 'panels',
+      panelShape: 'polygon',
+      panelGroupLevels: [1, 2],
+      groupSort: 'name-asc',
+      gap: 8,
+      panelPadding: 6,
+    })
+    expect(tag).toBe('auto_sm_panels_ngon_L1-2_az_gap8_pgap6')
+    const stem = buildExportFileNameStem('Studio Everything — Full Catalog', {
+      density: 'sm',
+      groupChrome: 'panels',
+      panelShape: 'polygon',
+      panelGroupLevels: [1, 2],
+      groupSort: 'name-asc',
+      gap: 8,
+      panelPadding: 6,
+    })
+    expect(stem).toContain('Studio Everything')
+    expect(stem).toContain('__auto_sm_panels_ngon_L1-2_az_gap8_pgap6')
+    expect(stem).not.toMatch(/[<>:"/\\|?*]/)
+  })
+
+  it('gap + panelPadding together increase inter-panel free-flow clearance', () => {
+    const folders = Array.from({ length: 4 }, (_, i) => ({
+      id: `f${i}`,
+      name: `T${i}`,
+      order: i,
+    }))
+    const items: CanvasItem[] = folders.flatMap((f, i) => [
+      card(`${f.id}a`, {
+        folderId: f.id,
+        title: `A${i}`,
+        width: 100,
+        height: 60,
+        latex: 'x=1',
+      }),
+    ])
+    const tight = packCheatsheetLayout(items, DEFAULT_CANVAS, {
+      density: 'sm',
+      groupChrome: 'panels',
+      panelGroupLevels: [1],
+      gap: 0,
+      panelPadding: 0,
+      folders,
+    })
+    const loose = packCheatsheetLayout(items, DEFAULT_CANVAS, {
+      density: 'sm',
+      groupChrome: 'panels',
+      panelGroupLevels: [1],
+      gap: 24,
+      panelPadding: 12,
+      folders,
+    })
+    const span = (out: typeof tight) => {
+      const cards = out.items.filter((i) => !i.hidden)
+      return (
+        Math.max(...cards.map((c) => c.y + c.height)) -
+        Math.min(...cards.map((c) => c.y))
+      )
+    }
+    // Larger gap+pad → more vertical spread (or at least not tighter)
+    expect(span(loose)).toBeGreaterThanOrEqual(span(tight))
+    // Peer panels at same level must not overlap with either setting
+    for (const out of [tight, loose]) {
+      for (let i = 0; i < out.layoutPanels.length; i++) {
+        for (let j = i + 1; j < out.layoutPanels.length; j++) {
+          expect(
+            rectsOverlap(out.layoutPanels[i]!, out.layoutPanels[j]!),
+          ).toBe(false)
+        }
+      }
+    }
+  })
+
+  it('polyominoExteriorPathD covers all exterior edges (no broken L borders)', () => {
+    // Two adjacent cells: 6 exterior edges (shared edge omitted)
+    const unit = new Set(['0,0', '1,0'])
+    const edges = polyominoExteriorEdges(unit, 10, 0, 0, 0)
+    expect(edges.length).toBe(6)
+    const d = polyominoExteriorPathD(unit, 10, 0, 0)
+    expect(d).toMatch(/^M /)
+    // One M per edge (no stitching — avoids dropped corners)
+    expect((d.match(/M /g) ?? []).length).toBe(6)
+    // L tromino: must include bottom + right extremities (no missing Genetics-style gap)
+    const ell = new Set(['0,0', '0,1', '1,1'])
+    const ellEdges = polyominoExteriorEdges(ell, 10, 0, 0)
+    expect(ellEdges.length).toBe(8) // 3 cells × 4 - 2×2 shared = 8
+    const maxX = Math.max(...ellEdges.flatMap((e) => [e.x1, e.x2]))
+    const maxY = Math.max(...ellEdges.flatMap((e) => [e.y1, e.y2]))
+    expect(maxX).toBe(20)
+    expect(maxY).toBe(20)
+  })
+
+  it('n-gon panel exposes outlinePath and fully encapsulates cards', () => {
+    const items: CanvasItem[] = [
+      card('a', {
+        folderId: 'f',
+        title: 'A',
+        width: 200,
+        height: 80,
+        latex: 'a',
+      }),
+      card('b', {
+        folderId: 'f',
+        title: 'B',
+        width: 200,
+        height: 80,
+        latex: 'b',
+      }),
+      card('c', {
+        folderId: 'f',
+        title: 'C',
+        width: 100,
+        height: 80,
+        latex: 'c',
+      }),
+    ]
+    const out = packCheatsheetLayout(items, DEFAULT_CANVAS, {
+      density: 'sm',
+      groupChrome: 'panels',
+      panelShape: 'polygon',
+      panelPadding: 8,
+      panelGroupLevels: [1],
+      folders: [{ id: 'f', name: 'Topic', order: 0 }],
+    })
+    const p = out.layoutPanels[0]!
+    expect(p.shape).toBe('polygon')
+    expect(p.outlinePath).toBeTruthy()
+    expect(p.outlinePath).toMatch(/M /)
+    const cards = out.items.filter((i) => !i.hidden)
+    for (const c of cards) {
+      expect(p.x).toBeLessThanOrEqual(c.x)
+      expect(p.y).toBeLessThanOrEqual(c.y)
+      expect(p.x + p.width).toBeGreaterThanOrEqual(c.x + c.width)
+      expect(p.y + p.height).toBeGreaterThanOrEqual(c.y + c.height)
+    }
+  })
+
+  it('nested L1 title band sits above L2 panel top (readable parent header)', () => {
+    const folders = [
+      { id: 't1', name: '1. Topic', parentId: null, order: 0 },
+      { id: 't1a', name: '1.1 Sub', parentId: 't1', order: 0 },
+      { id: 't1b', name: '1.2 Sub', parentId: 't1', order: 1 },
+    ]
+    const items: CanvasItem[] = [
+      card('a1', { folderId: 't1a', title: 'A1', latex: 'a=1' }),
+      card('a2', { folderId: 't1b', title: 'A2', latex: 'a=2' }),
+    ]
+    const out = packCheatsheetLayout(items, DEFAULT_CANVAS, {
+      density: 'sm',
+      groupChrome: 'panels',
+      panelGroupLevels: [1, 2],
+      panelPadding: 8,
+      folders,
+    })
+    const L1 = out.layoutPanels.find((p) => p.hierarchyLevel === 1)!
+    const L2 = out.layoutPanels.filter((p) => p.hierarchyLevel === 2)
+    expect(L1).toBeTruthy()
+    expect(L2.length).toBe(2)
+    const topL2 = Math.min(...L2.map((p) => p.y))
+    // L1 exclusive header strip: parent chip above child frames
+    expect(L1.y + 14).toBeLessThanOrEqual(topL2 + 1)
+  })
+
+  it('fillPolyominoHoles closes interior donuts but keeps exterior L notches', () => {
+    // 3×3 ring (hole in center)
+    const ring = new Set([
+      '0,0',
+      '1,0',
+      '2,0',
+      '0,1',
+      '2,1',
+      '0,2',
+      '1,2',
+      '2,2',
+    ])
+    const filled = fillPolyominoHoles(ring)
+    expect(filled.has('1,1')).toBe(true) // hole filled
+    expect(filled.size).toBe(9)
+    // L shape has no interior hole
+    const ell = new Set(['0,0', '1,0', '2,0', '0,1', '0,2'])
+    expect(fillPolyominoHoles(ell).size).toBe(5)
   })
 
   it('n-gon chrome follows card runs (not full empty AABB corner)', () => {
@@ -780,6 +1000,64 @@ describe('packCheatsheetLayout', () => {
     // A→Z shelf: Alpha left of Bravo left of Charlie
     expect(xs[0]!).toBeLessThan(xs[1]!)
     expect(xs[1]!).toBeLessThan(xs[2]!)
+  })
+
+  it('relayoutPanelContents dense mode packs, may resize, rebuilds n-gon chrome', () => {
+    const items: CanvasItem[] = [
+      card('a', {
+        title: 'A',
+        x: 100,
+        y: 100,
+        width: 180,
+        height: 100,
+        latex: 'a',
+      }),
+      card('b', {
+        title: 'B',
+        x: 400,
+        y: 300,
+        width: 180,
+        height: 100,
+        latex: 'b',
+      }),
+      card('c', {
+        title: 'C',
+        x: 200,
+        y: 500,
+        width: 100,
+        height: 80,
+        latex: 'c',
+      }),
+    ]
+    const panel: import('@/types').LayoutPanel = {
+      id: 'p1',
+      title: 'Topic',
+      x: 80,
+      y: 80,
+      width: 280,
+      height: 200,
+      memberIds: ['a', 'b', 'c'],
+      shape: 'polygon',
+      showTitle: true,
+      contentSort: 'none',
+    }
+    const { items: next, panel: nextP } = relayoutPanelContents(items, panel, {
+      mode: 'dense',
+      gapPx: 6,
+      panelPad: 6,
+      grid: 24,
+    })
+    // Cards move into the panel budget
+    for (const id of ['a', 'b', 'c']) {
+      const c = next.find((i) => i.id === id)!
+      expect(c.x).toBeGreaterThanOrEqual(nextP.x - 1)
+      expect(c.y).toBeGreaterThanOrEqual(nextP.y - 1)
+      expect(c.x + c.width).toBeLessThanOrEqual(nextP.x + nextP.width + 1)
+      expect(c.y + c.height).toBeLessThanOrEqual(nextP.y + nextP.height + 1)
+    }
+    // Chrome rebuilt
+    expect(nextP.shape).toBe('polygon')
+    expect(nextP.outlinePath || nextP.runs?.length).toBeTruthy()
   })
 
   it('convexHull is counterclockwise and minimal', () => {

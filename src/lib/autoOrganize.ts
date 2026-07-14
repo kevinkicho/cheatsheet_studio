@@ -388,8 +388,9 @@ export type CheatsheetLayoutOptions = {
     parentId?: string | null
   }>
   /**
-   * Padding around content when drawing panel chrome (px). Default **3**.
-   * Does **not** inflate packing slots (avoids huge empty guts).
+   * Panel chrome pad (px) from cards to the panel stroke. Default **8**.
+   * Works **with** `gap`: free-flow leaves `gap + 2×panelPadding` between
+   * topic content boxes so panel frames don’t collide.
    */
   panelPadding?: number
   /**
@@ -416,6 +417,104 @@ export type CheatsheetLayoutOptions = {
    * Default `[1]`.
    */
   panelGroupLevels?: PanelGroupLevel[]
+}
+
+/**
+ * Snapshot of Auto-layout options used for export filenames / debugging shares.
+ * (No folders — only user-facing pack knobs.)
+ */
+export type AutoLayoutExportSnapshot = {
+  density: ContentDensity
+  groupChrome: GroupChrome
+  panelShape?: PanelShape
+  panelPadding?: number
+  panelGroupLevels?: PanelGroupLevel[]
+  groupSort?: GroupSortOrder
+  gap?: number
+  multiPage?: boolean
+}
+
+/** Strip characters unsafe in Windows / macOS download names. */
+export function sanitizeExportFileStem(raw: string): string {
+  return (raw || 'cheatsheet')
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[. ]+$/g, '') // trailing dots/spaces break Windows
+    .slice(0, 120) || 'cheatsheet'
+}
+
+/**
+ * Compact tag of Auto-layout knobs for filenames, e.g.
+ * `auto_sm_panels_ngon_L1-2_az_gap6`
+ *
+ * Decode: density · chrome · shape · levels · sort · panel gap px
+ */
+export function formatAutoLayoutFileTag(
+  opts: Partial<CheatsheetLayoutOptions> | AutoLayoutExportSnapshot,
+): string {
+  const density = opts.density ?? 'sm'
+  const chrome = opts.groupChrome ?? 'labels'
+  const parts: string[] = ['auto', density, chrome]
+
+  const panelsOn = chrome === 'panels' || chrome === 'both'
+  if (panelsOn) {
+    const shape = opts.panelShape ?? 'rect'
+    parts.push(shape === 'polygon' ? 'ngon' : 'rect')
+    const levels = normalizePanelGroupLevels(
+      opts.panelGroupLevels,
+      opts.panelGroupLevel,
+    )
+    parts.push(`L${levels.join('-')}`)
+  }
+
+  const sort = opts.groupSort ?? 'none'
+  parts.push(
+    sort === 'name-asc' ? 'az' : sort === 'name-desc' ? 'za' : 'nosort',
+  )
+
+  // Always tag main free-flow gap; panel chrome pad when panels are on
+  parts.push(`gap${Math.round(opts.gap ?? 8)}`)
+  if (panelsOn) {
+    parts.push(`pgap${Math.round(opts.panelPadding ?? 8)}`)
+  }
+
+  if (opts.multiPage === false) parts.push('1page')
+
+  return parts.join('_')
+}
+
+/**
+ * Default download stem: `{sheetTitle}__{autoLayoutTag}` when layout was applied.
+ */
+export function buildExportFileNameStem(
+  sheetTitle: string,
+  layout?: AutoLayoutExportSnapshot | null,
+): string {
+  const base = sanitizeExportFileStem(sheetTitle)
+  if (!layout) return base
+  const tag = formatAutoLayoutFileTag(layout)
+  // Keep combined stem under a practical download length
+  const maxBase = Math.max(24, 160 - tag.length - 2)
+  const shortBase =
+    base.length > maxBase ? base.slice(0, maxBase).replace(/[. ]+$/g, '') : base
+  return `${shortBase}__${tag}`
+}
+
+/** Pick a shareable snapshot from full pack options. */
+export function snapshotAutoLayoutOptions(
+  opts: CheatsheetLayoutOptions,
+): AutoLayoutExportSnapshot {
+  return {
+    density: opts.density ?? 'sm',
+    groupChrome: opts.groupChrome ?? 'labels',
+    panelShape: opts.panelShape,
+    panelPadding: opts.panelPadding,
+    panelGroupLevels: opts.panelGroupLevels,
+    groupSort: opts.groupSort,
+    gap: opts.gap,
+    multiPage: opts.multiPage,
+  }
 }
 
 /**
@@ -477,7 +576,7 @@ export const PANEL_SHAPE_PRESETS: Record<
   },
   polygon: {
     label: 'N-gon (L-fill)',
-    hint: 'Frame follows card runs only — L / stepped when last row is short',
+    hint: 'Solid L/stepped chrome (no donuts); densest on deepest level',
   },
 }
 /**
@@ -1829,16 +1928,15 @@ export function placeTopicRegionsDense(
       for (let c = 0; c <= pageCols - cw; c++) {
         if (collides(c, r, cw, ch)) continue
         const newBottom = Math.max(currentBottom, r + ch)
-        // Primary: compact bottom (hole-fill). Then top-left, or soft diagonal.
+        // Primary: compact bottom (hole-fill). Soft diagonal is a weak bias only.
         let score = newBottom * 1e9 + r * 1e5 + c
         if (readingFlow) {
-          // Noticeable ascending flow: earlier → top-left, later → bottom-right
-          // without forcing row/column bands (still free-flow).
+          // Noticeable ascending flow without sacrificing densification.
           const diag = r + c * 0.35
           score =
             newBottom * 1e9 +
-            Math.abs(diag - diagTarget) * 1e4 +
-            r * 50 +
+            Math.abs(diag - diagTarget) * 800 +
+            r * 1e4 +
             c
         }
         if (!best || score < best.score) {
@@ -1861,28 +1959,19 @@ export function placeTopicRegionsDense(
     })
   }
 
-  // Gravity compaction
+  // Gravity compaction (full up+left always — reading flow only biases place order)
   for (let sweep = 0; sweep < 8; sweep++) {
     let moved = false
     const sorted = [...placed].sort((a, b) => a.r - b.r || a.c - b.c)
     for (const p of sorted) {
       let bestC = p.c
       let bestR = p.r
-      if (readingFlow) {
-        // Slide left only — keep vertical reading flow (lower seq stays higher up)
-        for (let c = 0; c <= p.c; c++) {
-          if (collides(c, p.r, p.cw, p.ch, p.index)) continue
-          if (c < bestC) bestC = c
-        }
-      } else {
-        // Full up+left gravity for densest pack
-        for (let r = 0; r <= p.r; r++) {
-          for (let c = 0; c <= pageCols - p.cw; c++) {
-            if (collides(c, r, p.cw, p.ch, p.index)) continue
-            if (r < bestR || (r === bestR && c < bestC)) {
-              bestR = r
-              bestC = c
-            }
+      for (let r = 0; r <= p.r; r++) {
+        for (let c = 0; c <= pageCols - p.cw; c++) {
+          if (collides(c, r, p.cw, p.ch, p.index)) continue
+          if (r < bestR || (r === bestR && c < bestC)) {
+            bestR = r
+            bestC = c
           }
         }
       }
@@ -1909,6 +1998,204 @@ export function placeTopicRegions(
   pageCols: number,
 ): Map<number, { c: number; r: number }> {
   return placeTopicRegionsDense(regions, pageCols, 0)
+}
+
+/**
+ * Pack leaf regions into the tightest free-flow box among candidate widths.
+ * Using full pageCols for local pack made every outer parent full-width →
+ * vertical stacking and huge empty space lower on the sheet.
+ */
+export function packClusterTight(
+  members: Array<{ index: number; cw: number; ch: number }>,
+  pageCols: number,
+  gapCells = 0,
+): {
+  pos: Map<number, { c: number; r: number }>
+  usedCw: number
+  usedCh: number
+} {
+  if (members.length === 0 || pageCols < 1) {
+    return { pos: new Map(), usedCw: 1, usedCh: 1 }
+  }
+  const gap = Math.max(0, gapCells)
+  const maxLeafW = Math.max(1, ...members.map((m) => m.cw))
+  const area = members.reduce((s, m) => s + m.cw * m.ch, 0)
+  const candidates = Array.from(
+    new Set(
+      [
+        pageCols,
+        Math.ceil((pageCols * 3) / 4),
+        Math.ceil((pageCols * 2) / 3),
+        Math.ceil(pageCols / 2),
+        Math.ceil(pageCols / 3),
+        Math.min(pageCols, Math.max(maxLeafW, Math.ceil(Math.sqrt(area * 1.2)))),
+        Math.min(pageCols, maxLeafW),
+      ]
+        .map((w) => Math.max(maxLeafW, Math.min(pageCols, w)))
+        .filter((w) => w >= 1),
+    ),
+  ).sort((a, b) => a - b)
+
+  let best: {
+    pos: Map<number, { c: number; r: number }>
+    usedCw: number
+    usedCh: number
+    score: number
+  } | null = null
+
+  for (const cols of candidates) {
+    const pos = placeTopicRegionsDense(
+      members.map((m) => ({
+        index: m.index,
+        cw: Math.min(m.cw, cols),
+        ch: m.ch,
+      })),
+      cols,
+      gap,
+      { sortByHeight: true, readingFlow: false },
+    )
+    let usedCw = 1
+    let usedCh = 1
+    for (const m of members) {
+      const o = pos.get(m.index) ?? { c: 0, r: 0 }
+      const cw = Math.min(m.cw, cols)
+      usedCw = Math.max(usedCw, o.c + cw)
+      usedCh = Math.max(usedCh, o.r + m.ch)
+    }
+    usedCw = Math.min(cols, usedCw)
+    // Prefer compact area; slight bias to shorter stacks (side-by-side)
+    const score = usedCw * usedCh * 10 + usedCh * 3 + usedCw * 0.5
+    if (!best || score < best.score) {
+      best = { pos, usedCw, usedCh, score }
+    }
+  }
+  return {
+    pos: best!.pos,
+    usedCw: best!.usedCw,
+    usedCh: best!.usedCh,
+  }
+}
+
+/**
+ * Hierarchical free-flow placement for nested panel levels.
+ *
+ * Leaf plans (deepest group) pack **tightly inside** each shallow-level cluster,
+ * then outer boxes free-flow on the page. Outer title band is reserved so L1
+ * chips sit above L2 content (readable nested titles).
+ */
+export function placePlansHierarchical(
+  plans: Array<{
+    index: number
+    cw: number
+    ch: number
+    /** Folder id at deepest pack level (leaf group). */
+    leafFolderId: string | null
+  }>,
+  folders: FolderRef[],
+  /** Shallowest selected level (e.g. 1) — outer cluster key. */
+  outerLevel: PanelGroupLevel,
+  pageCols: number,
+  gapCells = 0,
+  opts?: {
+    sortByHeight?: boolean
+    readingFlow?: boolean
+    /** Cells reserved at top of each outer cluster for L1 title chip. */
+    outerTitleCells?: number
+    /**
+     * Gap between outer parent boxes (defaults to gapCells).
+     * Should be ≥ chrome pad of outer frames so L1 panels never collide.
+     */
+    outerGapCells?: number
+    /**
+     * Inset (cells) between L1 outer border and L2 leaf content — prevents
+     * stacked double borders (outer+inner lines on top of each other).
+     */
+    nestInsetCells?: number
+  },
+): Map<number, { c: number; r: number }> {
+  const pos = new Map<number, { c: number; r: number }>()
+  if (pageCols < 1 || plans.length === 0) return pos
+
+  const gap = Math.max(0, gapCells)
+  const outerGap = Math.max(gap, opts?.outerGapCells ?? gap)
+  const outerTitle = Math.max(0, opts?.outerTitleCells ?? 0)
+  const nestInset = Math.max(0, opts?.nestInsetCells ?? 0)
+  // Cluster leaf plans by outer ancestor
+  type Cluster = {
+    key: string
+    members: Array<{ index: number; cw: number; ch: number }>
+  }
+  const orderKeys: string[] = []
+  const clusters = new Map<string, Cluster>()
+  for (const p of plans) {
+    const key =
+      folderAtGroupLevel(p.leafFolderId, folders, outerLevel) ??
+      p.leafFolderId ??
+      `__plan_${p.index}`
+    if (!clusters.has(key)) {
+      clusters.set(key, { key, members: [] })
+      orderKeys.push(key)
+    }
+    clusters.get(key)!.members.push({
+      index: p.index,
+      cw: p.cw,
+      ch: p.ch,
+    })
+  }
+
+  type OuterBox = {
+    key: string
+    cw: number
+    ch: number
+    local: Map<number, { c: number; r: number }>
+  }
+  const outers: OuterBox[] = []
+  for (const key of orderKeys) {
+    const cl = clusters.get(key)!
+    // Leave room for left/right nest inset inside the outer box width budget
+    const innerCols = Math.max(
+      1,
+      pageCols - nestInset * 2,
+    )
+    const tight = packClusterTight(cl.members, innerCols, gap)
+    // Shift leaves: outer title on top + nest inset on left/top
+    const local = new Map<number, { c: number; r: number }>()
+    for (const [idx, p] of tight.pos) {
+      local.set(idx, {
+        c: p.c + nestInset,
+        r: p.r + outerTitle + nestInset,
+      })
+    }
+    outers.push({
+      key,
+      cw: Math.min(
+        pageCols,
+        Math.max(1, tight.usedCw + nestInset * 2),
+      ),
+      ch: Math.max(1, tight.usedCh + outerTitle + nestInset * 2),
+      local,
+    })
+  }
+
+  // Global free-flow of outer boxes (non-overlapping L1 / shallow frames)
+  const outerPlace = placeTopicRegionsDense(
+    outers.map((o, i) => ({ index: i, cw: o.cw, ch: o.ch })),
+    pageCols,
+    outerGap,
+    {
+      sortByHeight: opts?.sortByHeight,
+      readingFlow: opts?.readingFlow,
+    },
+  )
+
+  for (let i = 0; i < outers.length; i++) {
+    const o = outers[i]!
+    const origin = outerPlace.get(i) ?? { c: 0, r: 0 }
+    for (const [planIndex, loc] of o.local) {
+      pos.set(planIndex, { c: origin.c + loc.c, r: origin.r + loc.r })
+    }
+  }
+  return pos
 }
 
 /**
@@ -1945,8 +2232,9 @@ export function packCheatsheetLayout(
   const titleFont = Math.max(9, preset.titleFontSize)
   const bodyFont = Math.max(12, preset.fontSize)
   const grid = Math.max(4, canvas.gridSpacing ?? ORGANIZE_GRID)
+  // UI “Gap”: free-flow air between topic groups (and between panel *outers*).
   const gapPx = Math.max(
-    4,
+    0,
     options.gap ??
       (density === 'xs' ? 6 : density === 'sm' ? 8 : density === 'md' ? 12 : 16),
   )
@@ -1956,10 +2244,10 @@ export function packCheatsheetLayout(
   const groupChrome: GroupChrome = options.groupChrome ?? 'labels'
   const useLabels = groupChrome === 'labels' || groupChrome === 'both'
   const usePanels = groupChrome === 'panels' || groupChrome === 'both'
-  // Panel gap + chrome pad in px (0–48). Also drives free-flow inter-panel gap.
-  const panelPad = Math.max(0, Math.min(48, options.panelPadding ?? 4))
+  // UI “Panel gap”: chrome pad (cards → stroke). Not a second free-flow gap.
+  const panelPad = Math.max(0, Math.min(48, options.panelPadding ?? 8))
   const panelShape: PanelShape = options.panelShape ?? 'rect'
-  /** N-gon = denser flush packing; rect = standard panel gap */
+  /** N-gon = solid L chrome + exterior outline; rect = AABB frames */
   const usePolyomino = usePanels && panelShape === 'polygon'
   const groupSort: GroupSortOrder = options.groupSort ?? 'none'
   // Multi-select hierarchy: pack at deepest level; draw nested chrome for each
@@ -2163,6 +2451,8 @@ export function packCheatsheetLayout(
         ? Math.max(1, Math.ceil(PANEL_TITLE_BAND_PX / grid))
         : 0
 
+    // Dense natural shelf for all shapes (n-gon chrome fills holes — no donut
+    // free-rect packing that left large gutters and hollow interiors).
     const contentCw = Math.max(1, natural.contentCw)
     const contentCh = Math.max(1, natural.contentCh)
     const regionCw = Math.min(pageCols, contentCw)
@@ -2202,29 +2492,84 @@ export function packCheatsheetLayout(
   }
 
   const nameOrdered = groupSort === 'name-asc' || groupSort === 'name-desc'
-  // Panel gap → free-flow clearance (chrome pad both sides). N-gon: slightly
-  // denser (half) so L-fill packs tighter than full AABB rect mode.
-  const regionGapCells = usePanels
-    ? Math.max(
-        0,
-        Math.ceil((panelPad * 2) / grid / (usePolyomino ? 2 : 1)),
-      )
+  const shallowLevel = panelGroupLevels[0] ?? 1
+  const deepLevel =
+    panelGroupLevels[panelGroupLevels.length - 1] ?? shallowLevel
+  // Nested levels (e.g. L1+L2): pack leaf groups inside each outer parent
+  // first, then free-flow parents — prevents L1 frames stacking across the page.
+  const useHierarchicalPlace =
+    usePanels && deepLevel > shallowLevel && (options.folders?.length ?? 0) > 0
+
+  // ── Gap + panel pad together (one free-flow clearance formula) ─────────
+  // gap          → air between panel *outer* edges (or topic boxes if no panels)
+  // panelPadding → chrome pad (card edge → panel stroke) only
+  // Content free-flow gap = gap + 2×pad so outer strokes end up ~gap apart.
+  //
+  // Bug: counting n-gon as a full grid cell (24px) when pad=4 made
+  // clearance ~72px while the UI said 4+4. Use real pad px for gap math.
+  // Nest inset scales with pad (not a hard 16px floor).
+  const nestInsetPx = useHierarchicalPlace
+    ? Math.max(4, panelPad + 4)
     : 0
-  // plans already sorted by groupSort; readingFlow places that sequence with
-  // soft top-left → bottom-right bias (A→Z or Z→A depending on sort).
-  const regionPos = placeTopicRegionsDense(
-    plans.map((p) => ({
-      index: p.index,
-      cw: p.regionCw,
-      ch: p.regionCh,
-    })),
-    pageCols,
-    regionGapCells,
-    {
-      sortByHeight: !nameOrdered,
-      readingFlow: nameOrdered,
-    },
-  )
+  const leafChromePx = usePanels ? panelPad : 0
+  const outerChromePx = usePanels ? panelPad + nestInsetPx : 0
+
+  /** Map px → grid cells; allow 0 when clearance is sub-cell. */
+  const pxToCells = (px: number) => {
+    if (px <= 0) return 0
+    return Math.max(1, Math.ceil(px / grid))
+  }
+
+  // Between two content regions: chromeA + gap + chromeB (use pad, not dilate)
+  const leafGapCells = usePanels
+    ? pxToCells(gapPx + leafChromePx * 2)
+    : pxToCells(gapPx)
+  const outerGapCells = usePanels
+    ? pxToCells(gapPx + outerChromePx * 2)
+    : pxToCells(gapPx)
+
+  const placeOpts = {
+    sortByHeight: !nameOrdered,
+    readingFlow: nameOrdered,
+  }
+  const regionPos = useHierarchicalPlace
+    ? placePlansHierarchical(
+        plans.map((p) => ({
+          index: p.index,
+          cw: p.regionCw,
+          ch: p.regionCh,
+          leafFolderId:
+            p.groupFolderId ??
+            p.body.find((b) => b.folderId)?.folderId ??
+            p.heading?.folderId ??
+            null,
+        })),
+        options.folders ?? [],
+        shallowLevel,
+        pageCols,
+        leafGapCells,
+        {
+          ...placeOpts,
+          // L1 exclusive title row (~16+18px) above L2 content/titles
+          outerTitleCells: Math.max(
+            2,
+            Math.ceil((PANEL_TITLE_BAND_PX + 18) / grid),
+          ),
+          outerGapCells,
+          // Inside outer box: inset leaves so L1 stroke ≠ L2 stroke
+          nestInsetCells: Math.max(1, Math.ceil(nestInsetPx / grid)),
+        },
+      )
+    : placeTopicRegionsDense(
+        plans.map((p) => ({
+          index: p.index,
+          cw: p.regionCw,
+          ch: p.regionCh,
+        })),
+        pageCols,
+        outerGapCells,
+        placeOpts,
+      )
 
   for (const plan of plans) {
     const origin = regionPos.get(plan.index) ?? { c: 0, r: 0 }
@@ -2747,16 +3092,29 @@ export function buildNestedHierarchyPanels(args: {
   if (cards.length === 0) return []
 
   const maxL = sorted[sorted.length - 1]!
+  const multi = sorted.length > 1
   const panels: LayoutPanel[] = []
   let accentIdx = 0
 
+  // Always emit every selected level for every folder (including single-child
+  // parents like “2. Chemistry” → “2.1 Acids”). Nest inset in packing keeps
+  // L1/L2 strokes separated so we no longer skip outers to avoid double lines.
+
   for (const level of sorted) {
-    // Outer levels get a bit more pad so they clearly wrap inner frames
-    const depthBoost = (maxL - level) * Math.max(4, Math.round(panelPad * 0.5))
-    const pad = Math.max(0, panelPad) + depthBoost
-    // Outer = rect wrap (clean parent); deepest selected can use n-gon runs
+    const isDeepest = level === maxL
+    // Nested: outer pad slightly larger so L1 always wraps L2 (nestInset does
+    // the air gap — keep pad boost modest so gap=4/pad=4 stays tight).
+    const pad = Math.max(
+      0,
+      isDeepest ? panelPad : panelPad + Math.max(4, Math.round(panelPad * 0.5)),
+    )
+    // N-gon applies at every selected level (including L1), not only deepest.
     const shapeAtLevel: PanelShape =
-      level === maxL && panelShape === 'polygon' ? 'polygon' : 'rect'
+      panelShape === 'polygon' ? 'polygon' : 'rect'
+    // L1 exclusive header strip so parent chip sits above L2 titles
+    const titleBand = isDeepest
+      ? titleBandPx
+      : titleBandPx + (multi ? 18 : 0)
 
     const groups = new Map<string, CanvasItem[]>()
     for (const c of cards) {
@@ -2768,6 +3126,7 @@ export function buildNestedHierarchyPanels(args: {
 
     for (const [folderId, members] of groups) {
       if (members.length === 0) continue
+
       const title =
         folderName.get(folderId) ||
         folderHierarchyPath(folderId, folders) ||
@@ -2776,7 +3135,7 @@ export function buildNestedHierarchyPanels(args: {
         LAYOUT_PANEL_ACCENTS[accentIdx++ % LAYOUT_PANEL_ACCENTS.length]
       const chrome = chromeFromMembers(members, {
         pad,
-        titleBand: titleBandPx,
+        titleBand,
         shape: shapeAtLevel,
         grid,
       })
@@ -2790,7 +3149,7 @@ export function buildNestedHierarchyPanels(args: {
         ...chrome,
         shape: shapeAtLevel,
         accent,
-        // Outer under inner so nested frames paint correctly / click inner first
+        // Outer under inner
         zIndex: level - 1,
         hierarchyLevel: level,
       })
@@ -2798,6 +3157,136 @@ export function buildNestedHierarchyPanels(args: {
   }
 
   return panels
+}
+
+/**
+ * Exterior edge segments of a unit-cell polyomino (absolute board px).
+ * Only edges with no neighboring cell — **no internal joins**.
+ * Optional `pad` expands each edge **outward** (away from the polyomino)
+ * so the stroke clears cards without a full-grid-cell dilate.
+ */
+export function polyominoExteriorEdges(
+  unit: Set<string>,
+  grid: number,
+  originX: number,
+  originY: number,
+  pad = 0,
+): Array<{ x1: number; y1: number; x2: number; y2: number }> {
+  if (unit.size === 0 || grid < 1) return []
+  const p = Math.max(0, pad)
+  const has = (c: number, r: number) => unit.has(`${c},${r}`)
+  const segs: Array<{ x1: number; y1: number; x2: number; y2: number }> = []
+  for (const k of unit) {
+    const [cs, rs] = k.split(',')
+    const c = Number(cs)
+    const r = Number(rs)
+    const x = originX + c * grid
+    const y = originY + r * grid
+    // N (outward −y): extend along edge by pad so corners meet
+    if (!has(c, r - 1))
+      segs.push({
+        x1: x - p,
+        y1: y - p,
+        x2: x + grid + p,
+        y2: y - p,
+      })
+    // S (outward +y)
+    if (!has(c, r + 1))
+      segs.push({
+        x1: x - p,
+        y1: y + grid + p,
+        x2: x + grid + p,
+        y2: y + grid + p,
+      })
+    // W (outward −x)
+    if (!has(c - 1, r))
+      segs.push({
+        x1: x - p,
+        y1: y - p,
+        x2: x - p,
+        y2: y + grid + p,
+      })
+    // E (outward +x)
+    if (!has(c + 1, r))
+      segs.push({
+        x1: x + grid + p,
+        y1: y - p,
+        x2: x + grid + p,
+        y2: y + grid + p,
+      })
+  }
+  return segs
+}
+
+/**
+ * Exterior SVG path for a unit-cell polyomino (absolute board px).
+ *
+ * Emits one `M…L…` per exterior edge (not a single stitched loop). Stitching
+ * used to drop edges at T-junctions / L-corners and produced broken borders.
+ * Per-edge segments always cover the full outline; internal edges omitted.
+ */
+export function polyominoExteriorPathD(
+  unit: Set<string>,
+  grid: number,
+  originX: number,
+  originY: number,
+  pad = 0,
+): string {
+  const segs = polyominoExteriorEdges(unit, grid, originX, originY, pad)
+  if (segs.length === 0) return ''
+  return segs
+    .map(
+      (s) =>
+        `M ${Math.round(s.x1)} ${Math.round(s.y1)} L ${Math.round(s.x2)} ${Math.round(s.y2)}`,
+    )
+    .join(' ')
+}
+
+/**
+ * Fill interior holes in a unit-cell polyomino so n-gon chrome never forms a
+ * “donut” (empty island fully enclosed by the group).
+ */
+export function fillPolyominoHoles(unit: Set<string>): Set<string> {
+  if (unit.size === 0) return unit
+  let minC = Infinity
+  let maxC = -Infinity
+  let minR = Infinity
+  let maxR = -Infinity
+  for (const k of unit) {
+    const [cs, rs] = k.split(',')
+    const c = Number(cs)
+    const r = Number(rs)
+    minC = Math.min(minC, c)
+    maxC = Math.max(maxC, c)
+    minR = Math.min(minR, r)
+    maxR = Math.max(maxR, r)
+  }
+  const exterior = new Set<string>()
+  const q: Array<[number, number]> = []
+  const key = (c: number, r: number) => `${c},${r}`
+  const inB = (c: number, r: number) =>
+    c >= minC - 1 && c <= maxC + 1 && r >= minR - 1 && r <= maxR + 1
+  for (let c = minC - 1; c <= maxC + 1; c++) {
+    q.push([c, minR - 1], [c, maxR + 1])
+  }
+  for (let r = minR; r <= maxR; r++) {
+    q.push([minC - 1, r], [maxC + 1, r])
+  }
+  while (q.length) {
+    const [c, r] = q.pop()!
+    const k = key(c, r)
+    if (!inB(c, r) || exterior.has(k) || unit.has(k)) continue
+    exterior.add(k)
+    q.push([c + 1, r], [c - 1, r], [c, r + 1], [c, r - 1])
+  }
+  const filled = new Set(unit)
+  for (let r = minR; r <= maxR; r++) {
+    for (let c = minC; c <= maxC; c++) {
+      const k = key(c, r)
+      if (!unit.has(k) && !exterior.has(k)) filled.add(k)
+    }
+  }
+  return filled
 }
 
 /** AABB or n-gon runs from member card geometry. */
@@ -2815,6 +3304,7 @@ function chromeFromMembers(
   width: number
   height: number
   runs?: Array<{ x: number; y: number; width: number; height: number }>
+  outlinePath?: string
 } {
   const pad = Math.max(0, opts.pad)
   const titleBand = Math.max(0, opts.titleBand)
@@ -2833,53 +3323,87 @@ function chromeFromMembers(
     return { x, y, width, height }
   }
 
-  // N-gon: orthogonal runs of card footprints only (no empty corner fill)
+  // N-gon: cells that **fully cover** each card, hole-filled, then dilated by
+  // ceil(pad/grid) so outline always wraps content. Placement gap must leave
+  // room for that dilate (see leafGapCells).
   const originX = minX
   const originY = minY
-  const cells = members.map((m) => ({
-    c: Math.max(0, Math.round((m.x - originX) / grid)),
-    r: Math.max(0, Math.round((m.y - originY) / grid)),
-    cw: Math.max(1, Math.round(m.width / grid)),
-    ch: Math.max(1, Math.round(m.height / grid)),
-  }))
-  let runs = cellsToOrthogonalRuns(cells, grid, originX, originY, pad)
-  if (runs.length === 0) {
-    const x = Math.round(minX - pad)
-    const y = Math.round(minY - pad - titleBand)
-    return {
-      x,
-      y,
-      width: Math.max(8, Math.round(maxX - minX + pad * 2)),
-      height: Math.max(8, Math.round(maxY - minY + pad * 2 + titleBand)),
+  let unit = new Set<string>()
+  for (const m of members) {
+    const left = m.x - originX
+    const right = m.x + m.width - originX
+    const top = m.y - originY
+    const bottom = m.y + m.height - originY
+    const c0 = Math.floor(left / grid)
+    const c1 = Math.ceil(right / grid)
+    const r0 = Math.floor(top / grid)
+    const r1 = Math.ceil(bottom / grid)
+    for (let r = r0; r < Math.max(r0 + 1, r1); r++) {
+      for (let c = c0; c < Math.max(c0 + 1, c1); c++) {
+        unit.add(`${c},${r}`)
+      }
     }
   }
-  // Lift topmost runs for title band
-  const topY = Math.min(...runs.map((r) => r.y))
-  runs = runs.map((r) => {
-    const isTop = Math.abs(r.y - topY) < 0.5
-    return isTop
-      ? {
-          ...r,
-          y: r.y - titleBand,
-          height: r.height + titleBand,
-        }
-      : r
-  })
-  const x0 = Math.min(...runs.map((r) => r.x))
-  const y0 = Math.min(...runs.map((r) => r.y))
-  const x1 = Math.max(...runs.map((r) => r.x + r.width))
-  const y1 = Math.max(...runs.map((r) => r.y + r.height))
+  unit = fillPolyominoHoles(unit)
+
+  const titleRows = Math.max(0, Math.ceil(titleBand / grid))
+  if (titleRows > 0 && unit.size > 0) {
+    let minR = Infinity
+    for (const k of unit) minR = Math.min(minR, Number(k.split(',')[1]))
+    const topCols = new Set<number>()
+    for (const k of unit) {
+      const [cs, rs] = k.split(',')
+      if (Number(rs) === minR) topCols.add(Number(cs))
+    }
+    for (let dr = 1; dr <= titleRows; dr++) {
+      for (const c of topCols) unit.add(`${c},${minR - dr}`)
+    }
+  }
+
+  // Pixel pad only — no full-cell dilate (pad=4 must not become 24px chrome).
+  const solidCells: Array<{ c: number; r: number; cw: number; ch: number }> = []
+  for (const k of unit) {
+    const [cs, rs] = k.split(',')
+    solidCells.push({ c: Number(cs), r: Number(rs), cw: 1, ch: 1 })
+  }
+  let runsRaw = cellsToOrthogonalRuns(solidCells, grid, originX, originY, 0)
+  runsRaw = runsRaw.map((r) => ({
+    x: r.x - pad,
+    y: r.y - pad,
+    width: r.width + pad * 2,
+    height: r.height + pad * 2,
+  }))
+  // Exterior edges offset outward by pad (true clearance, not cell dilate)
+  const outlinePath = polyominoExteriorPathD(unit, grid, originX, originY, pad)
+
+  const guardX0 = minX - pad
+  const guardY0 = minY - pad - titleBand
+  const guardX1 = maxX + pad
+  const guardY1 = maxY + pad
+  if (runsRaw.length === 0) {
+    return {
+      x: Math.round(guardX0),
+      y: Math.round(guardY0),
+      width: Math.max(8, Math.round(guardX1 - guardX0)),
+      height: Math.max(8, Math.round(guardY1 - guardY0)),
+    }
+  }
+  const x0 = Math.min(guardX0, ...runsRaw.map((r) => r.x))
+  const y0 = Math.min(guardY0, ...runsRaw.map((r) => r.y))
+  const x1 = Math.max(guardX1, ...runsRaw.map((r) => r.x + r.width))
+  const y1 = Math.max(guardY1, ...runsRaw.map((r) => r.y + r.height))
   return {
     x: Math.round(x0),
     y: Math.round(y0),
     width: Math.max(8, Math.round(x1 - x0)),
     height: Math.max(8, Math.round(y1 - y0)),
-    runs: runs.map((r) => ({
+    runs: runsRaw.map((r) => ({
       x: Math.round(r.x),
       y: Math.round(r.y),
       width: Math.max(8, Math.round(r.width)),
       height: Math.max(8, Math.round(r.height)),
     })),
+    outlinePath: outlinePath || undefined,
   }
 }
 
@@ -2887,32 +3411,32 @@ function chromeFromMembers(
  * Re-pack cards inside one panel (shelf within panel content box).
  * Used when user sets contentSort or after showTitle changes title band.
  *
- * Returns updated items **and** a panel whose bounds hug the reflowed cards
- * (so chrome stays tight after sort).
+ * With `mode: 'dense'` (Panel Properties → Auto-layout): packs for best use of
+ * the panel width, scales cards down if needed to fit, then rebuilds chrome
+ * (including n-gon outline) so the frame fully encapsulates content.
  */
 export function relayoutPanelContents(
   items: CanvasItem[],
   panel: LayoutPanel,
-  opts?: { grid?: number; gapPx?: number },
+  opts?: {
+    grid?: number
+    gapPx?: number
+    panelPad?: number
+    /** shelf = keep sizes; dense = pack + optional scale-to-fit + rebuild chrome */
+    mode?: 'shelf' | 'dense'
+  },
 ): { items: CanvasItem[]; panel: LayoutPanel } {
   const ids = new Set(panel.memberIds ?? [])
   if (ids.size === 0) return { items, panel }
 
-  const gap = opts?.gapPx ?? 6
+  const gap = Math.max(2, opts?.gapPx ?? 6)
   const showTitle = panel.showTitle !== false
   const titleBand = showTitle ? 16 : 0
-  const pad = 4
-  // Use current panel width as shelf width; fall back to members’ span
-  const contentW = Math.max(
-    48,
-    panel.width - pad * 2,
-    ...items.filter((i) => ids.has(i.id) && !i.hidden).map((i) => i.width),
-  )
-  const contentX = panel.x + pad
-  const contentY = panel.y + pad + titleBand
+  const pad = Math.max(2, opts?.panelPad ?? 4)
+  const grid = opts?.grid ?? ORGANIZE_GRID
+  const dense = opts?.mode === 'dense'
 
   let members = items.filter((i) => ids.has(i.id) && !i.hidden)
-  // Preserve memberIds order when contentSort is none (stable pack order)
   if ((panel.contentSort ?? 'none') === 'none' && panel.memberIds?.length) {
     const rank = new Map(panel.memberIds.map((id, i) => [id, i]))
     members = [...members].sort(
@@ -2930,53 +3454,117 @@ export function relayoutPanelContents(
       return a.id.localeCompare(b.id)
     })
   }
+  if (members.length === 0) return { items, panel }
 
-  // Left-to-right shelf (keep card sizes)
-  let x = contentX
-  let y = contentY
-  let rowH = 0
-  const placed = new Map<string, { x: number; y: number }>()
-  for (const m of members) {
-    const w = m.width
-    const h = m.height
-    if (x > contentX && x + w > contentX + contentW) {
-      x = contentX
-      y += rowH + gap
-      rowH = 0
+  // Target content box from current panel (dense: use panel as budget)
+  const contentX = panel.x + pad
+  const contentY = panel.y + pad + titleBand
+  const contentW = Math.max(
+    48,
+    panel.width - pad * 2,
+    ...members.map((m) => m.width),
+  )
+  const contentH = Math.max(48, panel.height - pad * 2 - titleBand)
+
+  // Dense: try natural pack widths, pick densest that fits contentW
+  type Place = { id: string; x: number; y: number; w: number; h: number }
+  let places: Place[] = []
+
+  if (dense) {
+    // Shelf pack at current sizes; if overflows height, uniform scale down
+    const packShelf = (scale: number) => {
+      const out: Place[] = []
+      let x = contentX
+      let y = contentY
+      let rowH = 0
+      for (const m of members) {
+        const w = Math.max(24, Math.round(m.width * scale))
+        const h = Math.max(20, Math.round(m.height * scale))
+        if (x > contentX && x + w > contentX + contentW) {
+          x = contentX
+          y += rowH + gap
+          rowH = 0
+        }
+        // Clamp single card wider than box
+        const ww = Math.min(w, contentW)
+        out.push({ id: m.id, x: Math.round(x), y: Math.round(y), w: ww, h })
+        x += ww + gap
+        rowH = Math.max(rowH, h)
+      }
+      const bottom = out.reduce((b, p) => Math.max(b, p.y + p.h), contentY)
+      return { out, height: bottom - contentY }
     }
-    placed.set(m.id, { x: Math.round(x), y: Math.round(y) })
-    x += w + gap
-    rowH = Math.max(rowH, h)
+    let scale = 1
+    let best = packShelf(1)
+    // Shrink until fits panel height (or scale floor)
+    while (best.height > contentH + 2 && scale > 0.55) {
+      scale *= 0.9
+      best = packShelf(scale)
+    }
+    places = best.out
+  } else {
+    // Simple shelf (keep sizes) — contentSort path
+    let x = contentX
+    let y = contentY
+    let rowH = 0
+    for (const m of members) {
+      const w = m.width
+      const h = m.height
+      if (x > contentX && x + w > contentX + contentW) {
+        x = contentX
+        y += rowH + gap
+        rowH = 0
+      }
+      places.push({
+        id: m.id,
+        x: Math.round(x),
+        y: Math.round(y),
+        w,
+        h,
+      })
+      x += w + gap
+      rowH = Math.max(rowH, h)
+    }
   }
 
+  const byPlace = new Map(places.map((p) => [p.id, p]))
   const nextItems = items.map((it) => {
-    const p = placed.get(it.id)
+    const p = byPlace.get(it.id)
     if (!p) return it
-    return { ...it, x: p.x, y: p.y }
+    return {
+      ...it,
+      x: p.x,
+      y: p.y,
+      width: dense ? p.w : it.width,
+      height: dense ? p.h : it.height,
+    }
   })
 
-  // Hug reflowed members so panel chrome tracks the sort
   const moved = nextItems.filter((i) => ids.has(i.id) && !i.hidden)
   if (moved.length === 0) return { items: nextItems, panel }
 
-  const minX = Math.min(...moved.map((m) => m.x)) - pad
-  const minY = Math.min(...moved.map((m) => m.y)) - pad - titleBand
-  const maxX = Math.max(...moved.map((m) => m.x + m.width)) + pad
-  const maxY = Math.max(...moved.map((m) => m.y + m.height)) + pad
-  const x0 = Math.round(minX)
-  const y0 = Math.round(minY)
-  const w0 = Math.max(8, Math.round(maxX - minX))
-  const h0 = Math.max(8, Math.round(maxY - minY))
+  // Rebuild chrome so n-gon outline fully wraps reflowed cards
+  const shape: PanelShape = panel.shape === 'polygon' ? 'polygon' : 'rect'
+  const chrome = chromeFromMembers(moved, {
+    pad,
+    titleBand,
+    shape,
+    grid,
+  })
   const nextPanel: LayoutPanel = {
     ...panel,
-    x: x0,
-    y: y0,
-    width: w0,
-    height: h0,
-    runs:
-      panel.shape === 'polygon'
-        ? [{ x: x0, y: y0, width: w0, height: h0 }]
-        : panel.runs,
+    ...chrome,
+    shape,
+    // Preserve identity / hierarchy
+    id: panel.id,
+    folderId: panel.folderId,
+    title: panel.title,
+    showTitle: panel.showTitle,
+    contentSort: panel.contentSort,
+    memberIds: panel.memberIds,
+    accent: panel.accent,
+    zIndex: panel.zIndex,
+    hierarchyLevel: panel.hierarchyLevel,
   }
   return { items: nextItems, panel: nextPanel }
 }

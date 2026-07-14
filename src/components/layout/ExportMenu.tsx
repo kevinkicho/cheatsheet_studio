@@ -27,6 +27,7 @@ export function ExportMenu({
   const canvas = useCanvasStore((s) => s.canvas)
   const items = useCanvasStore((s) => s.items)
   const title = useCanvasStore((s) => s.title)
+  const lastAutoLayout = useCanvasStore((s) => s.lastAutoLayout)
 
   const openDialog = () => {
     setDialogOpen(true)
@@ -87,6 +88,7 @@ export function ExportMenu({
         canvas={canvas}
         items={items}
         title={title}
+        lastAutoLayout={lastAutoLayout}
         busy={busy}
         onBusyChange={(v) => {
           setBusy(v)

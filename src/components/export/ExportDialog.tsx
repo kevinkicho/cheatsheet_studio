@@ -35,6 +35,8 @@ import {
   runSheetExport,
   type SheetExportProgress,
 } from '@/lib/runSheetExport'
+import { buildExportFileNameStem } from '@/lib/autoOrganize'
+import type { AutoLayoutExportSnapshot } from '@/lib/autoOrganize'
 
 const FORMAT_ICONS: Record<ExportFormat, typeof FileDown> = {
   pdf: FileType2,
@@ -49,6 +51,8 @@ export type ExportDialogProps = {
   canvas: SheetCanvas
   items: CanvasItem[]
   title: string
+  /** Last Auto-layout snapshot — tags default download name. */
+  lastAutoLayout?: AutoLayoutExportSnapshot | null
   busy: boolean
   onBusyChange: (busy: boolean) => void
   onProgress?: (p: SheetExportProgress) => void
@@ -67,6 +71,7 @@ export function ExportDialog({
   canvas,
   items,
   title,
+  lastAutoLayout = null,
   busy,
   onBusyChange,
   onProgress,
@@ -104,8 +109,8 @@ export function ExportDialog({
     setBackgroundMode('transparent')
     setPageArrangement('vertical')
     setPackageMode('combined')
-    setFileName(title || 'cheatsheet')
-  }, [open, pages, title])
+    setFileName(buildExportFileNameStem(title || 'cheatsheet', lastAutoLayout))
+  }, [open, pages, title, lastAutoLayout])
 
   // SVG opens in browsers as white paper if transparent — prefer board color
   useEffect(() => {
@@ -474,6 +479,39 @@ export function ExportDialog({
 
           <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-4 py-3">
             <div className="flex flex-col gap-4">
+              {/* File name — top of options for quick edit before format */}
+              <fieldset className="min-w-0">
+                <legend className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                  File name
+                </legend>
+                <label className="block">
+                  <span className="sr-only">Export file name</span>
+                  <div className="flex items-center gap-1 rounded-md border border-zinc-800 bg-zinc-900/60 px-2 py-1.5 focus-within:border-indigo-500/50">
+                    <input
+                      type="text"
+                      data-testid="export-file-name"
+                      value={fileName}
+                      disabled={busy}
+                      onChange={(e) => setFileName(e.target.value)}
+                      placeholder={title || 'cheatsheet'}
+                      className="min-w-0 flex-1 bg-transparent text-xs text-zinc-100 outline-none placeholder:text-zinc-600"
+                      spellCheck={false}
+                    />
+                    <span className="shrink-0 text-[10px] text-zinc-500">
+                      .{format === 'jpeg' ? 'jpg' : format}
+                    </span>
+                  </div>
+                  <span className="mt-1 block text-[10px] leading-snug text-zinc-600">
+                    {lastAutoLayout
+                      ? 'Default includes Auto-layout tags (density, panels, n-gon, levels, sort, gap) so shared files show how they were packed.'
+                      : 'Downloads use this name. Apply Auto-layout first to auto-tag pack settings in the filename.'}
+                    {' '}
+                    If the file already exists, the browser usually adds “ (1)”,
+                    “ (2)”, …
+                  </span>
+                </label>
+              </fieldset>
+
               {/* Format */}
               <fieldset className="min-w-0">
                 <legend className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
@@ -616,35 +654,6 @@ export function ExportDialog({
                     )
                   })}
                 </div>
-              </fieldset>
-
-              {/* File name */}
-              <fieldset className="min-w-0">
-                <legend className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
-                  File name
-                </legend>
-                <label className="block">
-                  <span className="sr-only">Export file name</span>
-                  <div className="flex items-center gap-1 rounded-md border border-zinc-800 bg-zinc-900/60 px-2 py-1.5 focus-within:border-indigo-500/50">
-                    <input
-                      type="text"
-                      data-testid="export-file-name"
-                      value={fileName}
-                      disabled={busy}
-                      onChange={(e) => setFileName(e.target.value)}
-                      placeholder={title || 'cheatsheet'}
-                      className="min-w-0 flex-1 bg-transparent text-xs text-zinc-100 outline-none placeholder:text-zinc-600"
-                      spellCheck={false}
-                    />
-                    <span className="shrink-0 text-[10px] text-zinc-500">
-                      .{format === 'jpeg' ? 'jpg' : format}
-                    </span>
-                  </div>
-                  <span className="mt-1 block text-[10px] leading-snug text-zinc-600">
-                    Downloads use this name. If the file already exists, the
-                    browser usually adds “ (1)”, “ (2)”, …
-                  </span>
-                </label>
               </fieldset>
 
               {/* Package mode — files */}

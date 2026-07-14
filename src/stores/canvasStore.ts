@@ -7,7 +7,9 @@ import {
   relayoutPanelContents,
   snapToGridValue,
   ORGANIZE_GRID,
+  type AutoLayoutExportSnapshot,
   type CheatsheetLayoutOptions,
+  snapshotAutoLayoutOptions,
 } from '@/lib/autoOrganize'
 import {
   autoPrintPageOrigins,
@@ -148,6 +150,11 @@ interface CanvasState {
    * Fine-tune title / content sort in left sidebar.
    */
   selectedPanelId: string | null
+  /**
+   * Last successful Auto-layout options — used to tag export filenames so
+   * shared files encode density / chrome / n-gon / levels / sort / gap.
+   */
+  lastAutoLayout: AutoLayoutExportSnapshot | null
   dirty: boolean
   maxZ: number
   /** Undo stack (document snapshots before edits). */
@@ -223,6 +230,11 @@ interface CanvasState {
   ) => void
   /** Re-shelf cards inside a panel (after contentSort / showTitle). */
   relayoutSelectedPanel: () => void
+  /**
+   * Dense pack + resize cards inside the selected panel, then rebuild chrome
+   * (n-gon outline included) to fully wrap content.
+   */
+  autoLayoutSelectedPanel: () => void
   /** Shift+click: add if missing, remove if already selected. */
   toggleSelect: (id: string) => void
   /** Replace selection with explicit ids (marquee). */
@@ -389,6 +401,7 @@ const empty = () => ({
   folders: [] as OutlinerFolder[],
   selectedIds: [] as string[],
   selectedPanelId: null as string | null,
+  lastAutoLayout: null as AutoLayoutExportSnapshot | null,
   dirty: false,
   maxZ: 1,
   past: [] as CanvasDocSnapshot[],
@@ -904,6 +917,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         return {
           items,
           dirty: true,
+          lastAutoLayout: snapshotAutoLayoutOptions(packOpts),
           canvas: {
             ...s.canvas,
             printPageCount: pageCount,
@@ -1027,6 +1041,34 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       pushHistory(s)
       const { items, panel: nextPanel } = relayoutPanelContents(s.items, panel, {
         grid: s.canvas.gridSpacing ?? 24,
+        gapPx: s.lastAutoLayout?.gap ?? 6,
+        panelPad: s.lastAutoLayout?.panelPadding ?? 4,
+        mode: 'shelf',
+      })
+      return {
+        items,
+        dirty: true,
+        canvas: {
+          ...s.canvas,
+          layoutPanels: (s.canvas.layoutPanels ?? []).map((p) =>
+            p.id === id ? nextPanel : p,
+          ),
+        },
+      }
+    }),
+
+  autoLayoutSelectedPanel: () =>
+    set((s) => {
+      const id = s.selectedPanelId
+      if (!id) return s
+      const panel = (s.canvas.layoutPanels ?? []).find((p) => p.id === id)
+      if (!panel) return s
+      pushHistory(s)
+      const { items, panel: nextPanel } = relayoutPanelContents(s.items, panel, {
+        grid: s.canvas.gridSpacing ?? 24,
+        gapPx: s.lastAutoLayout?.gap ?? 6,
+        panelPad: s.lastAutoLayout?.panelPadding ?? 4,
+        mode: 'dense',
       })
       return {
         items,

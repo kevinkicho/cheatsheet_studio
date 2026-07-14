@@ -340,10 +340,17 @@ export interface LayoutPanel {
   shape?: PanelShape
   /**
    * Orthogonal runs that form an L / stepped region (polygon packing).
-   * Drawn as stacked rects so panels look L-shaped without a convex hull.
+   * Used for hit-testing / fill; stroke should prefer `outlinePath` so
+   * merged n-gon edges do not paint double borders at run joins.
    */
   runs?: Array<{ x: number; y: number; width: number; height: number }>
-  /** @deprecated Optional legacy convex vertices; prefer `runs`. */
+  /**
+   * SVG path `d` for the exterior outline of an n-gon polyomino, in
+   * **absolute board coordinates** (same space as x/y). Stroke this once;
+   * do not stroke each run separately.
+   */
+  outlinePath?: string
+  /** @deprecated Optional legacy convex vertices; prefer `runs` / `outlinePath`. */
   points?: Array<{ x: number; y: number }>
   /** Canvas item ids that belong to this panel (for re-sort / edit). */
   memberIds?: string[]

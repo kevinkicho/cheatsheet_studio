@@ -268,9 +268,13 @@ export function PdfExportPages({
               />
             ))}
 
-            {/* Titles after cards so headers are never covered in export */}
+            {/* Titles after cards; deeper hierarchy levels paint last (on top) */}
             {(c.layoutPanels ?? [])
               .filter((p) => panelIntersectsPage(p, page))
+              .slice()
+              .sort(
+                (a, b) => (a.hierarchyLevel ?? 1) - (b.hierarchyLevel ?? 1),
+              )
               .map((p) => (
                 <ExportLayoutPanelTitle
                   key={`${p.id}-title`}
@@ -307,37 +311,91 @@ function ExportLayoutPanel({
   pageOrigin: { x: number; y: number }
 }) {
   const accent = panel.accent ?? 'rgba(99, 102, 241, 0.55)'
+  const isPoly = (panel.shape ?? 'rect') === 'polygon'
   const fill = /rgba?\(/i.test(accent)
-    ? accent.replace(/[\d.]+\s*\)$/, '0.07)')
-    : 'rgba(99, 102, 241, 0.06)'
+    ? accent.replace(/[\d.]+\s*\)$/, isPoly ? '0.04)' : '0.07)')
+    : isPoly
+      ? 'rgba(99, 102, 241, 0.04)'
+      : 'rgba(99, 102, 241, 0.06)'
   const runs =
     panel.runs && panel.runs.length > 0
       ? panel.runs
       : [{ x: panel.x, y: panel.y, width: panel.width, height: panel.height }]
+  const useOutline = isPoly && Boolean(panel.outlinePath)
+  const ox = pageOrigin.x
+  const oy = pageOrigin.y
 
   return (
     <div
       data-export-layout-panel={panel.id}
       data-layout-panel-shape={panel.shape ?? 'rect'}
     >
-      {runs.map((r, i) => (
-        <div
-          key={`${panel.id}-run-${i}`}
-          style={{
-            position: 'absolute',
-            left: r.x - pageOrigin.x,
-            top: r.y - pageOrigin.y,
-            width: r.width,
-            height: r.height,
-            boxSizing: 'border-box',
-            border: `1.5px solid ${accent}`,
-            borderRadius: 6,
-            background: fill,
-            zIndex: 0,
-            pointerEvents: 'none',
-          }}
-        />
-      ))}
+      {useOutline ? (
+        <>
+          {runs.map((r, i) => (
+            <div
+              key={`${panel.id}-fill-${i}`}
+              style={{
+                position: 'absolute',
+                left: r.x - ox,
+                top: r.y - oy,
+                width: r.width,
+                height: r.height,
+                boxSizing: 'border-box',
+                border: 'none',
+                background: fill,
+                zIndex: 0,
+                pointerEvents: 'none',
+              }}
+            />
+          ))}
+          <svg
+            data-export-layout-panel-outline={panel.id}
+            width={panel.width + 4}
+            height={panel.height + 4}
+            viewBox={`${panel.x - 2} ${panel.y - 2} ${panel.width + 4} ${panel.height + 4}`}
+            style={{
+              position: 'absolute',
+              left: panel.x - ox - 2,
+              top: panel.y - oy - 2,
+              width: panel.width + 4,
+              height: panel.height + 4,
+              overflow: 'visible',
+              zIndex: 1,
+              pointerEvents: 'none',
+            }}
+          >
+            <path
+              d={panel.outlinePath}
+              fill="transparent"
+              stroke={accent}
+              strokeWidth={1.5}
+              strokeLinejoin="miter"
+              strokeLinecap="square"
+              vectorEffect="non-scaling-stroke"
+            />
+          </svg>
+        </>
+      ) : (
+        runs.map((r, i) => (
+          <div
+            key={`${panel.id}-run-${i}`}
+            style={{
+              position: 'absolute',
+              left: r.x - ox,
+              top: r.y - oy,
+              width: r.width,
+              height: r.height,
+              boxSizing: 'border-box',
+              border: `1.5px solid ${accent}`,
+              borderRadius: 6,
+              background: fill,
+              zIndex: 0,
+              pointerEvents: 'none',
+            }}
+          />
+        ))
+      )}
     </div>
   )
 }
@@ -353,36 +411,24 @@ function ExportLayoutPanelTitle({
 }) {
   if (panel.showTitle === false || !panel.title) return null
   const accent = panel.accent ?? 'rgba(99, 102, 241, 0.55)'
-  // N-gon: title on topmost-leftmost run (AABB corner may sit in a hole).
-  const box = (() => {
-    if (panel.runs && panel.runs.length > 0) {
-      const topY = Math.min(...panel.runs.map((r) => r.y))
-      const anchor = [...panel.runs]
-        .filter((r) => Math.abs(r.y - topY) < 0.5)
-        .sort((a, b) => a.x - b.x)[0]!
-      return {
-        x: anchor.x - pageOrigin.x,
-        y: anchor.y - pageOrigin.y,
-        maxW: Math.max(40, anchor.width - 4),
-      }
-    }
-    return {
-      x: panel.x - pageOrigin.x,
-      y: panel.y - pageOrigin.y,
-      maxW: Math.max(40, panel.width - 4),
-    }
-  })()
+  const level = panel.hierarchyLevel ?? 1
+  const box = {
+    x: panel.x - pageOrigin.x,
+    y: panel.y - pageOrigin.y,
+    maxW: Math.max(48, panel.width - 8),
+  }
   return (
     <div
       data-export-layout-panel-title={panel.id}
+      data-layout-panel-title-level={level}
       style={{
         position: 'absolute',
-        left: box.x + 2,
-        top: box.y + 1,
+        left: box.x + 4,
+        top: box.y + 3,
         maxWidth: box.maxW,
-        padding: '2px 6px',
-        fontSize: 9,
-        fontWeight: 600,
+        padding: level <= 1 ? '3px 8px' : '1px 5px',
+        fontSize: level <= 1 ? 10 : 8,
+        fontWeight: level <= 1 ? 700 : 600,
         letterSpacing: '0.04em',
         textTransform: 'uppercase',
         color: '#e0e7ff',
@@ -390,10 +436,11 @@ function ExportLayoutPanelTitle({
         whiteSpace: 'nowrap',
         overflow: 'hidden',
         textOverflow: 'ellipsis',
-        background: 'rgba(15, 17, 21, 0.88)',
+        background: 'rgba(15, 17, 21, 0.94)',
         borderRadius: 3,
         border: `1px solid ${accent}`,
-        zIndex: 50,
+        // L1 above L2 so parent header stays readable when nested
+        zIndex: level <= 1 ? 60 : 50 + level,
         pointerEvents: 'none',
       }}
     >

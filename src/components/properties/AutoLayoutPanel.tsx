@@ -119,8 +119,12 @@ export function AutoLayoutPanel() {
     setError(null)
     autoOrganize(opts())
     const chrome = GROUP_CHROME_PRESETS[groupChrome].label
+    const panelBit =
+      groupChrome === 'panels' || groupChrome === 'both'
+        ? ` · pad ${panelPadding}px`
+        : ''
     setStatus(
-      `Packed ${items.filter((i) => !i.hidden).length} cards · ${DENSITY_PRESETS[density].label} · ${chrome} · gap ${gap}px`,
+      `Packed ${items.filter((i) => !i.hidden).length} cards · ${DENSITY_PRESETS[density].label} · ${chrome} · gap ${gap}px${panelBit}`,
     )
   }
 
@@ -220,16 +224,27 @@ export function AutoLayoutPanel() {
       </div>
 
       <label className="flex flex-col gap-1">
-        <span className="text-[10px] text-zinc-500">Gap · {gap}px</span>
+        <span className="text-[10px] text-zinc-500">
+          Gap · {gap}px
+          <span className="font-normal text-zinc-600">
+            {' '}
+            (between groups / panel outers)
+          </span>
+        </span>
         <input
           type="range"
-          min={2}
-          max={24}
-          step={1}
+          min={0}
+          max={48}
+          step={2}
           value={gap}
           onChange={(e) => setGap(Number(e.target.value))}
           className="w-full"
+          data-testid="pack-gap-slider"
         />
+        <span className="text-[9px] text-zinc-600">
+          Free-flow air between topic groups. With panels, clearance between
+          frames is gap + 2× panel pad.
+        </span>
       </label>
 
       <div>
@@ -298,24 +313,25 @@ export function AutoLayoutPanel() {
           </div>
           <label className="flex flex-col gap-1">
             <span className="text-[10px] text-zinc-500">
-              Panel gap · {panelPadding}px
-              {panelPadding === 0
-                ? ' (flush)'
-                : ` (~${Math.round(panelPadding / 24)} cell${Math.round(panelPadding / 24) === 1 ? '' : 's'})`}
+              Panel pad · {panelPadding}px
+              <span className="font-normal text-zinc-600">
+                {' '}
+                (cards → frame stroke)
+              </span>
             </span>
             <input
               type="range"
               min={0}
               max={48}
-              step={4}
+              step={2}
               value={panelPadding}
               onChange={(e) => setPanelPadding(Number(e.target.value))}
               className="w-full"
               data-testid="panel-gap-slider"
             />
             <span className="text-[9px] text-zinc-600">
-              Space between panels in free-flow pack (0 = tight, 24 ≈ one grid
-              cell, 48 ≈ two).
+              Chrome inset around cards. Combined with Gap: outer spacing =
+              gap + 2× pad (no second panel-gap control).
             </span>
           </label>
 

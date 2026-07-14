@@ -1,4 +1,4 @@
-import { LayoutTemplate } from 'lucide-react'
+import { LayoutGrid, LayoutTemplate } from 'lucide-react'
 import type { LayoutPanel } from '@/types'
 import { useCanvasStore } from '@/stores/canvasStore'
 
@@ -7,10 +7,15 @@ import { useCanvasStore } from '@/stores/canvasStore'
  */
 export function PanelProperties({ panel }: { panel: LayoutPanel }) {
   const updateLayoutPanel = useCanvasStore((s) => s.updateLayoutPanel)
+  const autoLayoutSelectedPanel = useCanvasStore(
+    (s) => s.autoLayoutSelectedPanel,
+  )
   const selectPanel = useCanvasStore((s) => s.selectPanel)
   const memberCount = panel.memberIds?.length ?? 0
   const showTitle = panel.showTitle !== false
   const contentSort = panel.contentSort ?? 'none'
+  const level = panel.hierarchyLevel
+  const shape = panel.shape ?? 'rect'
 
   return (
     <div className="space-y-3 p-3" data-testid="panel-properties">
@@ -23,10 +28,28 @@ export function PanelProperties({ panel }: { panel: LayoutPanel }) {
           </p>
           <p className="mt-0.5 text-[10px] text-zinc-600">
             {memberCount} card{memberCount === 1 ? '' : 's'}
+            {level != null ? ` · L${level}` : ''}
+            {shape === 'polygon' ? ' · n-gon' : ''}
             {panel.folderId ? ` · folder ${panel.folderId}` : ''}
           </p>
         </div>
       </div>
+
+      <button
+        type="button"
+        data-testid="panel-auto-layout"
+        onClick={() => autoLayoutSelectedPanel()}
+        disabled={memberCount === 0}
+        className="inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-indigo-500/40 bg-indigo-500/15 px-2.5 py-1.5 text-xs font-medium text-indigo-100 hover:bg-indigo-500/25 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        <LayoutGrid className="h-3.5 w-3.5" />
+        Auto-layout inside panel
+      </button>
+      <p className="text-[9px] leading-snug text-zinc-600">
+        Densely repositions and resizes this panel’s cards to fill the frame,
+        then rebuilds chrome (including n-gon outline) so the panel fully wraps
+        its content.
+      </p>
 
       <label className="flex flex-col gap-1">
         <span className="text-[10px] text-zinc-500">Title</span>
@@ -71,7 +94,6 @@ export function PanelProperties({ panel }: { panel: LayoutPanel }) {
                 type="button"
                 data-testid={`panel-content-sort-${id}`}
                 onClick={() => {
-                  // Store reflows cards immediately when contentSort changes
                   updateLayoutPanel(panel.id, { contentSort: id })
                 }}
                 className={`rounded-md border px-2 py-1.5 text-left text-[11px] transition ${
@@ -86,7 +108,8 @@ export function PanelProperties({ panel }: { panel: LayoutPanel }) {
           })}
         </div>
         <p className="mt-1 text-[9px] leading-snug text-zinc-600">
-          Re-packs only this panel’s cards inside its box (shelf left→right).
+          Re-packs only this panel’s cards (shelf). Use Auto-layout for dense
+          fill + resize.
         </p>
       </div>
 

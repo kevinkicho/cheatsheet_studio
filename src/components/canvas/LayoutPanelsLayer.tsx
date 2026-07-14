@@ -11,6 +11,9 @@ function accentFill(accent: string, alpha = 0.08): string {
 /**
  * Layout panel frames. Clickable when Select tool is active so users can
  * fine-tune title / content sort in the left sidebar.
+ *
+ * N-gon: fill via runs (no per-run border); stroke via single exterior
+ * `outlinePath` so merged joins never show double lines.
  */
 export function LayoutPanelsLayer({
   panels,
@@ -33,79 +36,150 @@ export function LayoutPanelsLayer({
         {[...panels]
           .sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0))
           .map((p) => {
-          const accent = p.accent ?? 'rgba(99, 102, 241, 0.55)'
-          // Outer hierarchy levels: lighter fill; inner: slightly stronger
-          const level = p.hierarchyLevel ?? 1
-          const fill = accentFill(accent, level <= 1 ? 0.04 : 0.08)
-          const selected = selectedPanelId === p.id
-          const runs =
-            p.runs && p.runs.length > 0
-              ? p.runs
-              : [
-                  {
-                    x: p.x,
-                    y: p.y,
-                    width: p.width,
-                    height: p.height,
-                  },
-                ]
-          const borderW = selected ? 2 : level <= 1 ? 2 : 1.5
+            const accent = p.accent ?? 'rgba(99, 102, 241, 0.55)'
+            const level = p.hierarchyLevel ?? 1
+            const isPoly = (p.shape ?? 'rect') === 'polygon'
+            const fill = isPoly
+              ? accentFill(accent, 0.04)
+              : accentFill(accent, level <= 1 ? 0.05 : 0.08)
+            const selected = selectedPanelId === p.id
+            const runs =
+              p.runs && p.runs.length > 0
+                ? p.runs
+                : [
+                    {
+                      x: p.x,
+                      y: p.y,
+                      width: p.width,
+                      height: p.height,
+                    },
+                  ]
+            const borderW = selected ? 2 : isPoly ? 1.5 : level <= 1 ? 2 : 1.5
+            const useOutline = isPoly && Boolean(p.outlinePath)
 
-          return (
-            <div
-              key={p.id}
-              data-layout-panel={p.id}
-              data-layout-panel-shape={p.shape ?? 'rect'}
-              data-layout-panel-level={level}
-              data-selected={selected ? '1' : undefined}
-            >
-              {runs.map((r, i) => (
-                <div
-                  key={`${p.id}-run-${i}`}
-                  role={interactive ? 'button' : undefined}
-                  tabIndex={interactive ? 0 : undefined}
-                  onClick={
-                    interactive
-                      ? (e) => {
-                          e.stopPropagation()
-                          selectPanel(p.id)
-                        }
-                      : undefined
-                  }
-                  onKeyDown={
-                    interactive
-                      ? (e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault()
-                            selectPanel(p.id)
-                          }
-                        }
-                      : undefined
-                  }
-                  style={{
-                    position: 'absolute',
-                    left: r.x,
-                    top: r.y,
-                    width: r.width,
-                    height: r.height,
-                    boxSizing: 'border-box',
-                    border: selected
-                      ? `${borderW}px solid ${accent}`
-                      : `${borderW}px solid ${accent}`,
-                    borderRadius: level <= 1 ? 8 : 5,
-                    background: fill,
-                    zIndex: p.zIndex ?? 0,
-                    cursor: interactive ? 'pointer' : undefined,
-                    boxShadow: selected
-                      ? `0 0 0 1px ${accentFill(accent, 0.4)}`
-                      : undefined,
-                    pointerEvents: interactive ? 'auto' : 'none',
-                  }}
-                />
-              ))}
-            </div>
-          )
-        })}
+            return (
+              <div
+                key={p.id}
+                data-layout-panel={p.id}
+                data-layout-panel-shape={p.shape ?? 'rect'}
+                data-layout-panel-level={level}
+                data-selected={selected ? '1' : undefined}
+              >
+                {useOutline ? (
+                  <>
+                    {/* Fill only — no borders on individual runs */}
+                    {runs.map((r, i) => (
+                      <div
+                        key={`${p.id}-fill-${i}`}
+                        style={{
+                          position: 'absolute',
+                          left: r.x,
+                          top: r.y,
+                          width: r.width,
+                          height: r.height,
+                          boxSizing: 'border-box',
+                          border: 'none',
+                          borderRadius: 0,
+                          background: fill,
+                          zIndex: p.zIndex ?? 0,
+                          pointerEvents: 'none',
+                        }}
+                      />
+                    ))}
+                    {/* Single exterior stroke — pad viewBox so stroke isn’t clipped */}
+                    <svg
+                      data-layout-panel-outline={p.id}
+                      width={p.width + borderW * 2}
+                      height={p.height + borderW * 2}
+                      viewBox={`${p.x - borderW} ${p.y - borderW} ${p.width + borderW * 2} ${p.height + borderW * 2}`}
+                      style={{
+                        position: 'absolute',
+                        left: p.x - borderW,
+                        top: p.y - borderW,
+                        width: p.width + borderW * 2,
+                        height: p.height + borderW * 2,
+                        overflow: 'visible',
+                        zIndex: (p.zIndex ?? 0) + 0.5,
+                        pointerEvents: interactive ? 'auto' : 'none',
+                        cursor: interactive ? 'pointer' : undefined,
+                      }}
+                      onClick={
+                        interactive
+                          ? (e) => {
+                              e.stopPropagation()
+                              selectPanel(p.id)
+                            }
+                          : undefined
+                      }
+                    >
+                      <path
+                        d={p.outlinePath}
+                        fill="transparent"
+                        stroke={accent}
+                        strokeWidth={borderW}
+                        strokeLinejoin="miter"
+                        strokeLinecap="square"
+                        vectorEffect="non-scaling-stroke"
+                      />
+                      {selected ? (
+                        <path
+                          d={p.outlinePath}
+                          fill="transparent"
+                          stroke={accentFill(accent, 0.4)}
+                          strokeWidth={borderW + 2}
+                          strokeLinejoin="miter"
+                          opacity={0.5}
+                        />
+                      ) : null}
+                    </svg>
+                  </>
+                ) : (
+                  runs.map((r, i) => (
+                    <div
+                      key={`${p.id}-run-${i}`}
+                      role={interactive ? 'button' : undefined}
+                      tabIndex={interactive ? 0 : undefined}
+                      onClick={
+                        interactive
+                          ? (e) => {
+                              e.stopPropagation()
+                              selectPanel(p.id)
+                            }
+                          : undefined
+                      }
+                      onKeyDown={
+                        interactive
+                          ? (e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault()
+                                selectPanel(p.id)
+                              }
+                            }
+                          : undefined
+                      }
+                      style={{
+                        position: 'absolute',
+                        left: r.x,
+                        top: r.y,
+                        width: r.width,
+                        height: r.height,
+                        boxSizing: 'border-box',
+                        border: `${borderW}px solid ${accent}`,
+                        borderRadius: level <= 1 ? 8 : 5,
+                        background: fill,
+                        zIndex: p.zIndex ?? 0,
+                        cursor: interactive ? 'pointer' : undefined,
+                        boxShadow: selected
+                          ? `0 0 0 1px ${accentFill(accent, 0.4)}`
+                          : undefined,
+                        pointerEvents: interactive ? 'auto' : 'none',
+                      }}
+                    />
+                  ))
+                )}
+              </div>
+            )
+          })}
       </div>
 
       <div
@@ -113,57 +187,57 @@ export function LayoutPanelsLayer({
         data-testid="layout-panel-titles"
         aria-hidden
       >
-        {panels.map((p) => {
-          if (p.showTitle === false || !p.title) return null
-          const accent = p.accent ?? 'rgba(99, 102, 241, 0.55)'
-          const selected = selectedPanelId === p.id
-          // N-gon: title on topmost-leftmost run (AABB corner can sit in a hole /
-          // another group's territory when free-grid interleaves topics).
-          const titleBox = (() => {
-            if (p.runs && p.runs.length > 0) {
-              const topY = Math.min(...p.runs.map((r) => r.y))
-              const anchor = [...p.runs]
-                .filter((r) => Math.abs(r.y - topY) < 0.5)
-                .sort((a, b) => a.x - b.x)[0]!
-              return {
-                x: anchor.x,
-                y: anchor.y,
-                maxW: Math.max(40, anchor.width - 4),
-              }
+        {[...panels]
+          .sort((a, b) => (a.hierarchyLevel ?? 1) - (b.hierarchyLevel ?? 1))
+          .map((p) => {
+            if (p.showTitle === false || !p.title) return null
+            const accent = p.accent ?? 'rgba(99, 102, 241, 0.55)'
+            const selected = selectedPanelId === p.id
+            const level = p.hierarchyLevel ?? 1
+            // Panel chrome already reserves exclusive title bands (L1 taller).
+            const titleBox = {
+              x: p.x,
+              y: p.y,
+              maxW: Math.max(48, p.width - 8),
             }
-            return { x: p.x, y: p.y, maxW: Math.max(40, p.width - 4) }
-          })()
-          return (
-            <div
-              key={`${p.id}-title`}
-              data-layout-panel-title={p.id}
-              style={{
-                position: 'absolute',
-                left: titleBox.x + 2,
-                top: titleBox.y + 1,
-                maxWidth: titleBox.maxW,
-                padding: '2px 6px',
-                fontSize: 9,
-                fontWeight: 600,
-                letterSpacing: '0.04em',
-                textTransform: 'uppercase',
-                color: accentFill(accent, 0.98),
-                lineHeight: 1.25,
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                background: 'rgba(15, 17, 21, 0.82)',
-                borderRadius: 3,
-                border: selected
-                  ? `1px solid ${accent}`
-                  : `1px solid ${accentFill(accent, 0.35)}`,
-                boxShadow: '0 1px 2px rgba(0,0,0,0.35)',
-              }}
-            >
-              {p.title}
-            </div>
-          )
-        })}
+            const fontSize = level <= 1 ? 10 : 8
+            return (
+              <div
+                key={`${p.id}-title`}
+                data-layout-panel-title={p.id}
+                data-layout-panel-title-level={level}
+                style={{
+                  position: 'absolute',
+                  left: titleBox.x + 4,
+                  top: titleBox.y + 3,
+                  maxWidth: titleBox.maxW,
+                  padding: level <= 1 ? '3px 8px' : '1px 5px',
+                  fontSize,
+                  fontWeight: level <= 1 ? 700 : 600,
+                  letterSpacing: '0.04em',
+                  textTransform: 'uppercase',
+                  color: accentFill(accent, 0.98),
+                  lineHeight: 1.25,
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  background:
+                    level <= 1
+                      ? 'rgba(15, 17, 21, 0.94)'
+                      : 'rgba(15, 17, 21, 0.9)',
+                  borderRadius: 3,
+                  border: selected
+                    ? `1px solid ${accent}`
+                    : `1px solid ${accentFill(accent, level <= 1 ? 0.5 : 0.35)}`,
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.45)',
+                  // L1 chip above L2 so parent name stays readable
+                  zIndex: level <= 1 ? 20 : 10 + level,
+                }}
+              >
+                {p.title}
+              </div>
+            )
+          })}
       </div>
     </>
   )
