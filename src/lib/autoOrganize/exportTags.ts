@@ -63,7 +63,14 @@ export function formatAutoLayoutFileTag(
         borderLv,
         levels,
       )
-      if (ngonLv.length > 0) parts.push(`nL${ngonLv.join('-')}`)
+      // Tag only when n-gon is a proper subset of borders (default = all
+      // bordered levels → no extra nL fragment).
+      const allBordersNgon =
+        ngonLv.length === borderLv.length &&
+        borderLv.every((L) => ngonLv.includes(L))
+      if (ngonLv.length > 0 && !allBordersNgon) {
+        parts.push(`nL${ngonLv.join('-')}`)
+      }
     }
   }
 

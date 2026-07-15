@@ -58,13 +58,6 @@ export function AutoLayoutPanel() {
   const [panelBorderLevels, setPanelBorderLevels] = useState<PanelGroupLevel[]>([
     1, 2, 3,
   ])
-  /**
-   * Which levels use n-gon chrome when shape is polygon (default L2+L3 —
-   * leaf clusters pack cleanly; L1 stays rect outer frame).
-   */
-  const [panelNgonLevels, setPanelNgonLevels] = useState<PanelGroupLevel[]>([
-    2, 3,
-  ])
   const [groupSort, setGroupSort] = useState<GroupSortOrder>('name-asc')
   const [fitPrint, setFitPrint] = useState(true)
   const [aiHint, setAiHint] = useState(
@@ -117,8 +110,9 @@ export function AutoLayoutPanel() {
     panelPadding,
     panelGroupLevels,
     panelBorderLevels,
+    // Polygon → n-gon on all bordered levels (no per-level picker)
     panelNgonLevels:
-      panelShape === 'polygon' ? panelNgonLevels : undefined,
+      panelShape === 'polygon' ? panelBorderLevels : undefined,
     groupSort,
     fitPrint,
     multiPage: true,
@@ -140,7 +134,7 @@ export function AutoLayoutPanel() {
     const chrome = GROUP_CHROME_PRESETS[groupChrome].label
     const panelsOn = groupChrome === 'panels'
     const panelBit = panelsOn
-      ? ` · ${panelShape === 'polygon' ? 'n-gon' : 'rect'} · borders L${panelBorderLevels.join('+')} · n-gon L${(panelShape === 'polygon' ? panelNgonLevels : []).join('+') || '—'} · pad ${panelPadding}px`
+      ? ` · ${panelShape === 'polygon' ? 'n-gon' : 'rect'} · borders L${panelBorderLevels.join('+')} · pad ${panelPadding}px`
       : ''
     setStatus(
       `Packed ${items.filter((i) => !i.hidden).length} cards · ${DENSITY_PRESETS[density].label} · ${chrome} · levels L${panelGroupLevels.join('+')} · gap ${gap}px${panelBit}`,
@@ -319,7 +313,8 @@ export function AutoLayoutPanel() {
                   onClick={() => {
                     setPanelShape(id)
                     if (id === 'polygon') {
-                      // N-gon targets L2/L3 — ensure those levels group + stroke
+                      // Ensure nested group + borders; n-gon applies to all
+                      // bordered levels (per-level n-gon UI removed).
                       setPanelGroupLevels((g) => {
                         const next = new Set(g)
                         next.add(1)
@@ -330,17 +325,11 @@ export function AutoLayoutPanel() {
                       })
                       setPanelBorderLevels((b) => {
                         const next = new Set(b)
-                        next.add(1) // outer rect frame
-                        next.add(2) // n-gon leaf frames
+                        next.add(1)
+                        next.add(2)
                         return [...next].sort(
                           (a, c) => a - c,
                         ) as PanelGroupLevel[]
-                      })
-                      setPanelNgonLevels((n) => {
-                        const base = n.length > 0 ? n : ([2, 3] as PanelGroupLevel[])
-                        return base.filter((L) => L === 2 || L === 3).length > 0
-                          ? base.filter((L) => L === 2 || L === 3)
-                          : ([2] as PanelGroupLevel[])
                       })
                     }
                   }}
@@ -409,9 +398,6 @@ export function AutoLayoutPanel() {
                             const nb = b.filter((L) => next.includes(L))
                             return nb.length > 0 ? nb : [next[0]!]
                           })
-                          setPanelNgonLevels((n) =>
-                            n.filter((L) => next.includes(L)),
-                          )
                           return next
                         }
                         return [...prev, opt.level].sort(
@@ -482,9 +468,6 @@ export function AutoLayoutPanel() {
                         // Keep at least one border among active group levels
                         if (next.length === 0) return
                         setPanelBorderLevels(next)
-                        setPanelNgonLevels((ng) =>
-                          ng.filter((L) => next.includes(L)),
-                        )
                       } else {
                         setPanelBorderLevels(
                           [...panelBorderLevels, opt.level].sort(
@@ -515,84 +498,6 @@ export function AutoLayoutPanel() {
             </div>
           </div>
 
-          {panelShape === 'polygon' && (
-            <div>
-              <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
-                N-gon levels
-                <span className="ml-1 font-normal normal-case text-zinc-600">
-                  (stepped/L chrome)
-                </span>
-              </p>
-              <p className="mb-1.5 text-[9px] leading-snug text-zinc-600">
-                Apply n-gon algorithm only at these levels (best on L2/L3 leaf
-                clusters). Unselected border levels stay rectangle. Toggling on
-                also enables that level’s border.
-              </p>
-              <div className="grid grid-cols-3 gap-1">
-                {panelGroupLevelOptions().map((opt) => {
-                  const inGroup = panelGroupLevels.includes(opt.level)
-                  const active = panelNgonLevels.includes(opt.level)
-                  return (
-                    <button
-                      key={`ngon-${opt.level}`}
-                      type="button"
-                      data-testid={`panel-ngon-level-${opt.level}`}
-                      aria-pressed={active}
-                      disabled={!inGroup}
-                      title={
-                        inGroup
-                          ? `N-gon chrome at level ${opt.level}`
-                          : 'Enable this group level first'
-                      }
-                      onClick={() => {
-                        if (!inGroup) return
-                        if (panelNgonLevels.includes(opt.level)) {
-                          setPanelNgonLevels(
-                            panelNgonLevels.filter((L) => L !== opt.level),
-                          )
-                        } else {
-                          // Auto-enable border for this level so n-gon can paint
-                          if (!panelBorderLevels.includes(opt.level)) {
-                            setPanelBorderLevels(
-                              [...panelBorderLevels, opt.level].sort(
-                                (a, b) => a - b,
-                              ) as PanelGroupLevel[],
-                            )
-                          }
-                          setPanelNgonLevels(
-                            [...panelNgonLevels, opt.level].sort(
-                              (a, b) => a - b,
-                            ) as PanelGroupLevel[],
-                          )
-                        }
-                      }}
-                      className={`rounded-md border px-2 py-1.5 text-center transition ${
-                        !inGroup
-                          ? 'cursor-not-allowed border-zinc-900 bg-zinc-950/20 text-zinc-700'
-                          : active
-                            ? 'border-sky-500/50 bg-sky-500/12 text-sky-100'
-                            : 'border-zinc-800 bg-zinc-950/40 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200'
-                      }`}
-                    >
-                      <span className="block text-[11px] font-medium">
-                        L{opt.level}
-                      </span>
-                      {active && inGroup && (
-                        <span className="mt-0.5 block text-[8px] text-sky-400/90">
-                          n-gon
-                        </span>
-                      )}
-                    </button>
-                  )
-                })}
-              </div>
-              <p className="mt-1 text-[9px] leading-snug text-zinc-600">
-                {panelNgonLevels.length > 0
-                  ? `N-gon on L${panelNgonLevels.join('+L')}; rect on other borders.`
-                  : 'No n-gon levels — all borders use rectangle.'}
-              </p>
-            </div>
-          )}
         </div>
       )}
 

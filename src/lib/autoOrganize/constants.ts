@@ -143,10 +143,8 @@ export type CheatsheetLayoutOptions = {
    */
   panelBorderLevels?: PanelGroupLevel[]
   /**
-   * Which levels use **n-gon** (stepped/L) chrome when `panelShape` is
-   * `polygon`. Subset of levels that stroke. Levels not listed keep rectangle
-   * AABB. Default when polygon: **L2+L3** (leaf clusters pack cleanly);
-   * falls back to all border levels if neither 2 nor 3 is active.
+   * Optional explicit n-gon levels (API/tests). Default when `panelShape` is
+   * `polygon`: all `panelBorderLevels` (no per-level UI).
    */
   panelNgonLevels?: PanelGroupLevel[]
   /**
@@ -225,36 +223,23 @@ export function normalizeLevelSubset(
 }
 
 /**
- * Levels that use n-gon chrome. Prefer L2+L3 when present among border levels.
- * Empty result → all stroked levels use rectangle AABB.
- *
- * @param groupLevels active hierarchy depths — when only one depth is packed,
- *   default n-gon applies to that single level (legacy L1-only packs).
+ * Levels that use n-gon chrome when panel shape is polygon.
+ * Default: **all stroked border levels** (per-level n-gon UI removed).
+ * Explicit `levels` still filtered to borders for API/tests.
  */
 export function normalizeNgonLevels(
   levels: PanelGroupLevel[] | null | undefined,
   borderLevels: PanelGroupLevel[],
-  groupLevels?: PanelGroupLevel[] | null,
+  _groupLevels?: PanelGroupLevel[] | null,
 ): PanelGroupLevel[] {
   const borders = normalizePanelGroupLevels(borderLevels)
   if (borders.length === 0) return []
   if (levels && levels.length > 0) {
-    // Explicit selection: keep only levels that also stroke (may be empty)
     const set = new Set(borders)
     return normalizePanelGroupLevels(levels).filter((L) => set.has(L))
   }
-  // Default: n-gon on L2/L3 among borders (leaf clusters)
-  const preferred = borders.filter((L) => L === 2 || L === 3)
-  if (preferred.length > 0) return preferred
-  // Single hierarchy depth pack (e.g. only L1): n-gon that level
-  const groups = groupLevels?.length
-    ? normalizePanelGroupLevels(groupLevels)
-    : borders
-  if (groups.length === 1 && borders.includes(groups[0]!)) {
-    return [groups[0]!]
-  }
-  // Multi-level with only L1 border → keep L1 as clean rect (no mega n-gon)
-  return []
+  // Default: every bordered level is n-gon when shape is polygon
+  return borders
 }
 
 /** Sort groups by hierarchical folder/heading name. */
@@ -295,7 +280,7 @@ export const PANEL_SHAPE_PRESETS: Record<
   },
   polygon: {
     label: 'N-gon (L-fill)',
-    hint: 'Stepped/L chrome on selected n-gon levels (best L2/L3); other borders stay rect',
+    hint: 'Stepped/L chrome following card footprints (all bordered levels)',
   },
 }
 /**

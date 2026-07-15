@@ -237,7 +237,11 @@ interface CanvasState {
    * Dense pack + resize cards inside the selected panel, then rebuild chrome
    * (n-gon outline included) to fully wrap content.
    */
-  autoLayoutSelectedPanel: () => void
+  /**
+   * Dense free-flow re-pack inside the selected panel.
+   * @param shape rectangle vs n-gon chrome for this panel + nested children
+   */
+  autoLayoutSelectedPanel: (shape?: import('@/types').PanelShape) => void
   /**
    * Move a layout panel and its member cards by (dx, dy). Nested child panels
    * whose members are all inside this panel move with it.
@@ -1097,17 +1101,24 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       }
     }),
 
-  autoLayoutSelectedPanel: () =>
+  autoLayoutSelectedPanel: (shape) =>
     set((s) => {
       const id = s.selectedPanelId
       if (!id) return s
       const panels = s.canvas.layoutPanels ?? []
       const panel = panels.find((p) => p.id === id)
       if (!panel) return s
+      const chromeShape =
+        shape === 'polygon' || shape === 'rect'
+          ? shape
+          : panel.shape === 'polygon'
+            ? 'polygon'
+            : 'rect'
       // Default sort for in-panel auto-layout: Name A→Z
       const panelForLayout = {
         ...panel,
         contentSort: panel.contentSort ?? 'name-asc',
+        shape: chromeShape,
       }
       const { items, panel: nextPanel, panels: nextAll } = relayoutPanelContents(
         s.items,
@@ -1118,6 +1129,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           panelPad: s.lastAutoLayout?.panelPadding ?? 4,
           mode: 'dense',
           allPanels: panels,
+          panelShape: chromeShape,
         },
       )
       return {

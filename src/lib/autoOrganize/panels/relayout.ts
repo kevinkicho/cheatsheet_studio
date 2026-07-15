@@ -133,6 +133,8 @@ function rebuildPanelChromeFromMembers(
     grid: number
     panelPad: number
     allPanels?: LayoutPanel[]
+    /** Force chrome shape for this rebuild (in-panel rect vs n-gon). */
+    forceShape?: 'rect' | 'polygon'
   },
 ): LayoutPanel {
   const members = (p.memberIds ?? [])
@@ -142,7 +144,8 @@ function rebuildPanelChromeFromMembers(
   const all = opts.allPanels ?? [p]
   const titleBand = exclusiveTitleBandPx(p, all)
   const pad = Math.max(2, opts.panelPad)
-  const useNgon = p.shape === 'polygon'
+  const shape = opts.forceShape ?? p.shape ?? 'rect'
+  const useNgon = shape === 'polygon'
   const chrome = chromeFromMembers(members, {
     pad,
     titleBand,
@@ -153,7 +156,7 @@ function rebuildPanelChromeFromMembers(
   return {
     ...p,
     ...chrome,
-    shape: p.shape,
+    shape,
     showStroke: p.showStroke,
     id: p.id,
     folderId: p.folderId,
@@ -330,6 +333,10 @@ export function relayoutPanelContents(
      * counter so each Auto-layout click tries a different arrangement.
      */
     packSeed?: number
+    /**
+     * Chrome shape for this panel (+ nested children). Defaults to panel.shape.
+     */
+    panelShape?: 'rect' | 'polygon'
   },
 ): { items: CanvasItem[]; panel: LayoutPanel; panels?: LayoutPanel[] } {
   const ids = new Set(panel.memberIds ?? [])
@@ -592,12 +599,19 @@ export function relayoutPanelContents(
   if (moved.length === 0) return { items: nextItems, panel }
 
   const byId = new Map(nextItems.map((i) => [i.id, i]))
-  const chromeOpts = { grid, panelPad: pad, allPanels }
+  const forceShape = opts?.panelShape ?? panel.shape ?? 'rect'
+  const chromeOpts = {
+    grid,
+    panelPad: pad,
+    allPanels,
+    forceShape: forceShape as 'rect' | 'polygon',
+  }
 
-  // Ensure default contentSort is persisted on the panel when missing
+  // Ensure default contentSort is persisted; apply chosen chrome shape
   const panelWithSort: LayoutPanel = {
     ...panel,
     contentSort: panel.contentSort ?? 'name-asc',
+    shape: forceShape,
   }
 
   const nextPanel = rebuildPanelChromeFromMembers(

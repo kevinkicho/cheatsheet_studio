@@ -512,7 +512,7 @@ describe('packCheatsheetLayout', () => {
     // Leaf L2: rect mode → solid rect; n-gon mode → polygon
     expect(L2r.every((p) => p.shape === 'rect')).toBe(true)
     expect(L2n.every((p) => p.shape === 'polygon')).toBe(true)
-    // L1 stays rect when not in n-gon levels (nL2 only) — avoids snaking L1 boxes
+    // Explicit panelNgonLevels:[2] → L1 stays rect; L2 is n-gon
     expect(L1r.every((p) => p.shape === 'rect')).toBe(true)
     expect(L1n.every((p) => p.shape === 'rect')).toBe(true)
     for (const p of L2n) {

@@ -1,5 +1,5 @@
 import { LayoutGrid, LayoutTemplate } from 'lucide-react'
-import type { LayoutPanel } from '@/types'
+import type { LayoutPanel, PanelShape } from '@/types'
 import { useCanvasStore } from '@/stores/canvasStore'
 
 /**
@@ -30,27 +30,42 @@ export function PanelProperties({ panel }: { panel: LayoutPanel }) {
           <p className="mt-0.5 text-[10px] text-zinc-600">
             {memberCount} card{memberCount === 1 ? '' : 's'}
             {level != null ? ` · L${level}` : ''}
-            {shape === 'polygon' ? ' · n-gon' : ''}
+            {shape === 'polygon' ? ' · n-gon' : ' · rect'}
             {panel.folderId ? ` · folder ${panel.folderId}` : ''}
           </p>
         </div>
       </div>
 
-      <button
-        type="button"
-        data-testid="panel-auto-layout"
-        onClick={() => autoLayoutSelectedPanel()}
-        disabled={memberCount === 0}
-        className="inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-indigo-500/40 bg-indigo-500/15 px-2.5 py-1.5 text-xs font-medium text-indigo-100 hover:bg-indigo-500/25 disabled:cursor-not-allowed disabled:opacity-40"
-      >
-        <LayoutGrid className="h-3.5 w-3.5" />
-        Auto-layout inside panel
-      </button>
-      <p className="text-[9px] leading-snug text-zinc-600">
-        Densely repositions and resizes this panel’s cards to fill the frame,
-        then rebuilds this panel and any nested L2/L3 frames so they follow the
-        cards (including n-gon outlines).
-      </p>
+      <div>
+        <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+          Auto-layout inside panel
+        </p>
+        <div className="grid grid-cols-2 gap-1.5">
+          {(
+            [
+              ['rect', 'Rectangle'],
+              ['polygon', 'N-gon'],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              data-testid={`panel-auto-layout-${id}`}
+              onClick={() => autoLayoutSelectedPanel(id as PanelShape)}
+              disabled={memberCount === 0}
+              className="inline-flex items-center justify-center gap-1 rounded-md border border-indigo-500/40 bg-indigo-500/15 px-2 py-1.5 text-[11px] font-medium text-indigo-100 hover:bg-indigo-500/25 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <LayoutGrid className="h-3.5 w-3.5 shrink-0" />
+              {label}
+            </button>
+          ))}
+        </div>
+        <p className="mt-1 text-[9px] leading-snug text-zinc-600">
+          Dense free-flow at full card size (each click tries a new pack seed).
+          Rebuilds this frame and nested L2/L3 with the chosen chrome — rectangle
+          box or stepped n-gon.
+        </p>
+      </div>
 
       <label className="flex flex-col gap-1">
         <span className="text-[10px] text-zinc-500">Title</span>
@@ -110,7 +125,7 @@ export function PanelProperties({ panel }: { panel: LayoutPanel }) {
         </div>
         <p className="mt-1 text-[9px] leading-snug text-zinc-600">
           Re-packs only this panel’s cards (shelf). Use Auto-layout for dense
-          fill + resize.
+          free-flow + chrome rebuild.
         </p>
       </div>
 
