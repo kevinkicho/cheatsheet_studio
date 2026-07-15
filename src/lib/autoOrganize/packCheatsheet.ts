@@ -418,14 +418,23 @@ export function packCheatsheetLayout(
     return Math.min(2, Math.max(1, Math.ceil(px / grid)))
   }
 
-  const leafGapCells = Math.max(
-    pxToCells(gapPx),
-    usePanels && leafLevelsStroke && panelPad > 0 ? 1 : 0,
-  )
-  const outerGapCells = Math.max(
-    pxToCells(gapPx),
-    usePanels && outerLevelsStroke && panelPad > 0 ? 1 : 0,
-  )
+  // n-gon = hard tetris (minimal free-flow gap); rect = rectangular tetris
+  // with user gap. When chrome pad > 0, keep ≥1 cell so frames don't collide.
+  const hardTetris = usePolyomino
+  const chromeClearCells =
+    usePanels && panelPad > 0 ? 1 : 0
+  const leafGapCells = hardTetris
+    ? chromeClearCells
+    : Math.max(
+        pxToCells(gapPx),
+        usePanels && leafLevelsStroke && panelPad > 0 ? 1 : 0,
+      )
+  const outerGapCells = hardTetris
+    ? chromeClearCells
+    : Math.max(
+        pxToCells(gapPx),
+        usePanels && outerLevelsStroke && panelPad > 0 ? 1 : 0,
+      )
 
   // L1 exclusive chip row above L2 title bands (multi-level: 2 cells ≈ 48px)
   const outerTitleCells = useHierarchicalPlace
@@ -690,12 +699,15 @@ export function packCheatsheetLayout(
     )
   }
 
-  // Tetris gravity: after leaves are non-overlapping, slide them up/left into
-  // free holes so n-gon blocks stack toward the top of each L1 / the page.
+  // Tetris gravity: slide leaf groups up/left into free holes.
+  // n-gon: hard (gap 0). rect: keep user gap so rectangular pieces don't fuse.
   if (usePanels && (options.folders?.length ?? 0) > 0) {
     result = gravityCompactGroups(result, options.folders ?? [], deepLevel, {
       grid,
-      gapPx: Math.max(0, gapPx),
+      // Keep pad clearance even in hard tetris so chrome doesn't eat neighbors
+      gapPx: hardTetris
+        ? Math.max(0, panelPad * 2)
+        : Math.max(0, gapPx + (panelPad > 0 ? panelPad * 2 : 0)),
       parentLevel: multiLevelHierarchy ? shallowLevel : undefined,
       contentLeft: box.left,
       contentTop: box.top,
@@ -723,7 +735,9 @@ export function packCheatsheetLayout(
     // Second gravity pass after parent separation (tops of each L1)
     result = gravityCompactGroups(result, options.folders ?? [], deepLevel, {
       grid,
-      gapPx: Math.max(0, gapPx),
+      gapPx: hardTetris
+        ? Math.max(0, panelPad * 2)
+        : Math.max(0, gapPx + (panelPad > 0 ? panelPad * 2 : 0)),
       parentLevel: shallowLevel,
       contentLeft: box.left,
       contentTop: box.top,
@@ -863,10 +877,10 @@ export function packCheatsheetLayout(
       multiLevel: multiLevelHierarchy,
       outerLevel: shallowLevel,
     })
-    // Nested L2 must stay inside L1 with a clear nest gutter (not collinear edges)
+    // Nested L2 inside L1 with small nest gutter (user pad + 2px, not huge)
     if (multiLevelHierarchy) {
       layoutPanels = nestContainPanels(layoutPanels, {
-        insetPx: Math.max(8, panelPad + 6),
+        insetPx: Math.max(3, panelPad + 2),
         contentLeft: box.left,
         contentRight: box.left + box.width,
       })

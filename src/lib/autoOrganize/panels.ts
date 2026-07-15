@@ -200,18 +200,12 @@ export function buildNestedHierarchyPanels(args: {
   }
   const effectiveMinL = effectiveLevels[0] ?? minL
 
-  // Inner levels that stroke — outer needs extra pad so L2 never collinear with L1
-  const nestedStrokeDepths = [...borderSet].filter((L) => L > effectiveMinL)
-
   for (const level of effectiveLevels) {
     const isOutermost = level === effectiveMinL
     const showStroke = borderSet.has(level)
-    // Chrome pad = user pad; outer multi-level gets nest margin so L2 sits inside
-    const nestMargin =
-      isOutermost && multi && nestedStrokeDepths.length > 0
-        ? Math.max(8, panelPad + 6)
-        : 0
-    const pad = showStroke ? Math.max(0, panelPad) + nestMargin : 0
+    // Chrome pad = user pad only (nest gutter comes from nestContain inset,
+    // not from inflating outer pad — that caused huge right/bottom empty chrome).
+    const pad = showStroke ? Math.max(0, panelPad) : 0
     /**
      * Exclusive title stack (multi-level):
      *   L1 frame: L1 chip + gap + L2 chip band above cards
@@ -245,6 +239,7 @@ export function buildNestedHierarchyPanels(args: {
         LAYOUT_PANEL_ACCENTS[accentIdx++ % LAYOUT_PANEL_ACCENTS.length]
 
       // Clamp pad so chrome never leaves the printable content box
+      // (content box already excludes print margins).
       const minX = Math.min(...members.map((m) => m.x))
       const maxX = Math.max(...members.map((m) => m.x + m.width))
       let effPad = pad
@@ -282,17 +277,55 @@ export function buildNestedHierarchyPanels(args: {
         continue
       }
 
-      // N-gon levels → tetris row-block chrome; else solid rect AABB
+      // Chrome policy:
+      // - n-gon levels → hard tetris blocks (stepped silhouette)
+      // - multi-level outer (L1) → solid blocks from child-folder AABBs so the
+      //   outer frame doesn't paint empty AABB corners around sparse L2s
+      // - leaf rect → solid AABB (rectangular tetris piece)
       const useNgon = ngonSet.has(level)
       const chromeShape: PanelShape = useNgon ? 'polygon' : 'rect'
-      const solidMode: 'solid-aabb' | 'close' | 'silhouette' | 'blocks' =
-        useNgon ? 'blocks' : 'solid-aabb'
+      const nextLevel = effectiveLevels.find((L) => L > level)
+      let childBlocks:
+        | Array<{ x: number; y: number; width: number; height: number }>
+        | undefined
+      if (nextLevel != null && members.length > 1) {
+        const byChild = new Map<string, CanvasItem[]>()
+        for (const m of members) {
+          const ck =
+            folderAtGroupLevel(m.folderId, folders, nextLevel) ??
+            m.folderId ??
+            m.id
+          if (!byChild.has(ck)) byChild.set(ck, [])
+          byChild.get(ck)!.push(m)
+        }
+        if (byChild.size >= 2) {
+          childBlocks = [...byChild.values()].map((ms) => {
+            const x0 = Math.min(...ms.map((c) => c.x))
+            const y0 = Math.min(...ms.map((c) => c.y))
+            const x1 = Math.max(...ms.map((c) => c.x + c.width))
+            const y1 = Math.max(...ms.map((c) => c.y + c.height))
+            return {
+              x: x0,
+              y: y0,
+              width: Math.max(8, x1 - x0),
+              height: Math.max(8, y1 - y0),
+            }
+          })
+        }
+      }
+      // n-gon: hard tetris blocks (and multi-child outer uses child AABBs).
+      // rect: solid AABB rectangular pieces (classic rectangular tetris).
+      const solidMode: 'solid-aabb' | 'close' | 'silhouette' | 'blocks' = useNgon
+        ? 'blocks'
+        : 'solid-aabb'
       const chrome = chromeFromMembers(members, {
-        pad: effPad,
+        pad: effPad, // user pad only (no nest bloat); clamped to content box
         titleBand,
         shape: chromeShape,
         grid,
         solidMode,
+        // n-gon multi-child outer: silhouette from L2 AABBs (not card swiss-cheese)
+        blocks: useNgon ? childBlocks : undefined,
       })
       // Final clamp to print content box (pad may still nudge past edge)
       let { x, y, width, height } = chrome

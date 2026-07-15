@@ -413,35 +413,28 @@ export function chromeFromMembers(
   const maxX = Math.max(...members.map((m) => m.x + m.width))
   const maxY = Math.max(...members.map((m) => m.y + m.height))
 
-  if (opts.shape !== 'polygon' || solidMode === 'solid-aabb') {
-    // Clean outer rectangle perimeter (always exterior-only, no internal edges)
+  // Solid AABB: one clean rectangle (rectangular tetris chrome).
+  if (solidMode === 'solid-aabb') {
     const x = Math.round(minX - pad)
     const y = Math.round(minY - pad - titleBand)
     const width = Math.max(8, Math.round(maxX - minX + pad * 2))
     const height = Math.max(8, Math.round(maxY - minY + pad * 2 + titleBand))
-    if (opts.shape === 'polygon' || solidMode === 'solid-aabb') {
-      // Prefer outline path so stroke is one continuous perimeter
-      return {
-        x,
-        y,
-        width,
-        height,
-        runs: [{ x, y, width, height }],
-        outlinePath: rectPerimeterPathD(x, y, width, height),
-      }
+    return {
+      x,
+      y,
+      width,
+      height,
+      runs: [{ x, y, width, height }],
+      outlinePath: rectPerimeterPathD(x, y, width, height),
     }
-    return { x, y, width, height }
   }
 
-  // N-gon blocks: continuous stepped/L chrome (not grid-jagged polyomino).
+  // Blocks / stepped L: works for n-gon outline and multi-run rect chrome
+  // (union of solid child rects — no empty AABB corners).
   if (solidMode === 'blocks') {
-    // Prefer clean L from row strips of members. Optional `blocks` override
-    // is only used when they already look like shelf rows.
     if (!opts.blocks || opts.blocks.length === 0) {
       return steppedLChromeFromMembers(members, { pad, titleBand, grid })
     }
-    // Provided blocks: treat each as a solid rect and build a stepped outline
-    // from their vertical stacking (same L algorithm on synthetic members).
     const asMembers = opts.blocks.map((b) => ({
       x: b.x,
       y: b.y,
@@ -449,6 +442,22 @@ export function chromeFromMembers(
       height: b.height,
     }))
     return steppedLChromeFromMembers(asMembers, { pad, titleBand, grid })
+  }
+
+  // Legacy rect fallback (shape=rect without solidMode)
+  if (opts.shape !== 'polygon') {
+    const x = Math.round(minX - pad)
+    const y = Math.round(minY - pad - titleBand)
+    const width = Math.max(8, Math.round(maxX - minX + pad * 2))
+    const height = Math.max(8, Math.round(maxY - minY + pad * 2 + titleBand))
+    return {
+      x,
+      y,
+      width,
+      height,
+      runs: [{ x, y, width, height }],
+      outlinePath: rectPerimeterPathD(x, y, width, height),
+    }
   }
 
   // silhouette / close: cells covering each card (legacy path)

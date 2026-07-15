@@ -402,7 +402,9 @@ export function placePlansHierarchical(
       }
     }
     freeRight = Math.max(0, freeRight)
-    // Claim residual printable columns aggressively (use full page width).
+    // Claim residual printable columns only when re-pack stays dense.
+    // Low fillRatio left cards on the left and empty “padding” on the right
+    // inside L1 frames (user screenshot: big right/bottom gutters in borders).
     if (freeRight >= 1) {
       const widerInner = Math.max(
         1,
@@ -416,10 +418,9 @@ export function placePlansHierarchical(
       )
       const newCh = Math.max(1, repacked.usedCh + outerTitle + nestInset * 2)
       const shorter = newCh < o.ch
-      // Accept width growth when content actually uses ≥65% of the wider band
-      // (was 0.82 — left large empty right gutters on letter pages).
+      // Require high fill so we don't invent empty right/bottom chrome
       const meaningfullyWider =
-        newCw > o.cw && fillRatio >= 0.65 && newCh <= o.ch + 1
+        newCw > o.cw && fillRatio >= 0.9 && newCh <= o.ch
       if (shorter || meaningfullyWider) {
         let ok = true
         for (const [j, other] of outers.entries()) {
