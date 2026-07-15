@@ -699,15 +699,15 @@ export function packCheatsheetLayout(
     )
   }
 
-  // Tetris gravity: slide leaf groups up/left into free holes.
-  // n-gon: hard (gap 0). rect: keep user gap so rectangular pieces don't fuse.
+  // Tetris gravity *inside each L1 only* (never across topics).
   if (usePanels && (options.folders?.length ?? 0) > 0) {
     result = gravityCompactGroups(result, options.folders ?? [], deepLevel, {
       grid,
-      // Keep pad clearance even in hard tetris so chrome doesn't eat neighbors
       gapPx: hardTetris
         ? Math.max(0, panelPad * 2)
         : Math.max(0, gapPx + (panelPad > 0 ? panelPad * 2 : 0)),
+      // Always scope to shallow parent when multi-level so L2s don't climb
+      // into another topic's holes.
       parentLevel: multiLevelHierarchy ? shallowLevel : undefined,
       contentLeft: box.left,
       contentTop: box.top,
@@ -715,14 +715,12 @@ export function packCheatsheetLayout(
     })
   }
 
-  // Critical: leaf pushes can expand an L1 band into the next topic. Separate
-  // outer clusters so parent AABBs (and thus rect/n-gon frames) never interleave.
+  // LAST placement pass: stack L1 topics so card AABBs never interleave.
+  // Do not gravity after this — that re-opened holes between L1s.
   if (usePanels && multiLevelHierarchy && (options.folders?.length ?? 0) > 0) {
-    // Card gap must also clear L1 chrome: bottom pad + exclusive title band
-    // of the next outer (~44px multi-level) so stroked frames don't kiss.
     const outerChromeClearPx = outerLevelsStroke
-      ? panelPad * 2 + (multiLevelHierarchy ? 48 : 20)
-      : 0
+      ? panelPad * 2 + 48
+      : Math.max(gapPx, panelPad * 2)
     result = separateFolderClusters(
       result,
       options.folders ?? [],
@@ -732,17 +730,6 @@ export function packCheatsheetLayout(
         minGapPx: Math.max(gapPx, outerChromeClearPx),
       },
     )
-    // Second gravity pass after parent separation (tops of each L1)
-    result = gravityCompactGroups(result, options.folders ?? [], deepLevel, {
-      grid,
-      gapPx: hardTetris
-        ? Math.max(0, panelPad * 2)
-        : Math.max(0, gapPx + (panelPad > 0 ? panelPad * 2 : 0)),
-      parentLevel: shallowLevel,
-      contentLeft: box.left,
-      contentTop: box.top,
-      contentRight: box.left + box.width,
-    })
   }
 
   // Multipage seams:

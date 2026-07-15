@@ -464,7 +464,9 @@ export function gravityCompactGroups(
     if (y0 < contentTop - 0.5) return true
     for (const o of groups) {
       if (o.key === ignoreKey) continue
-      // Always collide with every leaf AABB — never interleave L1 topics
+      // Only compact inside the same L1 parent. Sliding into another topic's
+      // internal holes was re-interleaving Biology/Chemistry (user “ugh no”).
+      if (parentLevel != null && o.parent !== g.parent) continue
       if (
         x0 < o.x1 + gap &&
         x1 + gap > o.x0 &&
@@ -604,15 +606,15 @@ export function separateFolderClusters(
   const dyOf = new Map<string, number>()
   for (let i = 0; i < clusters.length; i++) {
     const g = clusters[i]!
-    // Single target Y. Prior clusters already have minY/maxY mutated — do NOT
-    // add dyOf on top (that double-counted and exploded multipage height).
+    // Single target Y. Prior clusters already have minY/maxY mutated.
     let newMinY = g.minY
     for (let j = 0; j < i; j++) {
       const h = clusters[j]!
       const hy1 = h.maxY
       const hx0 = h.minX
       const hx1 = h.maxX
-      // Side-by-side with clear horizontal gap → leave alone (tetris)
+      // Side-by-side only with a real horizontal gap. Any X overlap → stack
+      // vertically (prevents Biology/Chemistry interleave).
       const xGap = Math.max(g.minX - hx1, hx0 - g.maxX)
       if (xGap >= Math.max(2, minGap)) continue
       if (newMinY >= hy1 + minGap) continue
