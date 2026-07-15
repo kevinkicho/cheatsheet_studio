@@ -309,7 +309,6 @@ function packFootprintsPixel(
 
   type Placed = { i: number; x: number; y: number; w: number; h: number }
   const orderings: number[][] = []
-  const n = leaves.length
   const idxs = leaves.map((_, i) => i)
   // height-desc, area-desc, width-desc, input
   const byH = [...idxs].sort(

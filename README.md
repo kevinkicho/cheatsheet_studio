@@ -445,26 +445,6 @@ CLI guide: [docs/cli.md](./docs/cli.md) · SDK notes: [docs/agent-sdk.md](./docs
 
 ---
 
-## Screenshots
-
-<div align="center">
-  <table>
-    <tr>
-      <td align="center" valign="middle">
-        <img
-          src="screenshots/workspace.png"
-          alt="CheatSheet Studio main workspace"
-          width="880"
-        />
-        <br />
-        <sub>Main workspace with equation cards and library</sub>
-      </td>
-    </tr>
-  </table>
-</div>
-
----
-
 ## Security notes
 
 - Never import Admin credentials into `src/`.  

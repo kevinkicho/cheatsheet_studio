@@ -18,12 +18,18 @@ dist-ssr
 !.env.example
 
 # Firebase Admin SDK & service accounts (never commit)
+# Covers e.g. mathstudy071026-firebase-adminsdk-fbsvc-*.json
 *firebase-adminsdk*.json
-serviceAccount*.json
 *-firebase-adminsdk-*.json
+mathstudy071026-firebase-adminsdk*.json
+serviceAccount*.json
+**/serviceAccount*.json
 firebase-config.json
 firebaseConfig.json
 .runtimeconfig.json
+# Any private key material dropped in repo root
+*-private-key*.json
+*service-account*.json
 
 # Firebase CLI cache / local state
 .firebase/
