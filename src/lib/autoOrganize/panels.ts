@@ -214,9 +214,12 @@ export function buildNestedHierarchyPanels(args: {
      */
     const L1_CHIP = 22
     const L2_CHIP = 18
+    // Multi-level: L1 only reserves its own chip band. L2 chips sit on L2
+    // frames (not a second exclusive row under L1) — that double-band forced
+    // huge inter-topic voids (screenshot 214206).
     const titleBand = isOutermost
       ? multi
-        ? L1_CHIP + 4 + L2_CHIP // ~44: exclusive L1 row + L2 chip under it
+        ? L1_CHIP + 4 // ~26
         : Math.max(16, titleBandPx)
       : L2_CHIP
 
@@ -278,59 +281,24 @@ export function buildNestedHierarchyPanels(args: {
       }
 
       /**
-       * Chrome policy (fixes empty right/bottom inside outer frames):
-       * - Leaf / single-child: rect → solid AABB; n-gon → card tetris blocks
-       * - Multi-child outer (L1 wrapping free-flow L2s): ALWAYS union of child
-       *   AABBs as stepped chrome — never solid AABB (that left huge empty
-       *   corners inside “1. BIOLOGY” while L2s only filled part of the rect)
+       * Chrome policy:
+       * - Level in n-gon set → stepped blocks (card footprints)
+       * - Else → solid AABB rectangle (clean frame)
+       *
+       * Multi-child L1 is NOT forced to polygon — that produced snaking
+       * “weird boxes” connecting free-flow L2s (screenshot 214119).
        */
       const useNgon = ngonSet.has(level)
-      const nextLevel = effectiveLevels.find((L) => L > level)
-      let childBlocks:
-        | Array<{ x: number; y: number; width: number; height: number }>
-        | undefined
-      if (nextLevel != null && members.length > 1) {
-        const byChild = new Map<string, CanvasItem[]>()
-        for (const m of members) {
-          const ck =
-            folderAtGroupLevel(m.folderId, folders, nextLevel) ??
-            m.folderId ??
-            m.id
-          if (!byChild.has(ck)) byChild.set(ck, [])
-          byChild.get(ck)!.push(m)
-        }
-        if (byChild.size >= 2) {
-          // Inflate each child by leaf pad so outer hugs L2 frames, not cards only
-          const childPad = Math.max(0, panelPad)
-          childBlocks = [...byChild.values()].map((ms) => {
-            const x0 = Math.min(...ms.map((c) => c.x))
-            const y0 = Math.min(...ms.map((c) => c.y))
-            const x1 = Math.max(...ms.map((c) => c.x + c.width))
-            const y1 = Math.max(...ms.map((c) => c.y + c.height))
-            return {
-              x: x0 - childPad,
-              y: y0 - childPad,
-              width: Math.max(8, x1 - x0 + childPad * 2),
-              height: Math.max(8, y1 - y0 + childPad * 2),
-            }
-          })
-        }
-      }
-      const multiChildOuter = Boolean(childBlocks && childBlocks.length >= 2)
-      // Stepped outer silhouette when wrapping free-flow children; else leaf style
-      const useBlocks = useNgon || multiChildOuter
-      const chromeShape: PanelShape = useBlocks ? 'polygon' : 'rect'
-      const solidMode: 'solid-aabb' | 'close' | 'silhouette' | 'blocks' =
-        useBlocks ? 'blocks' : 'solid-aabb'
-      // Outer already inflated child blocks — only title band extra on outer
-      const chromePad = multiChildOuter ? 0 : effPad
+      const chromeShape: PanelShape = useNgon ? 'polygon' : 'rect'
+      const solidMode: 'solid-aabb' | 'close' | 'silhouette' | 'blocks' = useNgon
+        ? 'blocks'
+        : 'solid-aabb'
       const chrome = chromeFromMembers(members, {
-        pad: chromePad,
+        pad: effPad,
         titleBand,
         shape: chromeShape,
         grid,
         solidMode,
-        blocks: multiChildOuter ? childBlocks : undefined,
       })
       // Final clamp to print content box (pad may still nudge past edge)
       let { x, y, width, height } = chrome
@@ -378,8 +346,7 @@ export function buildNestedHierarchyPanels(args: {
         width: Math.max(8, Math.round(width)),
         height: Math.max(8, Math.round(height)),
         runs,
-        // Multi-child outer uses polygon outline so empty AABB corners are not filled
-        shape: useBlocks ? 'polygon' : 'rect',
+        shape: chromeShape === 'polygon' ? 'polygon' : 'rect',
         outlinePath: outline,
         accent,
         zIndex: level - 1,
@@ -438,19 +405,31 @@ export function buildNestedHierarchyPanels(args: {
 }
 
 /**
- * Ensure nested L2/L3 frames sit strictly inside their L1 parent with a clear
- * nest gutter (not collinear double borders). Prefer **insetting children**
- * over expanding parents (expanding L1s made sibling L1 AABBs collide).
- * Only grow the parent when a child still escapes after inset (escape fix).
+ * Nest containment without cutting into cards.
+ *
+ * CRITICAL: never shrink a child panel below its member-card envelope.
+ * Shrinking L2 for a “nest gutter” left cards sticking past panel borders
+ * (rect mode overflow). We only:
+ *  1) Expand each panel so it covers its members + pad
+ *  2) Expand outer stepped/solid parents so they cover children + inset
  */
 export function nestContainPanels(
   panels: LayoutPanel[],
-  opts?: { insetPx?: number; contentLeft?: number; contentRight?: number },
+  opts?: {
+    insetPx?: number
+    contentLeft?: number
+    contentRight?: number
+    /** Card geometry after pack — required so we never cut under members. */
+    placed?: CanvasItem[]
+    panelPad?: number
+  },
 ): LayoutPanel[] {
   if (panels.length <= 1) return panels
   const inset = Math.max(2, opts?.insetPx ?? 4)
+  const pad = Math.max(0, opts?.panelPad ?? 4)
   const left = opts?.contentLeft
   const right = opts?.contentRight
+  const byId = new Map((opts?.placed ?? []).map((c) => [c.id, c]))
   let next = panels.map((p) => ({ ...p }))
 
   const isChildOf = (parent: LayoutPanel, child: LayoutPanel) => {
@@ -460,117 +439,80 @@ export function nestContainPanels(
     return child.memberIds.every((id) => set.has(id))
   }
 
-  const clampChildInto = (
-    child: LayoutPanel,
-    parent: LayoutPanel,
-  ): LayoutPanel => {
-    const px0 = parent.x + inset
-    const py0 = parent.y + inset
-    const px1 = parent.x + parent.width - inset
-    const py1 = parent.y + parent.height - inset
-    // Parent too tight for inset — use half-space
-    const ix0 = px1 > px0 + 8 ? px0 : parent.x + 1
-    const iy0 = py1 > py0 + 8 ? py0 : parent.y + 1
-    const ix1 = px1 > px0 + 8 ? px1 : parent.x + parent.width - 1
-    const iy1 = py1 > py0 + 8 ? py1 : parent.y + parent.height - 1
-    let x = child.x
-    let y = child.y
-    let w = child.width
-    let h = child.height
-    if (x < ix0) {
-      w -= ix0 - x
-      x = ix0
-    }
-    if (y < iy0) {
-      h -= iy0 - y
-      y = iy0
-    }
-    if (x + w > ix1) w = Math.max(8, ix1 - x)
-    if (y + h > iy1) h = Math.max(8, iy1 - y)
-    if (
-      x === child.x &&
-      y === child.y &&
-      w === child.width &&
-      h === child.height
-    ) {
-      return child
-    }
-    const runsSrc =
-      child.runs && child.runs.length > 0
-        ? child.runs
-        : [
-            {
-              x: child.x,
-              y: child.y,
-              width: child.width,
-              height: child.height,
-            },
-          ]
-    const runs = runsSrc.map((r) => {
-      let rx = r.x
-      let ry = r.y
-      let rw = r.width
-      let rh = r.height
-      if (rx < ix0) {
-        rw -= ix0 - rx
-        rx = ix0
-      }
-      if (ry < iy0) {
-        rh -= iy0 - ry
-        ry = iy0
-      }
-      if (rx + rw > ix1) rw = Math.max(8, ix1 - rx)
-      if (ry + rh > iy1) rh = Math.max(8, iy1 - ry)
-      return {
-        x: Math.round(rx),
-        y: Math.round(ry),
-        width: Math.max(8, Math.round(rw)),
-        height: Math.max(8, Math.round(rh)),
-      }
-    })
-    return {
-      ...child,
-      x: Math.round(x),
-      y: Math.round(y),
-      width: Math.max(8, Math.round(w)),
-      height: Math.max(8, Math.round(h)),
-      runs: child.showStroke === false ? undefined : runs,
-      outlinePath:
-        child.showStroke === false
-          ? undefined
-          : child.shape === 'polygon' &&
-              child.outlinePath &&
-              x === child.x &&
-              y === child.y
-            ? child.outlinePath
-            : rectPerimeterPathD(x, y, Math.max(8, w), Math.max(8, h)),
-    }
+  const memberEnvelope = (p: LayoutPanel) => {
+    const mem = (p.memberIds ?? [])
+      .map((id) => byId.get(id))
+      .filter((m): m is CanvasItem => Boolean(m) && !m.hidden)
+    if (mem.length === 0) return null
+    const minX = Math.min(...mem.map((m) => m.x))
+    const minY = Math.min(...mem.map((m) => m.y))
+    const maxX = Math.max(...mem.map((m) => m.x + m.width))
+    const maxY = Math.max(...mem.map((m) => m.y + m.height))
+    return { minX, minY, maxX, maxY }
   }
 
-  // 1) Inset every child into its parent (primary nest fix)
+  // 1) Every panel must cover its cards (+ pad). Expand only — never shrink.
   for (let i = 0; i < next.length; i++) {
-    const child = next[i]!
-    const parent = next.find(
-      (p) =>
-        p.id !== child.id &&
-        p.showStroke !== false &&
-        (p.hierarchyLevel ?? 1) < (child.hierarchyLevel ?? 1) &&
-        isChildOf(p, child),
-    )
-    if (!parent) continue
-    next[i] = clampChildInto(child, parent)
+    const p = next[i]!
+    const env = memberEnvelope(p)
+    if (!env) continue
+    // Match buildNestedHierarchyPanels title bands (L1 multi ~26, L2 ~18)
+    const titleExtra =
+      p.showTitle === false
+        ? 0
+        : (p.hierarchyLevel ?? 1) <= 1
+          ? 26
+          : 18
+    let x = Math.min(p.x, env.minX - pad)
+    let y = Math.min(p.y, env.minY - pad - titleExtra)
+    let x1 = Math.max(p.x + p.width, env.maxX + pad)
+    let y1 = Math.max(p.y + p.height, env.maxY + pad)
+    if (left != null) x = Math.max(left, x)
+    if (right != null) x1 = Math.min(right, x1)
+    const width = Math.max(8, x1 - x)
+    const height = Math.max(8, y1 - y)
+    if (
+      x < p.x - 0.5 ||
+      y < p.y - 0.5 ||
+      width > p.width + 0.5 ||
+      height > p.height + 0.5
+    ) {
+      // Expand runs that are near the old edges; keep stepped shape when possible
+      const runs =
+        p.runs && p.runs.length > 1
+          ? p.runs.map((r) => ({
+              x: Math.min(r.x, env.minX - pad),
+              y: r.y,
+              width: Math.max(r.width, env.maxX + pad - Math.min(r.x, env.minX - pad)),
+              height: r.height,
+            }))
+          : [{ x, y, width, height }]
+      next[i] = {
+        ...p,
+        x: Math.round(x),
+        y: Math.round(y),
+        width: Math.round(width),
+        height: Math.round(height),
+        runs: runs.map((r) => ({
+          x: Math.round(r.x),
+          y: Math.round(r.y),
+          width: Math.max(8, Math.round(r.width)),
+          height: Math.max(8, Math.round(r.height)),
+        })),
+        outlinePath:
+          p.shape === 'polygon' && p.outlinePath
+            ? p.outlinePath
+            : rectPerimeterPathD(x, y, width, height),
+      }
+    }
   }
 
-  // 2) If a stroked child still escapes a *solid* parent, grow it just enough.
-  // Never solidify multi-run / stepped parents into one AABB (that recreated
-  // the empty right/bottom corners inside “1. BIOLOGY”).
+  // 2) Expand outer parents to cover children + nest inset (children stay put).
+  // Cap growth so we never invade a same-level sibling panel (L1 eating L1).
   for (let i = 0; i < next.length; i++) {
     const parent = next[i]!
     if (parent.showStroke === false) continue
-    if ((parent.runs?.length ?? 0) > 1 || parent.shape === 'polygon') continue
-    const children = next.filter(
-      (c) => c.showStroke !== false && isChildOf(parent, c),
-    )
+    const children = next.filter((c) => isChildOf(parent, c))
     if (children.length === 0) continue
     let minX = parent.x
     let minY = parent.y
@@ -579,10 +521,10 @@ export function nestContainPanels(
     let need = false
     for (const c of children) {
       if (
-        c.x < parent.x + 0.5 ||
-        c.y < parent.y + 0.5 ||
-        c.x + c.width > parent.x + parent.width - 0.5 ||
-        c.y + c.height > parent.y + parent.height - 0.5
+        c.x < parent.x + inset ||
+        c.y < parent.y + inset ||
+        c.x + c.width > parent.x + parent.width - inset ||
+        c.y + c.height > parent.y + parent.height - inset
       ) {
         need = true
         minX = Math.min(minX, c.x - inset)
@@ -598,42 +540,139 @@ export function nestContainPanels(
       if (sib.id === parent.id) continue
       if ((sib.hierarchyLevel ?? 1) !== (parent.hierarchyLevel ?? 1)) continue
       if (sib.showStroke === false) continue
-      if (sib.x >= parent.x + parent.width - 1 && maxX > sib.x - 2) {
+      // Don't grow into sibling AABBs
+      if (sib.x >= parent.x + parent.width - 2 && maxX > sib.x - 2) {
         maxX = Math.min(maxX, sib.x - 2)
       }
-      if (sib.y >= parent.y + parent.height - 1 && maxY > sib.y - 2) {
+      if (sib.y >= parent.y + parent.height - 2 && maxY > sib.y - 2) {
         maxY = Math.min(maxY, sib.y - 2)
       }
+      if (sib.x + sib.width <= parent.x + 2 && minX < sib.x + sib.width + 2) {
+        minX = Math.max(minX, sib.x + sib.width + 2)
+      }
+      if (sib.y + sib.height <= parent.y + 2 && minY < sib.y + sib.height + 2) {
+        minY = Math.max(minY, sib.y + sib.height + 2)
+      }
     }
+    if (maxX <= minX + 8 || maxY <= minY + 8) continue
     const x = Math.round(minX)
     const y = Math.round(minY)
     const width = Math.max(8, Math.round(maxX - x))
     const height = Math.max(8, Math.round(maxY - y))
-    next[i] = {
-      ...parent,
-      x,
-      y,
-      width,
-      height,
-      runs: [{ x, y, width, height }],
-      outlinePath: rectPerimeterPathD(x, y, width, height),
+    if ((parent.runs?.length ?? 0) > 1 || parent.shape === 'polygon') {
+      next[i] = { ...parent, x, y, width, height }
+    } else {
+      next[i] = {
+        ...parent,
+        x,
+        y,
+        width,
+        height,
+        runs: [{ x, y, width, height }],
+        outlinePath: rectPerimeterPathD(x, y, width, height),
+      }
     }
   }
 
-  // 3) Final child clamp after any parent growth
-  for (let i = 0; i < next.length; i++) {
-    const child = next[i]!
-    const parent = next.find(
-      (p) =>
-        p.id !== child.id &&
-        p.showStroke !== false &&
-        (p.hierarchyLevel ?? 1) < (child.hierarchyLevel ?? 1) &&
-        isChildOf(p, child),
-    )
-    if (!parent) continue
-    next[i] = clampChildInto(child, parent)
+  return next
+}
+
+/**
+ * Rebuild multi-child outer panels from final child panel AABBs.
+ * Call after nest/collision so L1 always hugs free-flow L2s (no empty AABB).
+ */
+export function rebuildMultiChildOuters(
+  panels: LayoutPanel[],
+  opts?: {
+    panelPad?: number
+    titleBandPx?: number
+    contentLeft?: number
+    contentRight?: number
+    grid?: number
+  },
+): LayoutPanel[] {
+  if (panels.length <= 1) return panels
+  const pad = Math.max(0, opts?.panelPad ?? 4)
+  const grid = Math.max(4, opts?.grid ?? ORGANIZE_GRID)
+  const left = opts?.contentLeft
+  const right = opts?.contentRight
+  const next = panels.map((p) => ({ ...p }))
+
+  const isChildOf = (parent: LayoutPanel, child: LayoutPanel) => {
+    if (!parent.memberIds?.length || !child.memberIds?.length) return false
+    if ((child.hierarchyLevel ?? 1) <= (parent.hierarchyLevel ?? 1)) return false
+    const set = new Set(parent.memberIds)
+    return child.memberIds.every((id) => set.has(id))
   }
 
+  for (let i = 0; i < next.length; i++) {
+    const parent = next[i]!
+    if (parent.showStroke === false) continue
+    const children = next.filter(
+      (c) =>
+        c.showStroke !== false &&
+        isChildOf(parent, c) &&
+        (c.hierarchyLevel ?? 1) === (parent.hierarchyLevel ?? 1) + 1,
+    )
+    // Also accept any deeper nested children if no direct level+1
+    const kids =
+      children.length >= 2
+        ? children
+        : next.filter((c) => c.showStroke !== false && isChildOf(parent, c))
+    if (kids.length < 2) continue
+
+    const blocks = kids.map((c) => ({
+      x: c.x,
+      y: c.y,
+      width: c.width,
+      height: c.height,
+    }))
+    const titleBand =
+      (parent.hierarchyLevel ?? 1) <= 1
+        ? Math.max(22, opts?.titleBandPx ?? 16) + 4
+        : Math.max(16, opts?.titleBandPx ?? 16)
+    // Synthetic members = child frames; pad 0 (children already include pad)
+    const chrome = chromeFromMembers(
+      blocks.map((b) => ({
+        x: b.x,
+        y: b.y,
+        width: b.width,
+        height: b.height,
+      })),
+      {
+        pad: 0,
+        titleBand,
+        shape: 'polygon',
+        grid,
+        solidMode: 'blocks',
+        blocks,
+      },
+    )
+    let { x, y, width, height } = chrome
+    if (left != null && x < left) {
+      width -= left - x
+      x = left
+    }
+    if (right != null && x + width > right) {
+      width = Math.max(8, right - x)
+    }
+    next[i] = {
+      ...parent,
+      x: Math.round(x),
+      y: Math.round(y),
+      width: Math.max(8, Math.round(width)),
+      height: Math.max(8, Math.round(height)),
+      runs: (chrome.runs ?? [{ x, y, width, height }]).map((r) => ({
+        x: Math.round(r.x),
+        y: Math.round(r.y),
+        width: Math.max(8, Math.round(r.width)),
+        height: Math.max(8, Math.round(r.height)),
+      })),
+      shape: 'polygon',
+      outlinePath:
+        chrome.outlinePath || rectPerimeterPathD(x, y, width, height),
+    }
+  }
   return next
 }
 

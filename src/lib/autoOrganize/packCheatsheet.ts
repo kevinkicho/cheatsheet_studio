@@ -55,6 +55,7 @@ import {
   buildLayoutPanelsFromMembers,
   mergeAdjacentOutermostPanels,
   nestContainPanels,
+  rebuildMultiChildOuters,
   clampPanelsToContentBox,
 } from './panels'
 
@@ -436,12 +437,9 @@ export function packCheatsheetLayout(
         usePanels && outerLevelsStroke && panelPad > 0 ? 1 : 0,
       )
 
-  // L1 exclusive chip row above L2 title bands (multi-level: 2 cells ≈ 48px)
-  const outerTitleCells = useHierarchicalPlace
-    ? multiLevelHierarchy
-      ? 2
-      : 1
-    : 0
+  // L1 chip row only (1 cell). L2 chips are on L2 frames — not a second
+  // exclusive row (that inflated every outer and inter-topic gap).
+  const outerTitleCells = useHierarchicalPlace ? 1 : 0
   const nestInsetCells =
     nestInsetPx > 0 ? Math.min(1, Math.ceil(nestInsetPx / grid)) : 0
 
@@ -716,11 +714,13 @@ export function packCheatsheetLayout(
   }
 
   // LAST placement pass: stack L1 topics so card AABBs never interleave.
-  // Do not gravity after this — that re-opened holes between L1s.
+  // Need: bottom pad + L1 title band of next topic + top pad + user gap.
+  // L1 title is ~26px now (not 44) so inter-topic voids stay modest.
   if (usePanels && multiLevelHierarchy && (options.folders?.length ?? 0) > 0) {
+    const l1TitleClear = outerLevelsStroke ? 28 : 0
     const outerChromeClearPx = outerLevelsStroke
-      ? panelPad * 2 + 48
-      : Math.max(gapPx, panelPad * 2)
+      ? panelPad * 2 + l1TitleClear + Math.max(0, gapPx)
+      : Math.max(0, gapPx)
     result = separateFolderClusters(
       result,
       options.folders ?? [],
@@ -864,19 +864,46 @@ export function packCheatsheetLayout(
       multiLevel: multiLevelHierarchy,
       outerLevel: shallowLevel,
     })
-    // Nested L2 inside L1 with small nest gutter (user pad + 2px, not huge)
-    if (multiLevelHierarchy) {
-      layoutPanels = nestContainPanels(layoutPanels, {
-        insetPx: Math.max(3, panelPad + 2),
-        contentLeft: box.left,
-        contentRight: box.left + box.width,
-      })
-    }
-    // Final hard clamp — merge/rebuild must never leave chrome past print box
+    // Guarantee every panel covers its cards (never shrink under members)
+    layoutPanels = nestContainPanels(layoutPanels, {
+      insetPx: multiLevelHierarchy ? Math.max(2, panelPad) : 0,
+      contentLeft: box.left,
+      contentRight: box.left + box.width,
+      placed: result,
+      panelPad,
+    })
+    // Final hard clamp to print content box (margins excluded)
     layoutPanels = clampPanelsToContentBox(layoutPanels, {
       left: box.left,
       right: box.left + box.width,
     })
+    // Restore member coverage if clamp shaved edges
+    layoutPanels = nestContainPanels(layoutPanels, {
+      insetPx: 0,
+      contentLeft: box.left,
+      contentRight: box.left + box.width,
+      placed: result,
+      panelPad: 0,
+    })
+    // Only rebuild multi-child outers as stepped chrome when L1 itself is n-gon.
+    // Forcing stepped L1 for all multi-child produced snaking “weird boxes”
+    // (screenshot 214119) when n-gon was only selected for L2/L3.
+    const outerIsNgon =
+      panelShape === 'polygon' &&
+      normalizeNgonLevels(
+        options.panelNgonLevels,
+        borderLevels,
+        panelGroupLevels,
+      ).includes(shallowLevel)
+    if (multiLevelHierarchy && outerIsNgon) {
+      layoutPanels = rebuildMultiChildOuters(layoutPanels, {
+        panelPad,
+        titleBandPx: PANEL_TITLE_BAND_PX,
+        contentLeft: box.left,
+        contentRight: box.left + box.width,
+        grid,
+      })
+    }
   }
 
   const bottom2 = merged.reduce(

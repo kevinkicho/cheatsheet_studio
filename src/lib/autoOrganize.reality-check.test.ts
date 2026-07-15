@@ -175,30 +175,27 @@ describe('reality check user complaints', () => {
     // eslint-disable-next-line no-console
     console.log(JSON.stringify(report, null, 2))
 
-    // L1 multi-child must not be a solid AABB with huge empty corners
-    // (screenshot 202039: empty right/bottom inside “1. BIOLOGY” frame)
-    let l1FatCorners = 0
-    for (const o of L1) {
-      const mem = (o.memberIds ?? [])
-        .map((id) => cards.find((c) => c.id === id))
-        .filter(Boolean) as CanvasItem[]
-      if (mem.length < 3) continue
-      const cardArea = mem.reduce((s, m) => s + m.width * m.height, 0)
-      const panelArea = o.width * o.height
-      // Free-flow L2s leave empty AABB corners; stepped outer should track
-      // children so panelArea isn't >> cardArea
-      if (panelArea > cardArea * 2.2 && (o.runs?.length ?? 1) <= 1) {
-        l1FatCorners++
-      }
+    // Gaps between successive L1 card bands (should not be huge voids)
+    let maxL1Gap = 0
+    for (let i = 1; i < clusters.length; i++) {
+      const gap = clusters[i]!.y0 - clusters[i - 1]!.y1
+      if (gap > maxL1Gap) maxL1Gap = gap
     }
 
     // eslint-disable-next-line no-console
-    console.log('l1FatCorners', l1FatCorners, 'L1 runs', L1.map((p) => p.runs?.length))
+    console.log({
+      maxL1Gap,
+      L1shapes: L1.map((p) => p.shape),
+      clusters: clusters.map((c) => `${c.name} y=${c.y0}-${c.y1}`),
+    })
 
     expect(l1Interleave).toBe(0)
     expect(escape).toBe(0)
     expect(fatR).toBe(0)
     expect(fatB).toBe(0)
-    expect(l1FatCorners).toBe(0)
+    // Inter-L1 card gap ≤ ~2 cells (48) + pad — not the old 72–150 voids
+    expect(maxL1Gap).toBeLessThanOrEqual(48)
+    // With nL2-3, L1 must stay rect (not snaking polygon)
+    expect(L1.every((p) => p.shape === 'rect')).toBe(true)
   })
 })

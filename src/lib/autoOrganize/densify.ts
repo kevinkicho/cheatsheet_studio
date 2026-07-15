@@ -741,7 +741,7 @@ export function resolveSameLevelPanelCollisions(
   const titleBandFor = (p: LayoutPanel): number => {
     if (p.showTitle === false) return 0
     const level = p.hierarchyLevel ?? 1
-    if (multi && level === outerLevel) return L1_CHIP + 4 + L2_CHIP
+    if (multi && level === outerLevel) return L1_CHIP + 4
     if (multi && level > outerLevel) return L2_CHIP
     return 16
   }

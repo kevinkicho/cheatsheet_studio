@@ -507,10 +507,9 @@ describe('packCheatsheetLayout', () => {
     // Leaf L2: rect mode → solid rect; n-gon mode → polygon
     expect(L2r.every((p) => p.shape === 'rect')).toBe(true)
     expect(L2n.every((p) => p.shape === 'polygon')).toBe(true)
-    // Multi-child L1 always uses stepped outer (union of L2 blocks) so free-flow
-    // L2s don't leave empty AABB corners inside the parent frame
-    expect(L1r.every((p) => (p.runs?.length ?? 0) >= 1)).toBe(true)
-    expect(L1n.every((p) => p.shape === 'polygon')).toBe(true)
+    // L1 stays rect when not in n-gon levels (nL2 only) — avoids snaking L1 boxes
+    expect(L1r.every((p) => p.shape === 'rect')).toBe(true)
+    expect(L1n.every((p) => p.shape === 'rect')).toBe(true)
     for (const p of L2n) {
       expect(p.outlinePath).toBeTruthy()
     }
@@ -781,14 +780,20 @@ describe('packCheatsheetLayout', () => {
     expect(outerT2.x + outerT2.width + 0.5).toBeGreaterThanOrEqual(
       inner21.x + inner21.width,
     )
-    // Clear gap between outer and inner strokes (not stacked double lines)
-    expect(inner11.x - outerT1.x).toBeGreaterThanOrEqual(2)
-    expect(inner21.x - outerT2.x).toBeGreaterThanOrEqual(2)
-    // Stroked L1 islands must not overlap (merged component uses one stroke)
+    // Outer must cover inners (nest gutter is optional; never shrink under cards)
+    expect(outerT1.x).toBeLessThanOrEqual(inner11.x + 0.5)
+    expect(outerT2.x).toBeLessThanOrEqual(inner21.x + 0.5)
+    expect(outerT1.x + outerT1.width + 0.5).toBeGreaterThanOrEqual(
+      inner11.x + inner11.width,
+    )
+    expect(outerT2.x + outerT2.width + 0.5).toBeGreaterThanOrEqual(
+      inner21.x + inner21.width,
+    )
+    // Stroked L1 islands must not deeply overlap (pad-kiss at edges ok)
     const strokedL1 = L1.filter((p) => p.showStroke !== false)
     for (let i = 0; i < strokedL1.length; i++) {
       for (let j = i + 1; j < strokedL1.length; j++) {
-        expect(rectsOverlap(strokedL1[i]!, strokedL1[j]!)).toBe(false)
+        expect(rectsOverlap(strokedL1[i]!, strokedL1[j]!, 8)).toBe(false)
       }
     }
     // Outer not full page width for tiny clusters
