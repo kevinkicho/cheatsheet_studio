@@ -207,14 +207,17 @@ export function buildNestedHierarchyPanels(args: {
      */
     const L1_CHIP = 22
     const L2_CHIP = 18
-    // Multi-level: L1 owns an exclusive header strip. Nested L2/L3 do NOT
-    // add another exclusive strip above cards — that always put L2.y inside
-    // the L1 title band (L2.y = cards−pad−L2chip < L1.y+L1chip). L2 chips
-    // paint under the L1 chip via LayoutPanelsLayer. Flat (non-multi) L2
-    // still gets a normal title band.
+    // Multi-level L1 must reserve room for: L1 chip + nested L2 chip painted
+    // under it (LayoutPanelsLayer: L2 titleTop = L1.y+24). Without L2_CHIP in
+    // this band, L2 chips sit on the first card row.
+    // Nested L2 chrome itself uses titleBand 0 (chip is in L1's exclusive zone).
+    const deeperStroke = multi &&
+      effectiveLevels.some(
+        (L) => L > effectiveMinL && borderSet.has(L),
+      )
     const titleBand = isOutermost
       ? multi
-        ? L1_CHIP + 4 // ~26
+        ? L1_CHIP + 4 + (deeperStroke ? L2_CHIP : 0) // ~44
         : Math.max(16, titleBandPx)
       : multi
         ? 0

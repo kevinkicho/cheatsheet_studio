@@ -493,10 +493,11 @@ export function LayoutPanelsLayer({
                   )
                 : undefined
             const titleLeft = p.x + ox + (isOuter ? 6 : 8)
+            // Nested L2/L3 chips always sit under the L1 header row — never at
+            // L2.y+2 when the frame hugs cards (that painted chips on blocks).
             let titleTop = p.y + oy + (isOuter ? 3 : 2)
             if (parentL1) {
-              const underL1 = parentL1.y + oy + 24
-              titleTop = Math.max(titleTop, underL1)
+              titleTop = parentL1.y + oy + 24
             }
             const maxW = Math.max(48, p.width - (isOuter ? 14 : 16))
             const fontSize = isOuter ? 10 : 8

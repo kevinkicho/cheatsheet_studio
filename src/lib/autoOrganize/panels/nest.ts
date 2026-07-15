@@ -57,12 +57,23 @@ export function nestContainPanels(
     const mem = (p.memberIds ?? [])
       .map((id) => byId.get(id))
       .filter((m): m is CanvasItem => Boolean(m) && !m.hidden)
-    // Match buildNestedHierarchyPanels: nested L2 under multi has no exclusive band
+    // Match buildNestedHierarchyPanels exclusive title bands
     const titleExtra =
       p.showTitle === false
         ? 0
         : (p.hierarchyLevel ?? 1) <= 1
-          ? 26
+          ? (() => {
+              const hasNested = next.some(
+                (c) =>
+                  c.id !== p.id &&
+                  c.showStroke !== false &&
+                  (c.hierarchyLevel ?? 1) > 1 &&
+                  c.memberIds?.length &&
+                  p.memberIds?.length &&
+                  c.memberIds.every((id) => p.memberIds!.includes(id)),
+              )
+              return hasNested ? 44 : 26
+            })()
           : (() => {
               const hasOuter = next.some(
                 (o) =>

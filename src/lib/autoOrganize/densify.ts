@@ -59,7 +59,7 @@ export function ensureLeafTitleClearance(
   }
 
   // Multiple passes: shifting one group can free/block another strip
-  for (let pass = 0; pass < 8; pass++) {
+  for (let pass = 0; pass < 4; pass++) {
     let moved = false
     for (const gr of groupMeta()) {
       const idSet = new Set(gr.ids)
@@ -165,17 +165,12 @@ export function densifyPlacedGroups(
     )
 
     // Remaining printable columns from this group's left edge (not full page).
-    // Using pageCols from a minX past contentLeft was packing past the right margin.
     const maxColsHere =
       contentRight != null && Number.isFinite(contentRight)
-        ? Math.max(
-            1,
-            Math.floor((contentRight - minX + 0.5) / grid),
-          )
+        ? Math.max(1, Math.floor((contentRight - minX + 0.5) / grid))
         : opts.pageCols
     const colBudget = Math.max(1, Math.min(opts.pageCols, maxColsHere))
 
-    // Try several widths: tight, current span, slightly wider (fill residual)
     const candidates = Array.from(
       new Set(
         [
@@ -210,8 +205,6 @@ export function densifyPlacedGroups(
     } | null = null
 
     for (const packCols of candidates) {
-      // Cell sizes must be ceilings so pixel widths never spill into neighbors
-      // (round caused card-card overlaps in export SVG).
       const regions = members.map((m, i) => ({
         index: i,
         cw: Math.min(packCols, Math.max(1, Math.ceil(m.width / grid))),
@@ -231,7 +224,6 @@ export function densifyPlacedGroups(
         const r = regions[i]!
         usedCw = Math.max(usedCw, p.c + r.cw)
         usedCh = Math.max(usedCh, p.r + r.ch)
-        // Snap display size into allocated cells so no pixel spillover
         const w = Math.min(m.width, r.cw * grid)
         const h = Math.min(m.height, r.ch * grid)
         next.push({
@@ -243,9 +235,7 @@ export function densifyPlacedGroups(
         })
       }
       const area = usedCw * usedCh
-      // Reject taller than original unless area much smaller
       if (usedCh > spanCh + 1) continue
-      // Never leave the printable content box
       if (
         contentRight != null &&
         next.some((n) => n.x + n.w > contentRight + 0.5)
@@ -255,7 +245,6 @@ export function densifyPlacedGroups(
       if (next.some((n) => n.y < opts.contentTop - 0.5)) {
         continue
       }
-      // Peer collision check
       let hitsPeer = false
       for (const n of next) {
         const nx1 = n.x + n.w
@@ -275,7 +264,6 @@ export function densifyPlacedGroups(
         if (hitsPeer) break
       }
       if (hitsPeer) continue
-      // Reject self-overlaps (safety)
       let selfOl = false
       for (let a = 0; a < next.length && !selfOl; a++) {
         for (let b = a + 1; b < next.length; b++) {
@@ -302,10 +290,7 @@ export function densifyPlacedGroups(
       }
     }
 
-    if (
-      best &&
-      (best.area < oldArea * 0.995 || best.ch < spanCh)
-    ) {
+    if (best && (best.area < oldArea * 0.995 || best.ch < spanCh)) {
       for (const n of best.next) moved.set(n.id, n)
     }
   }
@@ -350,14 +335,10 @@ export function resolveLeafGroupCollisions(
   }
   const groups: G[] = []
   for (const [key, members] of map) {
-    // When separating the shallow (L1) level itself, all topics are siblings
-    // under a synthetic root. Otherwise group by L1 parent.
     const parent =
-      parentLevel >= level
-        ? '__root__'
-        : (folderAtGroupLevel(key, folders, parentLevel) ??
-          folderAtGroupLevel(members[0]?.folderId, folders, parentLevel) ??
-          key)
+      folderAtGroupLevel(key, folders, parentLevel) ??
+      folderAtGroupLevel(members[0]?.folderId, folders, parentLevel) ??
+      '__root__'
     groups.push({
       key,
       parent,
@@ -368,41 +349,28 @@ export function resolveLeafGroupCollisions(
       y1: Math.max(...members.map((m) => m.y + m.height)),
     })
   }
-
-  // Only separate siblings under the same L1 parent
-  const byParent = new Map<string, G[]>()
-  for (const g of groups) {
-    if (!byParent.has(g.parent)) byParent.set(g.parent, [])
-    byParent.get(g.parent)!.push(g)
-  }
+  groups.sort((a, b) => a.y0 - b.y0 || a.x0 - b.x0)
 
   const dyOf = new Map<string, number>()
-  for (const siblings of byParent.values()) {
-    siblings.sort((a, b) => a.y0 - b.y0 || a.x0 - b.x0)
-    for (let i = 0; i < siblings.length; i++) {
-      const g = siblings[i]!
-      // Single target Y (max over prior siblings). Prior siblings already have
-      // y0/y1 mutated — do NOT add dyOf again (that double-counted).
-      let newY0 = g.y0
-      for (let j = 0; j < i; j++) {
-        const h = siblings[j]!
-        const hy1 = h.y1
-        const hx0 = h.x0
-        const hx1 = h.x1
-        // Side-by-side with clear horizontal gap → leave alone (tetris)
-        const xGap = Math.max(g.x0 - hx1, hx0 - g.x1)
-        if (xGap >= Math.max(2, minGap)) continue
-        if (newY0 >= hy1 + minGap) continue
-        newY0 = Math.max(newY0, hy1 + minGap)
-      }
-      const dy =
-        newY0 > g.y0 ? Math.ceil((newY0 - g.y0) / grid) * grid : 0
-      if (dy !== 0) dyOf.set(g.key, dy)
+  for (let i = 0; i < groups.length; i++) {
+    const g = groups[i]!
+    let newMinY = g.y0
+    for (let j = 0; j < i; j++) {
+      const h = groups[j]!
+      if (h.parent !== g.parent) continue
+      const xGap = Math.max(g.x0 - h.x1, h.x0 - g.x1)
+      if (xGap >= Math.max(2, minGap)) continue
+      if (newMinY >= h.y1 + minGap) continue
+      newMinY = Math.max(newMinY, h.y1 + minGap)
+    }
+    const dy =
+      newMinY > g.y0 ? Math.ceil((newMinY - g.y0) / grid) * grid : 0
+    if (dy !== 0) {
+      dyOf.set(g.key, dy)
       g.y0 += dy
       g.y1 += dy
     }
   }
-
   if (dyOf.size === 0) return items
   const idDy = new Map<string, number>()
   for (const g of groups) {
@@ -417,9 +385,7 @@ export function resolveLeafGroupCollisions(
 }
 
 /**
- * Tetris gravity: slide each leaf group up (then left) into free space so
- * n-gon / rect panels stack tightly toward the top like tetris blocks.
- * Respects peer AABBs and optional parent envelope.
+ * Tetris gravity: slide leaf groups up/left inside the same L1 parent only.
  */
 export function gravityCompactGroups(
   items: CanvasItem[],
@@ -488,8 +454,6 @@ export function gravityCompactGroups(
     if (y0 < contentTop - 0.5) return true
     for (const o of groups) {
       if (o.key === ignoreKey) continue
-      // Only compact inside the same L1 parent. Sliding into another topic's
-      // internal holes was re-interleaving Biology/Chemistry (user “ugh no”).
       if (parentLevel != null && o.parent !== g.parent) continue
       if (
         x0 < o.x1 + gap &&
@@ -503,7 +467,6 @@ export function gravityCompactGroups(
     return false
   }
 
-  /** Binary-search lowest grid-aligned coord on −axis that still fits. */
   const maxSlide = (
     g: G,
     axis: 'y' | 'x',
@@ -515,7 +478,6 @@ export function gravityCompactGroups(
     let lo = lo0
     let hi = Math.floor(from / grid) * grid
     if (lo >= hi) return from
-    // Invariant: collides at positions < answer; free at answer..from
     while (lo < hi) {
       const mid = Math.floor((lo + hi) / 2 / grid) * grid
       const x = axis === 'x' ? mid : g.x0
@@ -528,8 +490,8 @@ export function gravityCompactGroups(
     return collides(g, x, y, g.key) ? from : lo
   }
 
-  // Gravity sweeps (up first, then left) — binary search, not per-cell walk
-  for (let sweep = 0; sweep < 8; sweep++) {
+  // Fewer sweeps — binary search is already O(log) per move
+  for (let sweep = 0; sweep < 4; sweep++) {
     let moved = false
     const order = [...groups].sort((a, b) => a.y0 - b.y0 || a.x0 - b.x0)
     for (const g of order) {
@@ -552,13 +514,8 @@ export function gravityCompactGroups(
   }
 
   const idDelta = new Map<string, { dx: number; dy: number }>()
-  // Rebuild deltas from original positions via id → group
   const byId = new Map(items.map((i) => [i.id, i]))
   for (const g of groups) {
-    const sample = byId.get(g.ids[0]!)
-    if (!sample) continue
-    // Original group origin from current card positions before we apply —
-    // recompute from first card vs g.x0
     const members = g.ids
       .map((id) => byId.get(id))
       .filter((m): m is CanvasItem => Boolean(m))
@@ -582,11 +539,6 @@ export function gravityCompactGroups(
 /**
  * Re-pack every leaf (L2/L3) group *inside* its parent (L1) into a tight
  * rectangular free-flow, then stack parents with no interleave.
- *
- * Free-flow of uneven L2s left solid L1 AABBs full of empty corners
- * (screenshots 202039 / 214119 / 214206). Treating each leaf AABB as a
- * rigid block and maxrects-packing them per parent kills interior voids
- * without snaking n-gon L1 chrome.
  */
 export function repackGroupsInParents(
   items: CanvasItem[],
@@ -598,11 +550,8 @@ export function repackGroupsInParents(
     contentLeft: number
     contentTop: number
     contentRight: number
-    /** Gap between leaf blocks inside a parent (cells). */
     gapCells?: number
-    /** Gap between parent clusters (px). */
     parentGapPx?: number
-    /** Cells reserved at top of each parent for L1 title chip. */
     titleCells?: number
   },
 ): CanvasItem[] {
@@ -628,13 +577,12 @@ export function repackGroupsInParents(
     ids: string[]
     cw: number
     ch: number
-    // relative offsets of each card from leaf AABB origin
     locals: Array<{ id: string; dx: number; dy: number; w: number; h: number }>
   }
 
-  // parentKey → leaves
   const parents = new Map<string, Leaf[]>()
   const parentOrder: string[] = []
+  const parentMinY = new Map<string, number>()
   const leafMap = new Map<string, CanvasItem[]>()
 
   for (const c of cards) {
@@ -646,8 +594,6 @@ export function repackGroupsInParents(
     leafMap.get(leafKey)!.push(c)
   }
 
-  // Stable parent order by current minY (document flow)
-  const parentMinY = new Map<string, number>()
   for (const [leafKey, members] of leafMap) {
     const parentKey =
       folderAtGroupLevel(leafKey, folders, parentLevel) ??
@@ -695,14 +641,12 @@ export function repackGroupsInParents(
     const leaves = parents.get(parentKey) ?? []
     if (leaves.length === 0) continue
 
-    // Pack leaf AABBs tightly into the printable width
     const regions = leaves.map((L, i) => ({
       index: i,
       cw: Math.min(pageCols, Math.max(1, L.cw)),
       ch: Math.max(1, L.ch),
     }))
     const tight = packClusterTight(regions, pageCols, gapCells)
-    // Prefer the tight pack’s used width; place from contentLeft
     const originX = contentLeft
     const originY = Math.max(contentTop, cursorY) + titleCells * grid
 
@@ -713,7 +657,6 @@ export function repackGroupsInParents(
       const baseX = originX + p.c * grid
       const baseY = originY + p.r * grid
       for (const loc of L.locals) {
-        // Keep internal card layout; clamp width if leaf was capped to pageCols
         let w = loc.w
         let h = loc.h
         const maxW = Math.max(grid, L.cw * grid - loc.dx)
@@ -736,8 +679,6 @@ export function repackGroupsInParents(
       }
     }
 
-    // Advance from *actual* card bottoms (not ceil'd usedCh) so inter-L1
-    // voids stay = parentGap only.
     cursorY = maxBottom + parentGap
   }
 
@@ -752,10 +693,6 @@ export function repackGroupsInParents(
 
 /**
  * Push whole folder clusters apart so parent-level AABBs never interleave.
- *
- * Leaf densify / title clearance / sibling collision can expand an L1 band
- * downward into the next topic — both rect and n-gon then paint double
- * borders and look “broken”. This pass restores non-overlapping parents.
  */
 export function separateFolderClusters(
   items: CanvasItem[],
@@ -801,15 +738,12 @@ export function separateFolderClusters(
   const dyOf = new Map<string, number>()
   for (let i = 0; i < clusters.length; i++) {
     const g = clusters[i]!
-    // Single target Y. Prior clusters already have minY/maxY mutated.
     let newMinY = g.minY
     for (let j = 0; j < i; j++) {
       const h = clusters[j]!
       const hy1 = h.maxY
       const hx0 = h.minX
       const hx1 = h.maxX
-      // Side-by-side only with a real horizontal gap. Any X overlap → stack
-      // vertically (prevents Biology/Chemistry interleave).
       const xGap = Math.max(g.minX - hx1, hx0 - g.maxX)
       if (xGap >= Math.max(2, minGap)) continue
       if (newMinY >= hy1 + minGap) continue
@@ -818,10 +752,11 @@ export function separateFolderClusters(
     const dy =
       newMinY > g.minY ? Math.ceil((newMinY - g.minY) / grid) * grid : 0
     if (dy !== 0) dyOf.set(g.key, dy)
-    g.minY += dy
-    g.maxY += dy
+    if (dy !== 0) {
+      g.minY += dy
+      g.maxY += dy
+    }
   }
-
   if (dyOf.size === 0) return items
   const idDy = new Map<string, number>()
   for (const c of clusters) {
@@ -844,7 +779,7 @@ export function resolveCardOverlaps(
   const next = items.map((it) => ({ ...it }))
   const visible = () => next.filter((i) => !i.hidden && !isHeadingCard(i))
 
-  for (let pass = 0; pass < 8; pass++) {
+  for (let pass = 0; pass < 6; pass++) {
     let moved = false
     const cards = visible().sort(
       (a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id),
@@ -853,35 +788,24 @@ export function resolveCardOverlaps(
       for (let j = i + 1; j < cards.length; j++) {
         const a = cards[i]!
         const b = cards[j]!
-        // Cross-folder pairs should not be moved — that expands panel AABBs
-        // into siblings and causes stroke overlaps in the export SVG.
-        if (
-          a.folderId &&
-          b.folderId &&
-          a.folderId !== b.folderId
-        ) {
+        if (a.folderId && b.folderId && a.folderId !== b.folderId) {
           continue
         }
         if (!rectsOverlap(a, b, 0)) continue
-        // Move the later card (j) out of the way
         const bi = next.findIndex((x) => x.id === b.id)
         if (bi < 0) continue
         const cur = next[bi]!
-        // Try right first
         let nx = a.x + a.width
         let ny = cur.y
         if (nx + cur.width > contentRight + 1) {
-          // wrap: below the pair
           nx = Math.min(a.x, cur.x)
           ny = Math.max(a.y + a.height, cur.y + 1)
         }
-        // Snap to grid
         nx = Math.round(nx / grid) * grid
         ny = Math.round(ny / grid) * grid
         if (nx === cur.x && ny === cur.y) {
           ny = cur.y + grid
         }
-        // Bail if still overlapping a (shouldn't after right shift)
         next[bi] = { ...cur, x: nx, y: ny }
         moved = true
       }
@@ -894,7 +818,6 @@ export function resolveCardOverlaps(
 /**
  * Rebuild chrome for same-level sibling panels that still overlap after pack
  * (residual pad collisions). Nested parent/child pairs are ignored.
- * Prefer reduced pad so member cards stay inside the frame.
  */
 export function resolveSameLevelPanelCollisions(
   panels: LayoutPanel[],
@@ -904,7 +827,6 @@ export function resolveSameLevelPanelCollisions(
     placed?: CanvasItem[]
     contentLeft?: number
     contentRight?: number
-    /** Multi-level hierarchy: preserve exclusive L1 title band above L2. */
     multiLevel?: boolean
     outerLevel?: PanelGroupLevel
   },
@@ -918,7 +840,6 @@ export function resolveSameLevelPanelCollisions(
   const L1_CHIP = 22
   const L2_CHIP = 18
   let next = panels.slice()
-  // Track pad used per panel id (start at full pad)
   const padOf = new Map<string, number>(
     panels.map((p) => [p.id, padBudget]),
   )
@@ -932,12 +853,11 @@ export function resolveSameLevelPanelCollisions(
     return aHasB || bHasA
   }
 
-  /** Hierarchy-aware title band — must match buildNestedHierarchyPanels. */
   const titleBandFor = (p: LayoutPanel): number => {
     if (p.showTitle === false) return 0
     const level = p.hierarchyLevel ?? 1
     if (multi && level === outerLevel) return L1_CHIP + 4
-    if (multi && level > outerLevel) return L2_CHIP
+    if (multi && level > outerLevel) return 0
     return 16
   }
 
@@ -948,7 +868,6 @@ export function resolveSameLevelPanelCollisions(
     if (members.length === 0) return p
     const titleBand = titleBandFor(p)
     const useNgon = p.shape === 'polygon'
-    // Clamp pad so rebuild never leaves the print content box
     const minX = Math.min(...members.map((m) => m.x))
     const maxX = Math.max(...members.map((m) => m.x + m.width))
     let effPad = Math.max(0, pad)
@@ -1006,7 +925,7 @@ export function resolveSameLevelPanelCollisions(
     }
   }
 
-  for (let pass = 0; pass < 5; pass++) {
+  for (let pass = 0; pass < 4; pass++) {
     let changed = false
     for (let i = 0; i < next.length; i++) {
       for (let j = i + 1; j < next.length; j++) {
@@ -1032,13 +951,11 @@ export function resolveSameLevelPanelCollisions(
 }
 
 /**
- * Hard panel layout invariants (user: panels must not overlap; headers
- * must not be covered by cards or other panels).
+ * Hard panel layout invariants (fast):
+ * - cards clear visual panel header chips (incl. nested L2 under L1)
+ * - same-level stroked panels do not overlap
  *
- * 1. Push member cards below each panel's title band.
- * 2. Keep nested children below parent title chip.
- * 3. Separate same-level non-nested stroked panels (live geometry each step).
- *    Thin pad-only collisions: rebuild with reduced pad first; else translate.
+ * Batches moves and rebuilds once per pass (not per collision).
  */
 export function enforcePanelLayoutInvariants(
   items: CanvasItem[],
@@ -1060,11 +977,9 @@ export function enforcePanelLayoutInvariants(
   const right = opts?.contentRight
   const top = opts?.contentTop
 
-  /** Match buildNestedHierarchyPanels: nested L2/L3 under multi have no exclusive band. */
   const hasOuterParent = (p: LayoutPanel, all: LayoutPanel[]) => {
     if ((p.hierarchyLevel ?? 1) <= 1) return false
-    const set = new Set(p.memberIds ?? [])
-    if (set.size === 0) return false
+    if (!p.memberIds?.length) return false
     return all.some(
       (o) =>
         o.id !== p.id &&
@@ -1075,11 +990,55 @@ export function enforcePanelLayoutInvariants(
     )
   }
 
-  const titleBandFor = (p: LayoutPanel, all: LayoutPanel[]): number => {
-    if (p.showTitle === false || p.showStroke === false) return 0
+  const findOuterParent = (p: LayoutPanel, all: LayoutPanel[]) => {
+    let best: LayoutPanel | undefined
+    for (const o of all) {
+      if (o.id === p.id || o.showStroke === false) continue
+      if ((o.hierarchyLevel ?? 1) >= (p.hierarchyLevel ?? 1)) continue
+      if (!o.memberIds?.length || !p.memberIds?.length) continue
+      if (!p.memberIds.every((id) => o.memberIds!.includes(id))) continue
+      if (
+        !best ||
+        (o.hierarchyLevel ?? 1) > (best.hierarchyLevel ?? 1)
+      ) {
+        best = o
+      }
+    }
+    return best
+  }
+
+  /**
+   * Bottom of the *visible* title chip — matches LayoutPanelsLayer.
+   * Cards must sit strictly below this Y.
+   */
+  const visualTitleBottom = (p: LayoutPanel, all: LayoutPanel[]): number => {
+    if (p.showTitle === false || p.showStroke === false) return p.y
     const level = p.hierarchyLevel ?? 1
-    if (level <= 1) return 26
-    // Nested under an outer stroked parent → no exclusive title strip
+    // L1: exclusive chrome band (includes nested L2 chip room when present)
+    if (level <= 1) return p.y + exclusiveBand(p, all)
+    const parent = findOuterParent(p, all)
+    if (parent) {
+      // Nested L2 chip fixed under L1 header (see LayoutPanelsLayer)
+      return parent.y + 24 + 14
+    }
+    return p.y + 18
+  }
+
+  const exclusiveBand = (p: LayoutPanel, all: LayoutPanel[]): number => {
+    if (p.showTitle === false || p.showStroke === false) return 0
+    if ((p.hierarchyLevel ?? 1) <= 1) {
+      // Match buildNestedHierarchyPanels multi L1: room for L1+L2 chips
+      const hasNestedStroke = all.some(
+        (c) =>
+          c.id !== p.id &&
+          c.showStroke !== false &&
+          (c.hierarchyLevel ?? 1) > 1 &&
+          c.memberIds?.length &&
+          p.memberIds?.length &&
+          c.memberIds.every((id) => p.memberIds!.includes(id)),
+      )
+      return hasNestedStroke ? 44 : 26
+    }
     if (hasOuterParent(p, all)) return 0
     return 18
   }
@@ -1108,7 +1067,7 @@ export function enforcePanelLayoutInvariants(
       .map((id) => byId.get(id))
       .filter((m): m is CanvasItem => Boolean(m) && !m.hidden)
     if (members.length === 0) return p
-    const titleBand = titleBandFor(p, allPanels)
+    const titleBand = exclusiveBand(p, allPanels)
     const useNgon = p.shape === 'polygon'
     let effPad = Math.max(0, padUse ?? padOf.get(p.id) ?? padBudget)
     const minX = Math.min(...members.map((m) => m.x))
@@ -1174,24 +1133,6 @@ export function enforcePanelLayoutInvariants(
     }
   }
 
-  const translateIds = (
-    nextItems: CanvasItem[],
-    idSet: Set<string>,
-    dx: number,
-    dy: number,
-  ): CanvasItem[] => {
-    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return nextItems
-    return nextItems.map((it) =>
-      idSet.has(it.id) && !it.hidden
-        ? {
-            ...it,
-            x: Math.round(it.x + dx),
-            y: Math.round(it.y + dy),
-          }
-        : it,
-    )
-  }
-
   const rebuildAll = (nextItems: CanvasItem[], nextPanels: LayoutPanel[]) => {
     const byId = new Map(nextItems.map((i) => [i.id, i]))
     return nextPanels.map((p) =>
@@ -1202,65 +1143,39 @@ export function enforcePanelLayoutInvariants(
   let nextItems = items.map((i) => ({ ...i }))
   let nextPanels = rebuildAll(nextItems, panels.map((p) => ({ ...p })))
 
-  // ── A: cards must sit below their panel title chip ────────────────────
-  for (let pass = 0; pass < 6; pass++) {
-    let moved = false
+  // ── A: cards clear visual title chips (batch per pass) ────────────────
+  for (let pass = 0; pass < 3; pass++) {
     nextPanels = rebuildAll(nextItems, nextPanels)
     const byId = new Map(nextItems.map((i) => [i.id, i]))
+    const dyById = new Map<string, number>()
     for (const p of nextPanels) {
       if (p.showStroke === false) continue
-      const band = titleBandFor(p, nextPanels)
-      if (band <= 0) continue
-      const titleBot = p.y + band
+      const titleBot = visualTitleBottom(p, nextPanels)
       for (const id of p.memberIds ?? []) {
         const c = byId.get(id)
         if (!c || c.hidden) continue
         if (c.y < titleBot - 0.5) {
           const dy = Math.ceil((titleBot - c.y) / grid) * grid
           if (dy > 0) {
-            nextItems = translateIds(nextItems, new Set([id]), 0, dy)
-            moved = true
+            dyById.set(id, Math.max(dyById.get(id) ?? 0, dy))
           }
         }
       }
     }
-    if (!moved) break
+    if (dyById.size === 0) break
+    nextItems = nextItems.map((it) => {
+      const dy = dyById.get(it.id)
+      return dy ? { ...it, y: Math.round(it.y + dy) } : it
+    })
   }
 
-  // ── B: nested children below parent title; sibling non-overlap ────────
-  for (let pass = 0; pass < 16; pass++) {
-    let moved = false
+  // ── B: sibling non-overlap (≤4 passes, one rebuild at end of each) ────
+  for (let pass = 0; pass < 4; pass++) {
     nextPanels = rebuildAll(nextItems, nextPanels)
+    const byIdPanel = new Map(nextPanels.map((p) => [p.id, p]))
+    let any = false
+    const dyCluster = new Map<string, number>() // panelId → dy for its members
 
-    // B1: child panel top ≥ parent title bottom
-    for (const parent of nextPanels) {
-      if (parent.showStroke === false) continue
-      const pBand = titleBandFor(parent, nextPanels)
-      if (pBand <= 0) continue
-      const parentSet = new Set(parent.memberIds ?? [])
-      const titleBot = parent.y + pBand
-      for (const child of nextPanels) {
-        if (child.id === parent.id || child.showStroke === false) continue
-        if ((child.hierarchyLevel ?? 1) <= (parent.hierarchyLevel ?? 1)) continue
-        if (!child.memberIds?.every((id) => parentSet.has(id))) continue
-        if (child.y < titleBot - 0.5) {
-          const dy = Math.ceil((titleBot - child.y) / grid) * grid
-          if (dy > 0 && child.memberIds?.length) {
-            nextItems = translateIds(
-              nextItems,
-              new Set(child.memberIds),
-              0,
-              dy,
-            )
-            moved = true
-          }
-        }
-      }
-    }
-
-    nextPanels = rebuildAll(nextItems, nextPanels)
-
-    // B2: same-level non-nested — no AABB/run overlap
     const levels = [
       ...new Set(nextPanels.map((p) => p.hierarchyLevel ?? 1)),
     ].sort((a, b) => a - b)
@@ -1276,17 +1191,12 @@ export function enforcePanelLayoutInvariants(
         )
       for (let i = 0; i < list.length; i++) {
         for (let j = i + 1; j < list.length; j++) {
-          // Live fetch
-          const a =
-            nextPanels.find((p) => p.id === list[i]!.id) ?? list[i]!
-          const b =
-            nextPanels.find((p) => p.id === list[j]!.id) ?? list[j]!
+          const a = byIdPanel.get(list[i]!.id) ?? list[i]!
+          const b = byIdPanel.get(list[j]!.id) ?? list[j]!
           if (isNestedPair(a, b)) continue
           if (!(panelRunsOverlap(a, b, 0) || rectsOverlap(a, b, minGap))) {
             continue
           }
-
-          // Thin edge collision from pad: try smaller pad before moving cards
           const yOverlap =
             Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y)
           const xOverlap =
@@ -1294,29 +1204,42 @@ export function enforcePanelLayoutInvariants(
           const padA = padOf.get(a.id) ?? padBudget
           const padB = padOf.get(b.id) ?? padBudget
           if (
-            (xOverlap > 0 && yOverlap > 0) &&
+            xOverlap > 0 &&
+            yOverlap > 0 &&
             xOverlap <= padA + padB + minGap + 2 &&
             (padA > 0 || padB > 0)
           ) {
             padOf.set(a.id, Math.max(0, padA - 2))
             padOf.set(b.id, Math.max(0, padB - 2))
-            nextPanels = rebuildAll(nextItems, nextPanels)
-            moved = true
+            any = true
             continue
           }
-
-          // Otherwise push the later cluster (by y then x) fully below A
           const needY = a.y + a.height + minGap - b.y
           if (needY > 0.5 && b.memberIds?.length) {
             const dy = Math.ceil(needY / grid) * grid
-            nextItems = translateIds(nextItems, new Set(b.memberIds), 0, dy)
-            nextPanels = rebuildAll(nextItems, nextPanels)
-            moved = true
+            dyCluster.set(b.id, Math.max(dyCluster.get(b.id) ?? 0, dy))
+            any = true
           }
         }
       }
     }
-    if (!moved) break
+
+    if (dyCluster.size === 0 && !any) break
+    if (dyCluster.size > 0) {
+      const idDy = new Map<string, number>()
+      for (const [pid, dy] of dyCluster) {
+        const p = byIdPanel.get(pid)
+        if (!p?.memberIds) continue
+        for (const id of p.memberIds) {
+          idDy.set(id, Math.max(idDy.get(id) ?? 0, dy))
+        }
+      }
+      nextItems = nextItems.map((it) => {
+        const dy = idDy.get(it.id)
+        return dy ? { ...it, y: Math.round(it.y + dy) } : it
+      })
+    }
+    if (!any) break
   }
 
   nextPanels = rebuildAll(nextItems, nextPanels)

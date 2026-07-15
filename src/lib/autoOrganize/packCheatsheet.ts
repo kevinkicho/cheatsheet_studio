@@ -474,11 +474,18 @@ export function packCheatsheetLayout(
     ? chromeClearCells
     : Math.max(pxToCells(gapPx), chromeClearCells)
 
-  // L1 chip row only. Match ~26–30px title band (L1_CHIP+4 + pad) so gravity
-  // + nestContain never have to expand chrome into the top print margin.
-  // (1 cell was only 16px → panels y=18 when box.top=48, screenshot 214641.)
+  // L1 exclusive chip + nested L2 chip under it (~24+16) so cards never sit
+  // under the visible header stack (LayoutPanelsLayer places L2 under L1+24).
   const outerTitleCells = useHierarchicalPlace
-    ? Math.max(1, Math.ceil((28 + panelPad) / grid))
+    ? Math.max(
+        2,
+        Math.ceil(
+          (28 +
+            (leafLevelsStroke ? 18 : 0) +
+            panelPad) /
+            grid,
+        ),
+      )
     : 0
   const nestInsetCells =
     nestInsetPx > 0 ? Math.min(1, Math.ceil(nestInsetPx / grid)) : 0
@@ -701,19 +708,16 @@ export function packCheatsheetLayout(
     return { ...it, y }
   })
 
-  // Close voids per leaf group (tetris densify). Two passes so peer AABBs
-  // update after the first shrink and neighboring leaves can nestle tighter.
+  // Close voids per leaf group (single pass — second pass was costly).
   if (usePanels && (options.folders?.length ?? 0) > 0) {
-    for (let dpass = 0; dpass < 2; dpass++) {
-      result = densifyPlacedGroups(result, options.folders ?? [], deepLevel, {
-        grid,
-        contentLeft: packLeft,
-        contentTop: packTop,
-        contentRight: packRight,
-        pageCols,
-        gapCells: 0,
-      })
-    }
+    result = densifyPlacedGroups(result, options.folders ?? [], deepLevel, {
+      grid,
+      contentLeft: packLeft,
+      contentTop: packTop,
+      contentRight: packRight,
+      pageCols,
+      gapCells: 0,
+    })
   }
 
   // Thin title-chip band only (don't push groups by large bands)
