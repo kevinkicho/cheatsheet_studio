@@ -61,9 +61,10 @@ export function PanelProperties({ panel }: { panel: LayoutPanel }) {
           ))}
         </div>
         <p className="mt-1 text-[9px] leading-snug text-zinc-600">
-          Dense free-flow at full card size (each click tries a new pack seed).
-          Rebuilds this frame and nested L2/L3 with the chosen chrome — rectangle
-          box or stepped n-gon.
+          <strong className="font-medium text-zinc-500">Rectangle</strong> —
+          free-flow with normal gaps. <strong className="font-medium text-zinc-500">N-gon</strong>{' '}
+          — hard tetris (0-gap multi-order pack, same as sheet n-gon auto-layout)
+          + stepped chrome. Each click tries a new seed; card sizes stay fixed.
         </p>
       </div>
 

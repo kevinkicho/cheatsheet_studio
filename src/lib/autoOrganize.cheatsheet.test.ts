@@ -1514,6 +1514,51 @@ describe('packCheatsheetLayout', () => {
     }
   })
 
+  it('relayoutPanelContents n-gon uses hard tetris + polygon chrome', () => {
+    const items: CanvasItem[] = [
+      card('a', { title: 'A', x: 100, y: 100, width: 100, height: 72 }),
+      card('b', { title: 'B', x: 220, y: 100, width: 100, height: 48 }),
+      card('c', { title: 'C', x: 100, y: 200, width: 80, height: 48 }),
+      card('d', { title: 'D', x: 200, y: 200, width: 120, height: 72 }),
+    ]
+    const panel: import('@/types').LayoutPanel = {
+      id: 'p-ngon-inpanel',
+      title: 'Topic',
+      x: 80,
+      y: 80,
+      width: 300,
+      height: 280,
+      memberIds: ['a', 'b', 'c', 'd'],
+      shape: 'rect',
+      showTitle: true,
+      contentSort: 'name-asc',
+    }
+    const { items: next, panel: nextP } = relayoutPanelContents(items, panel, {
+      mode: 'dense',
+      gapPx: 4,
+      panelPad: 4,
+      grid: 24,
+      packSeed: 0,
+      panelShape: 'polygon',
+    })
+    expect(nextP.shape).toBe('polygon')
+    expect(nextP.outlinePath || (nextP.runs && nextP.runs.length > 0)).toBeTruthy()
+    // Cards stay full size
+    for (const id of ['a', 'b', 'c', 'd']) {
+      const before = items.find((i) => i.id === id)!
+      const c = next.find((i) => i.id === id)!
+      expect(c.width).toBe(before.width)
+      expect(c.height).toBe(before.height)
+    }
+    // Hard tetris packs denser than sparse shelf: bounding box height of cards
+    // should be less than stacking all four rows (sum of heights)
+    const cards = next.filter((i) => ['a', 'b', 'c', 'd'].includes(i.id))
+    const minY = Math.min(...cards.map((c) => c.y))
+    const maxY = Math.max(...cards.map((c) => c.y + c.height))
+    const sumH = cards.reduce((s, c) => s + c.height, 0)
+    expect(maxY - minY).toBeLessThan(sumH)
+  })
+
   it('relayoutPanelContents on L1 rebuilds nested L2 chrome to follow cards', () => {
     const items: CanvasItem[] = [
       card('a1', { title: 'A1', x: 100, y: 100, width: 100, height: 60 }),

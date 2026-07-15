@@ -18,14 +18,16 @@ import {
 /** Per-panel click counter so each Auto-layout inside panel tries a new seed. */
 const panelPackSeedById = new Map<string, number>()
 
-/** Packing seeds: order strategy + optional column width fraction. */
-const IN_PANEL_PACK_SEEDS: Array<{
+type InPanelSeed = {
   orders?: PackOrderStrategy[]
   multiOrder: boolean
   /** Fraction of content width for free-flow columns (1 = full). */
   widthFrac: number
   leafSort: 'name' | 'height' | 'area' | 'input' | 'input-rev'
-}> = [
+}
+
+/** Rectangular tetris seeds — may vary column width for different mosaics. */
+const RECT_PACK_SEEDS: InPanelSeed[] = [
   { multiOrder: true, widthFrac: 1, leafSort: 'name' },
   { multiOrder: true, orders: ['height-desc'], widthFrac: 1, leafSort: 'height' },
   { multiOrder: true, orders: ['area-desc'], widthFrac: 1, leafSort: 'area' },
@@ -36,6 +38,23 @@ const IN_PANEL_PACK_SEEDS: Array<{
   { multiOrder: true, orders: ['height-asc'], widthFrac: 0.75, leafSort: 'area' },
   { multiOrder: true, orders: ['area-asc'], widthFrac: 0.9, leafSort: 'name' },
   { multiOrder: true, widthFrac: 0.66, leafSort: 'height' },
+]
+
+/**
+ * N-gon hard-tetris seeds — match full-sheet polygon pack: multi-order dense
+ * free-flow, full width, 0–1 cell gaps (never sparse widthFrac shrinks).
+ */
+const NGON_PACK_SEEDS: InPanelSeed[] = [
+  { multiOrder: true, widthFrac: 1, leafSort: 'height' },
+  { multiOrder: true, widthFrac: 1, leafSort: 'area' },
+  { multiOrder: true, widthFrac: 1, leafSort: 'name' },
+  { multiOrder: true, orders: ['height-desc'], widthFrac: 1, leafSort: 'height' },
+  { multiOrder: true, orders: ['area-desc'], widthFrac: 1, leafSort: 'area' },
+  { multiOrder: true, orders: ['width-desc'], widthFrac: 1, leafSort: 'height' },
+  { multiOrder: true, orders: ['perimeter-desc'], widthFrac: 1, leafSort: 'area' },
+  { multiOrder: true, orders: ['input'], widthFrac: 1, leafSort: 'input' },
+  { multiOrder: true, orders: ['height-asc'], widthFrac: 1, leafSort: 'name' },
+  { multiOrder: true, orders: ['area-asc'], widthFrac: 1, leafSort: 'height' },
 ]
 
 export function peekPanelPackSeed(panelId: string): number {
@@ -348,11 +367,14 @@ export function relayoutPanelContents(
   const dense = opts?.mode === 'dense'
   // Default: Name A→Z (user preference for Auto-layout inside panel)
   const sort = panel.contentSort ?? 'name-asc'
+  // N-gon mode = hard tetris (same policy as full-sheet polygon pack)
+  const chromeShape = opts?.panelShape ?? panel.shape ?? 'rect'
+  const hardTetris = chromeShape === 'polygon'
   const packSeed =
     opts?.packSeed ??
     (dense ? takePanelPackSeed(panel.id) : 0)
-  const seedCfg =
-    IN_PANEL_PACK_SEEDS[packSeed % IN_PANEL_PACK_SEEDS.length]!
+  const seedTable = hardTetris ? NGON_PACK_SEEDS : RECT_PACK_SEEDS
+  const seedCfg = seedTable[packSeed % seedTable.length]!
 
   const allPanels = opts?.allPanels ?? []
   const hasNestedStroke = allPanels.some(
@@ -387,6 +409,7 @@ export function relayoutPanelContents(
     ...members.map((m) => m.width),
   )
   const contentH = Math.max(48, panel.height - pad * 2 - titleBand)
+  void contentH
 
   type Place = { id: string; x: number; y: number; w: number; h: number }
   let places: Place[] = []
@@ -455,25 +478,38 @@ export function relayoutPanelContents(
     }
   }
 
-  const gapCells = Math.max(0, Math.floor(gap / grid))
-  // Between leaf L2 slabs: pad + nested title so chrome doesn't collide
-  const leafGapCells = Math.max(
-    gapCells,
-    Math.ceil((pad * 2 + NESTED_TITLE_BAND_PX) / grid),
-  )
-  const packBoxW = Math.max(
-    48,
-    Math.round(contentW * Math.min(1, Math.max(0.5, seedCfg.widthFrac))),
-  )
+  // Card free-flow gap: n-gon hard tetris = 0 cells (same as sheet packer);
+  // rect may use user gap when ≥ half a grid cell.
+  const cardGapCells = hardTetris
+    ? 0
+    : gap < grid / 2
+      ? 0
+      : Math.min(2, Math.max(0, Math.ceil(gap / grid)))
+  // Between leaf L2 slabs: hard tetris = pad + L2 title only (0–1 cell);
+  // rect = at least that clearance.
+  const leafGapCells = hardTetris
+    ? hasNestedStroke
+      ? Math.max(1, Math.ceil((pad * 2 + NESTED_TITLE_BAND_PX) / grid))
+      : 0
+    : Math.max(
+        cardGapCells,
+        Math.ceil((pad * 2 + NESTED_TITLE_BAND_PX) / grid),
+      )
+  // N-gon always packs full panel width (hard tetris); rect may try narrower
+  const packBoxW = hardTetris
+    ? contentW
+    : Math.max(
+        48,
+        Math.round(contentW * Math.min(1, Math.max(0.5, seedCfg.widthFrac))),
+      )
   const orderOpts = {
     multiOrder: seedCfg.multiOrder,
     orders: seedCfg.orders,
   }
 
   if (dense && orderedLeaves.length >= 1) {
-    // Free-flow each leaf at full card size, then packClusterTight leaf boxes.
-    // Panel chrome grows to fit — never scale cards down (that compounded
-    // on every Auto-layout click).
+    // Hierarchical: free-flow cards inside each leaf (hard tetris gaps for n-gon),
+    // then packClusterTight leaf boxes — mirrors sheet hierarchical n-gon pack.
     type LeafPack = {
       places: Place[]
       cw: number
@@ -497,9 +533,10 @@ export function relayoutPanelContents(
         0,
         packBoxW,
         grid,
-        gapCells,
+        cardGapCells,
         orderOpts,
       )
+      // Nested L2 title band (n-gon chrome hugs cards + this strip)
       const titlePx = NESTED_TITLE_BAND_PX
       const w = local.width
       const h = local.height + titlePx
@@ -526,7 +563,7 @@ export function relayoutPanelContents(
         0,
         packBoxW,
         grid,
-        gapCells,
+        cardGapCells,
         orderOpts,
       )
       leaves.push({
@@ -567,14 +604,14 @@ export function relayoutPanelContents(
       places = abs
     }
   } else if (dense) {
-    // Flat dense free-flow at full size + seed order
+    // Flat dense free-flow — n-gon uses hard multi-order tetris at full width
     const packed = packCardsDenseFreeFlow(
       members,
       contentX,
       contentY,
       packBoxW,
       grid,
-      gapCells,
+      cardGapCells,
       orderOpts,
     )
     places = packed.out
@@ -599,7 +636,7 @@ export function relayoutPanelContents(
   if (moved.length === 0) return { items: nextItems, panel }
 
   const byId = new Map(nextItems.map((i) => [i.id, i]))
-  const forceShape = opts?.panelShape ?? panel.shape ?? 'rect'
+  const forceShape = chromeShape
   const chromeOpts = {
     grid,
     panelPad: pad,
