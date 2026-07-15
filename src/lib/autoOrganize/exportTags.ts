@@ -27,10 +27,19 @@ export function formatAutoLayoutFileTag(
   opts: Partial<CheatsheetLayoutOptions> | AutoLayoutExportSnapshot,
 ): string {
   const density = opts.density ?? 'sm'
-  const chrome = opts.groupChrome ?? 'labels'
+  // Inline normalize (avoid circular import); legacy both → panels
+  const chromeRaw = opts.groupChrome
+  const chrome =
+    chromeRaw === 'both'
+      ? 'panels'
+      : chromeRaw === 'labels' ||
+          chromeRaw === 'panels' ||
+          chromeRaw === 'none'
+        ? chromeRaw
+        : 'labels'
   const parts: string[] = ['auto', density, chrome]
 
-  const panelsOn = chrome === 'panels' || chrome === 'both'
+  const panelsOn = chrome === 'panels'
   if (panelsOn) {
     const shape = opts.panelShape ?? 'rect'
     parts.push(shape === 'polygon' ? 'ngon' : 'rect')

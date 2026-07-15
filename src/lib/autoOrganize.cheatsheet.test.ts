@@ -388,7 +388,7 @@ describe('packCheatsheetLayout', () => {
     expect(GROUP_CHROME_PRESETS.labels.label).toMatch(/label/i)
   })
 
-  it('chrome modes labels / panels / both produce distinct outcomes', () => {
+  it('chrome modes labels / panels / none produce distinct outcomes', () => {
     const folders = [
       { id: 'f1', order: 0, name: '1. Alpha' },
       { id: 'f2', order: 1, name: '2. Beta' },
@@ -430,7 +430,8 @@ describe('packCheatsheetLayout', () => {
       folders,
       groupByFolder: true,
     })
-    const both = packCheatsheetLayout(items, DEFAULT_CANVAS, {
+    // Legacy both → panels (labels+panels removed from UI)
+    const legacyBoth = packCheatsheetLayout(items, DEFAULT_CANVAS, {
       density: 'sm',
       groupChrome: 'both',
       panelShape: 'rect',
@@ -448,9 +449,12 @@ describe('packCheatsheetLayout', () => {
     expect(panels.items.filter((i) => !i.hidden && i.id === 'h1').length).toBe(
       0,
     )
-    // both: frames + banners
-    expect(both.layoutPanels.length).toBeGreaterThanOrEqual(2)
-    expect(both.items.some((i) => !i.hidden && i.id === 'h1')).toBe(true)
+    // both normalizes to panels (not dual chrome)
+    expect(legacyBoth.layoutPanels.length).toBeGreaterThanOrEqual(2)
+    expect(
+      legacyBoth.items.filter((i) => !i.hidden && i.id === 'h1').length,
+    ).toBe(0)
+    expect(GROUP_CHROME_PRESETS).not.toHaveProperty('both')
   })
 
   it('n-gon levels and shape change panel chrome (not just packing)', () => {

@@ -12,6 +12,7 @@ import {
   type GroupChrome,
   type GroupSortOrder,
   type PanelGroupLevel,
+  normalizeGroupChrome,
 } from '@/lib/autoOrganize'
 import type { PanelShape } from '@/types'
 import {
@@ -112,10 +113,7 @@ export function AutoLayoutPanel() {
     // Dense mosaic only — no forced multi-column / row bands (those leave
     // large gutters between uneven topic groups).
     groupChrome,
-    panelShape:
-      groupChrome === 'panels' || groupChrome === 'both'
-        ? panelShape
-        : undefined,
+    panelShape: groupChrome === 'panels' ? panelShape : undefined,
     panelPadding,
     panelGroupLevels,
     panelBorderLevels,
@@ -140,7 +138,7 @@ export function AutoLayoutPanel() {
     const o = opts()
     autoOrganize(o)
     const chrome = GROUP_CHROME_PRESETS[groupChrome].label
-    const panelsOn = groupChrome === 'panels' || groupChrome === 'both'
+    const panelsOn = groupChrome === 'panels'
     const panelBit = panelsOn
       ? ` · ${panelShape === 'polygon' ? 'n-gon' : 'rect'} · borders L${panelBorderLevels.join('+')} · n-gon L${(panelShape === 'polygon' ? panelNgonLevels : []).join('+') || '—'} · pad ${panelPadding}px`
       : ''
@@ -175,8 +173,9 @@ export function AutoLayoutPanel() {
       }
       if (result.suggestion.density) setDensity(result.suggestion.density)
       if (result.suggestion.gap != null) setGap(result.suggestion.gap)
-      if (result.suggestion.groupChrome)
-        setGroupChrome(result.suggestion.groupChrome)
+      if (result.suggestion.groupChrome) {
+        setGroupChrome(normalizeGroupChrome(result.suggestion.groupChrome))
+      }
 
       const note = result.suggestion.rationale
         ? ` — ${result.suggestion.rationale}`
@@ -303,7 +302,7 @@ export function AutoLayoutPanel() {
         </div>
       </div>
 
-      {(groupChrome === 'panels' || groupChrome === 'both') && (
+      {groupChrome === 'panels' && (
         <div className="space-y-2 rounded-md border border-zinc-800 bg-zinc-950/30 p-2">
           <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
             Panel packing

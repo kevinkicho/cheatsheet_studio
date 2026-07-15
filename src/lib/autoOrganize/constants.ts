@@ -11,12 +11,16 @@ export type CheatsheetLayoutMode = 'columns' | 'flow'
 
 /**
  * How topic/category groups are marked on the board after Auto-layout:
- * - **labels** — full-width (or region-width) heading banner rows (current default)
- * - **panels** — encapsulating frame around cards that belong together (no banner rows)
- * - **both** — banners + panel frames
+ * - **labels** — full-width (or region-width) heading banner rows
+ * - **panels** — encapsulating frame around cards (no banner rows)
  * - **none** — dense pack only, no group chrome
+ *
+ * Legacy value `both` (labels+panels) is normalized to `panels`.
  */
-export type GroupChrome = 'labels' | 'panels' | 'both' | 'none'
+export type GroupChrome = 'labels' | 'panels' | 'none'
+
+/** @deprecated Use GroupChrome; `both` is accepted only for normalization. */
+export type GroupChromeInput = GroupChrome | 'both'
 
 export const GROUP_CHROME_PRESETS: Record<
   GroupChrome,
@@ -30,14 +34,21 @@ export const GROUP_CHROME_PRESETS: Record<
     label: 'Panels',
     hint: 'Encapsulating box around each related cluster',
   },
-  both: {
-    label: 'Labels + panels',
-    hint: 'Banners and encapsulating frames',
-  },
   none: {
     label: 'None',
     hint: 'Pack only — no group chrome',
   },
+}
+
+/** Map legacy `both` → panels; invalid → labels. */
+export function normalizeGroupChrome(
+  chrome?: string | null,
+): GroupChrome {
+  if (chrome === 'both') return 'panels'
+  if (chrome === 'labels' || chrome === 'panels' || chrome === 'none') {
+    return chrome
+  }
+  return 'labels'
 }
 
 /** Soft accents for panel frames (cycle by section index). */
@@ -63,10 +74,11 @@ export type CheatsheetLayoutOptions = {
   /** Pack into multi-column grid (default) or single-row flow wrap. */
   mode?: CheatsheetLayoutMode
   /**
-   * Topic chrome: labels (banners), panels (frames), both, or none.
+   * Topic chrome: labels (banners), panels (frames), or none.
+   * Legacy `both` is accepted and treated as `panels`.
    * Default `labels` (legacy cheatsheet rows of category labels).
    */
-  groupChrome?: GroupChrome
+  groupChrome?: GroupChrome | 'both'
   /**
    * After packing, uniformly shrink so everything fits the print content box
    * when multiPage is false. With multiPage (default), content spans pages

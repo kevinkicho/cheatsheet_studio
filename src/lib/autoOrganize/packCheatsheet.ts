@@ -11,6 +11,7 @@ import {
   normalizeNgonLevels,
   type CheatsheetLayoutOptions,
   type GroupChrome,
+  normalizeGroupChrome,
   type PanelGroupLevel,
   type GroupSortOrder,
 } from './constants'
@@ -93,9 +94,9 @@ export function packCheatsheetLayout(
   const fitPrint = options.fitPrint !== false
   const multiPage = options.multiPage !== false
   const groupByFolder = options.groupByFolder !== false
-  const groupChrome: GroupChrome = options.groupChrome ?? 'labels'
-  const useLabels = groupChrome === 'labels' || groupChrome === 'both'
-  const usePanels = groupChrome === 'panels' || groupChrome === 'both'
+  const groupChrome: GroupChrome = normalizeGroupChrome(options.groupChrome)
+  const useLabels = groupChrome === 'labels'
+  const usePanels = groupChrome === 'panels'
   // UI panel pad (card edge → stroke). Default 4px.
   const panelPad = Math.max(0, Math.min(48, options.panelPadding ?? 4))
   const panelShape: PanelShape = options.panelShape ?? 'rect'

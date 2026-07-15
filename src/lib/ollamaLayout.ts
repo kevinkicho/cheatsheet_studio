@@ -81,7 +81,7 @@ Rules:
 - Keep related cards together (same folder/topic). Headings mark section starts.
 - Density changes **card size / font**: xs=tight but readable, sm=recommended, md=larger, lg=roomiest. Prefer sm or md unless user asks for densest.
 - gap: 6–16px between clusters (avoid 2–4px micro-gaps that stack cards illegibly).
-- groupChrome: labels | panels | both | none.
+- groupChrome: labels | panels | none.
 - Prefer density/gap/groupChrome knobs and let the app packer run — only emit placements if covering ≥70% of card ids with roomy boxes (not micro-rects).
 - Never invent card ids.`
 
@@ -121,7 +121,7 @@ function buildUserPrompt(
         gap: 'number px 4-24',
         columns: '1|2|3|auto',
         mode: 'columns|flow',
-        groupChrome: 'labels|panels|both|none',
+        groupChrome: 'labels|panels|none',
         fitPrint: true,
         rationale: 'short string explaining density + chrome choice',
         placements:
@@ -197,13 +197,15 @@ function normalizeSuggestion(
   }
 
   const chromeRaw = raw.groupChrome
+  // Legacy both (labels+panels) → panels
   const groupChrome =
-    chromeRaw === 'labels' ||
-    chromeRaw === 'panels' ||
-    chromeRaw === 'both' ||
-    chromeRaw === 'none'
-      ? chromeRaw
-      : undefined
+    chromeRaw === 'both'
+      ? ('panels' as const)
+      : chromeRaw === 'labels' ||
+          chromeRaw === 'panels' ||
+          chromeRaw === 'none'
+        ? chromeRaw
+        : undefined
 
   return {
     density: dens,

@@ -33,10 +33,9 @@ Implementation: `packCheatsheetLayout` in [`src/lib/autoOrganize.ts`](../src/lib
 |------|--------|
 | **Topic labels** | Banner heading cards per section |
 | **Panels** | Frames around each group (export + canvas) |
-| **Both** | Labels + panels |
 | **None** | Cards only |
 
-### Panel packing (when chrome includes panels)
+### Panel packing (when chrome is **Panels**)
 
 | Control | Meaning |
 |---------|---------|
