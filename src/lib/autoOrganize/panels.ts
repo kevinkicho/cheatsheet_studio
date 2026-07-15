@@ -244,17 +244,12 @@ export function buildNestedHierarchyPanels(args: {
       const accent =
         LAYOUT_PANEL_ACCENTS[accentIdx++ % LAYOUT_PANEL_ACCENTS.length]
 
-      // Clamp pad so chrome never leaves the printable content box
-      // (content box already excludes print margins).
+      // Always use the full user pad. Cards are packed into a chrome-inset
+      // band (packLeft/Right) so pad fits inside the content box without
+      // collapsing to 0 at the margin edge (screenshot 223755).
       const minX = Math.min(...members.map((m) => m.x))
       const maxX = Math.max(...members.map((m) => m.x + m.width))
-      let effPad = pad
-      if (contentLeft != null) {
-        effPad = Math.min(effPad, Math.max(0, minX - contentLeft))
-      }
-      if (contentRight != null) {
-        effPad = Math.min(effPad, Math.max(0, contentRight - maxX))
-      }
+      const effPad = pad
 
       if (!showStroke) {
         // Title chip only — under L1 exclusive band when multi
@@ -466,11 +461,15 @@ export function nestContainPanels(
     return { minX, minY, maxX, maxY }
   }
 
-  // 1) Every panel must cover its cards (+ pad). Expand only — never shrink.
+  // 1) Snap every panel to members + pad + title (expand AND shrink).
+  // Expand-only left oversized empty corners (screenshots 223714 / 223755).
   for (let i = 0; i < next.length; i++) {
     const p = next[i]!
     const env = memberEnvelope(p)
     if (!env) continue
+    const mem = (p.memberIds ?? [])
+      .map((id) => byId.get(id))
+      .filter((m): m is CanvasItem => Boolean(m) && !m.hidden)
     // Match buildNestedHierarchyPanels title bands (L1 multi ~26, L2 ~18)
     const titleExtra =
       p.showTitle === false
@@ -478,69 +477,91 @@ export function nestContainPanels(
         : (p.hierarchyLevel ?? 1) <= 1
           ? 26
           : 18
-    let x = Math.min(p.x, env.minX - pad)
-    let y = Math.min(p.y, env.minY - pad - titleExtra)
-    let x1 = Math.max(p.x + p.width, env.maxX + pad)
-    let y1 = Math.max(p.y + p.height, env.maxY + pad)
-    if (left != null) x = Math.max(left, x)
-    if (right != null) x1 = Math.min(right, x1)
-    if (top != null) y = Math.max(top, y)
-    const width = Math.max(8, x1 - x)
-    const height = Math.max(8, y1 - y)
-    if (
-      x < p.x - 0.5 ||
-      y < p.y - 0.5 ||
-      width > p.width + 0.5 ||
-      height > p.height + 0.5
-    ) {
-      // Expand runs that are near the old edges; keep stepped shape when possible.
-      // Always clamp runs into the printable content box.
-      const clampRun = (rx: number, ry: number, rw: number, rh: number) => {
-        let x0 = rx
-        let y0 = ry
-        let w0 = rw
-        let h0 = rh
-        if (left != null && x0 < left) {
-          w0 -= left - x0
-          x0 = left
-        }
-        if (right != null && x0 + w0 > right) {
-          w0 = Math.max(8, right - x0)
-        }
-        if (top != null && y0 < top) {
-          h0 -= top - y0
-          y0 = top
-        }
-        return {
-          x: Math.round(x0),
-          y: Math.round(y0),
-          width: Math.max(8, Math.round(w0)),
-          height: Math.max(8, Math.round(h0)),
-        }
+
+    const clampBox = (
+      x0: number,
+      y0: number,
+      w0: number,
+      h0: number,
+    ) => {
+      let x = x0
+      let y = y0
+      let w = w0
+      let h = h0
+      if (left != null && x < left) {
+        w -= left - x
+        x = left
       }
-      const runs =
-        p.runs && p.runs.length > 1
-          ? p.runs.map((r) => {
-              const nx = Math.min(r.x, env.minX - pad)
-              const nw = Math.max(
-                r.width,
-                env.maxX + pad - Math.min(r.x, env.minX - pad),
-              )
-              return clampRun(nx, r.y, nw, r.height)
-            })
-          : [clampRun(x, y, width, height)]
-      next[i] = {
-        ...p,
+      if (right != null && x + w > right) {
+        w = Math.max(8, right - x)
+      }
+      if (top != null && y < top) {
+        h -= top - y
+        y = top
+      }
+      // Never cut under members
+      if (x > env.minX) {
+        w += x - env.minX
+        x = env.minX
+      }
+      if (y > env.minY) {
+        h += y - env.minY
+        y = env.minY
+      }
+      if (x + w < env.maxX) w = env.maxX - x
+      if (y + h < env.maxY) h = env.maxY - y
+      if (right != null && x + w > right) w = Math.max(8, right - x)
+      return {
         x: Math.round(x),
         y: Math.round(y),
-        width: Math.round(width),
-        height: Math.round(height),
+        width: Math.max(8, Math.round(w)),
+        height: Math.max(8, Math.round(h)),
+      }
+    }
+
+    if (p.shape === 'polygon' && mem.length > 0) {
+      const chrome = chromeFromMembers(mem, {
+        pad,
+        titleBand: titleExtra,
+        shape: 'polygon',
+        grid: ORGANIZE_GRID,
+        solidMode: 'blocks',
+      })
+      const box = clampBox(chrome.x, chrome.y, chrome.width, chrome.height)
+      const runs = (chrome.runs ?? [box]).map((r) =>
+        clampBox(r.x, r.y, r.width, r.height),
+      )
+      next[i] = {
+        ...p,
+        ...box,
         runs,
         outlinePath:
-          p.shape === 'polygon' && p.outlinePath
-            ? p.outlinePath
-            : rectPerimeterPathD(x, y, width, height),
+          chrome.outlinePath &&
+          box.x === Math.round(chrome.x) &&
+          box.y === Math.round(chrome.y) &&
+          box.width === Math.round(chrome.width)
+            ? chrome.outlinePath
+            : rectPerimeterPathD(box.x, box.y, box.width, box.height),
       }
+      continue
+    }
+
+    const tight = clampBox(
+      env.minX - pad,
+      env.minY - pad - titleExtra,
+      env.maxX - env.minX + pad * 2,
+      env.maxY - env.minY + pad * 2 + titleExtra,
+    )
+    next[i] = {
+      ...p,
+      ...tight,
+      runs: [tight],
+      outlinePath: rectPerimeterPathD(
+        tight.x,
+        tight.y,
+        tight.width,
+        tight.height,
+      ),
     }
   }
 

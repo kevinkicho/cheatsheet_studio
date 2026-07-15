@@ -117,12 +117,25 @@ export function packCheatsheetLayout(
   // Max pack space: single-page content box, or dissolved continuous multipage band
   const box = getPackContentBox(canvas, { dissolvePrintArea })
 
+  // ── Chrome inset (screenshots 223714 / 223755) ─────────────────────────
+  // Cards used to pack flush to the content box, then panel pad was collapsed
+  // to 0 at the edge → blocks sitting ON the panel stroke. Reserve pad (and
+  // nest inset for L1⊃L2) *inside* the printable box so chrome always fits.
+  const nestChrome =
+    usePanels && multiLevelHierarchy ? Math.max(2, panelPad) : 0
+  const edgeChrome = usePanels ? panelPad : 0
+  const packLeft = box.left + edgeChrome + nestChrome
+  const packRight = box.left + box.width - edgeChrome - nestChrome
+  const packWidth = Math.max(grid * 4, packRight - packLeft)
+  const packTop = box.top // title cells reserved separately in hierarchical place
+
   const visible = items.filter((i) => !i.hidden)
   // Min outer card size from fonts (readable KaTeX/title) — density cannot go below this
   const minCard = minCardForFonts(bodyFont, titleFont)
-  const minSnap = snapSizeToGrid(minCard.w, minCard.h, grid, box.width, box.height)
+  const minSnap = snapSizeToGrid(minCard.w, minCard.h, grid, packWidth, box.height)
 
-  const pageCols = Math.max(1, Math.floor(box.width / grid))
+  // Pack columns = chrome-inset band (not full content width)
+  const pageCols = Math.max(1, Math.floor(packWidth / grid))
   const pageRows = Math.max(1, Math.floor(box.height / grid))
   const pageCells = pageCols * pageRows
 
@@ -149,10 +162,10 @@ export function packCheatsheetLayout(
       Math.round(ideal.h * scale),
     )
     const snapped = snapSizeToGrid(
-      Math.min(box.width, w),
+      Math.min(packWidth, w),
       Math.min(box.height, h),
       grid,
-      box.width,
+      packWidth,
       box.height,
     )
     const isHead = isHeadingCard(it)
@@ -421,22 +434,35 @@ export function packCheatsheetLayout(
   }
 
   // n-gon = hard tetris (minimal free-flow gap); rect = rectangular tetris
-  // with user gap. When chrome pad > 0, keep ≥1 cell so frames don't collide.
+  // with user gap. Inter-topic clearance must fit: bottom pad + next title
+  // band + top pad + user gap — otherwise the next L1 title strip paints over
+  // the previous topic's cards (polygon multi-topic overlap regression).
   const hardTetris = usePolyomino
-  const chromeClearCells =
-    usePanels && panelPad > 0 ? 1 : 0
+  const L1_TITLE_CLEAR_PX = 26
+  const interTopicChromePx = usePanels
+    ? panelPad * 2 +
+      (outerLevelsStroke ? L1_TITLE_CLEAR_PX : 0) +
+      Math.max(0, gapPx)
+    : Math.max(0, gapPx)
+  const chromeClearCells = usePanels
+    ? Math.max(1, Math.ceil(interTopicChromePx / grid))
+    : 0
   const leafGapCells = hardTetris
-    ? chromeClearCells
+    ? Math.max(
+        0,
+        leafLevelsStroke && panelPad > 0
+          ? Math.max(1, Math.ceil((panelPad * 2 + Math.max(0, gapPx)) / grid))
+          : 0,
+      )
     : Math.max(
         pxToCells(gapPx),
-        usePanels && leafLevelsStroke && panelPad > 0 ? 1 : 0,
+        usePanels && leafLevelsStroke && panelPad > 0
+          ? Math.max(1, Math.ceil((panelPad * 2 + Math.max(0, gapPx)) / grid))
+          : 0,
       )
   const outerGapCells = hardTetris
     ? chromeClearCells
-    : Math.max(
-        pxToCells(gapPx),
-        usePanels && outerLevelsStroke && panelPad > 0 ? 1 : 0,
-      )
+    : Math.max(pxToCells(gapPx), chromeClearCells)
 
   // L1 chip row only. Match ~26–30px title band (L1_CHIP+4 + pad) so gravity
   // + nestContain never have to expand chrome into the top print margin.
@@ -449,8 +475,8 @@ export function packCheatsheetLayout(
   // Gravity floor: keep card tops below reserved L1 title chrome.
   const gravityContentTop =
     multiLevelHierarchy && outerLevelsStroke
-      ? box.top + Math.max(0, outerTitleCells * grid)
-      : box.top
+      ? packTop + Math.max(0, outerTitleCells * grid)
+      : packTop
 
   const placeOpts = {
     sortByHeight: !nameOrdered,
@@ -513,9 +539,9 @@ export function packCheatsheetLayout(
       placed.push({
         ...plan.heading,
         hidden: false,
-        x: Math.round(box.left + origin.c * grid),
-        y: Math.round(box.top + (origin.r + localR) * grid),
-        width: Math.round(Math.min(box.width, Math.max(bannerW, grid * 4))),
+        x: Math.round(packLeft + origin.c * grid),
+        y: Math.round(packTop + (origin.r + localR) * grid),
+        width: Math.round(Math.min(packWidth, Math.max(bannerW, grid * 4))),
         height: Math.round(hCh * grid),
         zIndex: z++,
         style: { ...plan.heading.style, ...styleBase },
@@ -544,8 +570,8 @@ export function packCheatsheetLayout(
       placed.push({
         ...it,
         hidden: false,
-        x: Math.round(box.left + (origin.c + p.c) * grid),
-        y: Math.round(box.top + (origin.r + localR + p.r) * grid),
+        x: Math.round(packLeft + (origin.c + p.c) * grid),
+        y: Math.round(packTop + (origin.r + localR + p.r) * grid),
         width: Math.round(rect.cw * grid),
         height: Math.round(rect.ch * grid),
         zIndex: z++,
@@ -609,25 +635,26 @@ export function packCheatsheetLayout(
     pageCount = Math.min(20, Math.max(pageCount, pages))
   }
 
-  // Snap positions to grid and clamp into the printable content box
-  // (dissolve grows height only — never past left/right margins).
-  const contentRight = box.left + box.width
+  // Snap positions to grid and clamp into the *card pack band* (chrome inset).
+  // Panels may paint to the full content box; cards stay inset so pad never
+  // collapses to zero (screenshot 223755: blocks on panel border).
+  const contentRight = packRight
   result = result.map((it) => {
     const snapped = snapSizeToGrid(
       it.width,
       it.height,
       grid,
-      box.width,
+      packWidth,
       box.height,
     )
-    let w = Math.max(grid, Math.min(box.width, snapped.w))
+    let w = Math.max(grid, Math.min(packWidth, snapped.w))
     let h = Math.max(grid, snapped.h)
-    let x = snapToGridValue(it.x, grid, box.left)
-    let y = snapToGridValue(it.y, grid, box.top)
-    if (x < box.left) x = box.left
+    let x = snapToGridValue(it.x, grid, packLeft)
+    let y = snapToGridValue(it.y, grid, packTop)
+    if (x < packLeft) x = packLeft
     if (x + w > contentRight) {
-      x = Math.max(box.left, contentRight - w)
-      x = snapToGridValue(x, grid, box.left)
+      x = Math.max(packLeft, contentRight - w)
+      x = snapToGridValue(x, grid, packLeft)
       if (x + w > contentRight) {
         w = Math.max(grid, contentRight - x)
       }
@@ -667,9 +694,9 @@ export function packCheatsheetLayout(
     for (let dpass = 0; dpass < 2; dpass++) {
       result = densifyPlacedGroups(result, options.folders ?? [], deepLevel, {
         grid,
-        contentLeft: box.left,
-        contentTop: box.top,
-        contentRight: box.left + box.width,
+        contentLeft: packLeft,
+        contentTop: packTop,
+        contentRight: packRight,
         pageCols,
         gapCells: 0,
       })
@@ -690,7 +717,7 @@ export function packCheatsheetLayout(
   // Residual same-folder card overlaps
   result = resolveCardOverlaps(result, {
     grid,
-    contentRight: box.left + box.width,
+    contentRight: packRight,
   })
 
   // Only separate true leaf AABB overlaps (minGap = user gap only)
@@ -729,63 +756,56 @@ export function packCheatsheetLayout(
       shallowLevel,
       {
         grid,
-        contentLeft: box.left,
-        contentTop: box.top,
-        contentRight: box.left + box.width,
+        contentLeft: packLeft,
+        contentTop: packTop,
+        contentRight: packRight,
         gapCells: innerLeafGapCells,
         parentGapPx: interParentGapPx,
         titleCells: outerTitleCells,
       },
     )
   } else if (usePanels && (options.folders?.length ?? 0) > 0) {
-    // Single-level panels: gravity only
+    // Single-level panels: gravity, then separate so title bands don't invade
     result = gravityCompactGroups(result, options.folders ?? [], deepLevel, {
       grid,
-      gapPx: hardTetris
-        ? Math.max(0, panelPad * 2)
-        : Math.max(0, gapPx + (panelPad > 0 ? panelPad * 2 : 0)),
-      contentLeft: box.left,
-      contentTop: box.top,
-      contentRight: box.left + box.width,
+      gapPx: Math.max(interTopicChromePx, panelPad * 2 + Math.max(0, gapPx)),
+      contentLeft: packLeft,
+      contentTop: packTop,
+      contentRight: packRight,
     })
   }
 
-  // Safety stack if anything still interleaves (repack already stacks parents).
-  // minGap = pad+user gap only — title lives inside each parent band.
-  if (usePanels && multiLevelHierarchy && (options.folders?.length ?? 0) > 0) {
+  // Stack parent (or single-level) clusters so title+pad never paint over the
+  // previous topic's cards.
+  if (usePanels && (options.folders?.length ?? 0) > 0) {
     result = separateFolderClusters(
       result,
       options.folders ?? [],
       shallowLevel,
       {
         grid,
-        minGapPx: Math.max(
-          gapPx,
-          outerLevelsStroke ? panelPad * 2 + Math.max(0, gapPx) : gapPx,
-        ),
+        minGapPx: interTopicChromePx,
       },
     )
   }
 
-  // Final hard clamp of cards into the printable content box (post densify /
-  // gravity / separate — those passes can otherwise nudge past margins).
+  // Final hard clamp of cards into the chrome-inset pack band.
   {
-    const cRight = box.left + box.width
     result = result.map((it) => {
       if (it.hidden) return it
       let x = it.x
       let y = it.y
       let w = it.width
       let h = it.height
-      if (x < box.left) {
-        w -= box.left - x
-        x = box.left
+      if (x < packLeft) {
+        w -= packLeft - x
+        x = packLeft
       }
-      if (x + w > cRight) {
-        x = Math.max(box.left, cRight - w)
-        if (x + w > cRight) w = Math.max(grid, cRight - x)
+      if (x + w > packRight) {
+        x = Math.max(packLeft, packRight - w)
+        if (x + w > packRight) w = Math.max(grid, packRight - x)
       }
-      if (y < box.top) y = box.top
+      if (y < packTop) y = packTop
       return {
         ...it,
         x: Math.round(x),

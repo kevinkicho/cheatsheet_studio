@@ -46,11 +46,13 @@ describe('cards inside panel chrome', () => {
   for (const shape of ['rect', 'polygon'] as const) {
     it(`${shape}: every card is inside every owner panel (pad-aware)`, () => {
       const packed = pack(shape)
+      const panelPad = 4
       const cards = packed.items.filter((i) => !i.hidden && i.folderId)
       const panels = (packed.layoutPanels ?? []).filter(
         (p) => p.showStroke !== false,
       )
       let overflow = 0
+      let flushBorder = 0
       const samples: string[] = []
       for (const p of panels) {
         const mem = (p.memberIds ?? [])
@@ -69,6 +71,23 @@ describe('cards inside panel chrome', () => {
             if (samples.length < 10) {
               samples.push(
                 `${shape} ${p.title} L${p.hierarchyLevel}: card@(${c.x},${c.y}) ${c.width}x${c.height} panel@(${p.x},${p.y}) ${p.width}x${p.height}`,
+              )
+            }
+          }
+          // Cards must not sit on the stroke — min pad on L/R (title eats top pad).
+          // Allow 1px snap slack. Screenshot 223755: blocks on panel border.
+          const gapL = c.x - p.x
+          const gapR = p.x + p.width - (c.x + c.width)
+          const gapB = p.y + p.height - (c.y + c.height)
+          if (
+            gapL < panelPad - 1.5 ||
+            gapR < panelPad - 1.5 ||
+            gapB < panelPad - 1.5
+          ) {
+            flushBorder++
+            if (samples.length < 14) {
+              samples.push(
+                `${shape} FLUSH ${p.title} L${p.hierarchyLevel} gaps LTRB≈${[gapL, c.y - p.y, gapR, gapB].map((n) => Math.round(n)).join(',')}`,
               )
             }
           }
@@ -103,8 +122,9 @@ describe('cards inside panel chrome', () => {
         }
       }
       // eslint-disable-next-line no-console
-      console.log(shape, { overflow, samples })
+      console.log(shape, { overflow, flushBorder, samples })
       expect(overflow).toBe(0)
+      expect(flushBorder).toBe(0)
     })
   }
 })
