@@ -1834,6 +1834,7 @@ describe('packCheatsheetLayout', () => {
       contentSort: 'name-asc',
     }
     const originX = panel.x
+    const originW = panel.width
     let cur = items
     for (let i = 0; i < 4; i++) {
       const r = relayoutPanelContents(cur, panel, {
@@ -1847,16 +1848,66 @@ describe('packCheatsheetLayout', () => {
       panel = r.panel
       // Origin must stay put (no walk to the right)
       expect(Math.abs(panel.x - originX)).toBeLessThanOrEqual(1)
-      // Cards stay inside panel (+ pad slack)
+      // Never wider than original pin (no right blowout)
+      expect(panel.width).toBeLessThanOrEqual(originW + 1)
+      // Cards stay inside original pack band
       for (const id of ['a', 'b', 'c']) {
         const c = cur.find((x) => x.id === id)!
         expect(c.x).toBeGreaterThanOrEqual(panel.x - 1)
-        expect(c.x + c.width).toBeLessThanOrEqual(panel.x + panel.width + 1)
+        expect(c.x + c.width).toBeLessThanOrEqual(originX + originW + 1)
       }
     }
   })
 
-  it('relayoutPanelContents n-gon uses hard tetris + polygon chrome', () => {
+  it('relayoutPanelContents dense stays within original pack width', () => {
+    resetPanelPackSeed('p-pack-band')
+    let items: CanvasItem[] = [
+      card('a', { title: 'A', x: 120, y: 120, width: 100, height: 60 }),
+      card('b', { title: 'B', x: 240, y: 120, width: 100, height: 60 }),
+      card('c', { title: 'C', x: 120, y: 200, width: 80, height: 50 }),
+      card('d', { title: 'D', x: 220, y: 200, width: 80, height: 50 }),
+    ]
+    let panel: import('@/types').LayoutPanel = {
+      id: 'p-pack-band',
+      title: 'Wide',
+      x: 100,
+      y: 100,
+      width: 400,
+      height: 260,
+      memberIds: ['a', 'b', 'c', 'd'],
+      shape: 'rect',
+      showTitle: true,
+      contentSort: 'name-asc',
+    }
+    const w0 = panel.width
+    const x0 = panel.x
+    let prevW = w0
+    for (let i = 0; i < 6; i++) {
+      const r = relayoutPanelContents(items, panel, {
+        mode: 'dense',
+        packSeed: 0,
+        panelPad: 4,
+        grid: 24,
+        blockGapPx: 4,
+      })
+      items = r.items
+      panel = r.panel
+      expect(panel.x).toBe(x0)
+      // No horizontal overflow past the original panel right
+      expect(panel.width).toBeLessThanOrEqual(w0 + 1)
+      for (const id of ['a', 'b', 'c', 'd']) {
+        const c = items.find((x) => x.id === id)!
+        expect(c.x + c.width).toBeLessThanOrEqual(x0 + w0 + 1)
+      }
+      // No runaway shrink spiral (at most mild hug after first reflow)
+      if (i > 0) {
+        expect(panel.width).toBeGreaterThanOrEqual(prevW * 0.5)
+      }
+      prevW = panel.width
+    }
+  })
+
+  it('relayoutPanelContents n-gon uses dense free-flow + polygon chrome', () => {
     const items: CanvasItem[] = [
       card('a', { title: 'A', x: 100, y: 100, width: 100, height: 72 }),
       card('b', { title: 'B', x: 220, y: 100, width: 100, height: 48 }),
@@ -1892,13 +1943,134 @@ describe('packCheatsheetLayout', () => {
       expect(c.width).toBe(before.width)
       expect(c.height).toBe(before.height)
     }
-    // Hard tetris packs denser than sparse shelf: bounding box height of cards
-    // should be less than stacking all four rows (sum of heights)
+    // Dense free-flow packs denser than stacking all four rows
     const cards = next.filter((i) => ['a', 'b', 'c', 'd'].includes(i.id))
     const minY = Math.min(...cards.map((c) => c.y))
     const maxY = Math.max(...cards.map((c) => c.y + c.height))
     const sumH = cards.reduce((s, c) => s + c.height, 0)
     expect(maxY - minY).toBeLessThan(sumH)
+  })
+
+  it('relayoutPanelContents keeps panel origin and honors block gap', () => {
+    const items: CanvasItem[] = [
+      card('a', { title: 'A', x: 110, y: 110, width: 80, height: 50, folderId: 'f' }),
+      card('b', { title: 'B', x: 200, y: 110, width: 80, height: 50, folderId: 'f' }),
+      card('c', { title: 'C', x: 110, y: 180, width: 80, height: 50, folderId: 'f' }),
+      card('d', { title: 'D', x: 200, y: 180, width: 80, height: 50, folderId: 'f' }),
+    ]
+    const panel: import('@/types').LayoutPanel = {
+      id: 'p-anchor',
+      title: 'Topic',
+      x: 100,
+      y: 100,
+      width: 280,
+      height: 220,
+      memberIds: ['a', 'b', 'c', 'd'],
+      shape: 'rect',
+      showTitle: true,
+      hierarchyLevel: 2,
+      contentSort: 'name-asc',
+    }
+    const folders = [{ id: 'f', name: 'F', parentId: null }]
+    const tight = relayoutPanelContents(items, panel, {
+      mode: 'dense',
+      packSeed: 0,
+      panelPad: 4,
+      grid: 24,
+      blockGapPx: 0,
+      panelShape: 'rect',
+      folders,
+    })
+    const airy = relayoutPanelContents(items, panel, {
+      mode: 'dense',
+      packSeed: 0,
+      panelPad: 4,
+      grid: 24,
+      blockGapPx: 48,
+      panelShape: 'rect',
+      folders,
+    })
+    // Origin locked
+    expect(tight.panel.x).toBe(100)
+    expect(tight.panel.y).toBe(100)
+    expect(airy.panel.x).toBe(100)
+    expect(airy.panel.y).toBe(100)
+    // Min neighbor gap for airy should be ~48px
+    const mem = (its: typeof items) =>
+      its.filter((i) => ['a', 'b', 'c', 'd'].includes(i.id))
+    const minGap = (cs: typeof items) => {
+      let best = Infinity
+      for (let i = 0; i < cs.length; i++) {
+        for (let j = i + 1; j < cs.length; j++) {
+          const a = cs[i]!
+          const b = cs[j]!
+          const xOl =
+            Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x)
+          const yOl =
+            Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y)
+          if (xOl > 5) {
+            best = Math.min(
+              best,
+              Math.max(0, Math.max(b.y - (a.y + a.height), a.y - (b.y + b.height))),
+            )
+          } else if (yOl > 5) {
+            best = Math.min(
+              best,
+              Math.max(0, Math.max(b.x - (a.x + a.width), a.x - (b.x + b.width))),
+            )
+          }
+        }
+      }
+      return best === Infinity ? 0 : best
+    }
+    expect(minGap(mem(airy.items))).toBeGreaterThanOrEqual(40)
+    expect(minGap(mem(airy.items))).toBeGreaterThan(minGap(mem(tight.items)))
+  })
+
+  it('relayoutPanelContents rect and n-gon place cards the same (chrome only differs)', () => {
+    const items: CanvasItem[] = [
+      card('a', { title: 'A', x: 100, y: 100, width: 100, height: 72 }),
+      card('b', { title: 'B', x: 220, y: 100, width: 100, height: 48 }),
+      card('c', { title: 'C', x: 100, y: 200, width: 80, height: 48 }),
+      card('d', { title: 'D', x: 200, y: 200, width: 120, height: 72 }),
+    ]
+    const base: import('@/types').LayoutPanel = {
+      id: 'p-shape-parity',
+      title: 'Topic',
+      x: 80,
+      y: 80,
+      width: 300,
+      height: 280,
+      memberIds: ['a', 'b', 'c', 'd'],
+      showTitle: true,
+      contentSort: 'name-asc',
+    }
+    const opts = {
+      mode: 'dense' as const,
+      gapPx: 2,
+      blockGapPx: 2,
+      panelPad: 4,
+      grid: 24,
+      packSeed: 0,
+    }
+    const rect = relayoutPanelContents(items, { ...base, shape: 'rect' }, {
+      ...opts,
+      panelShape: 'rect',
+    })
+    const ngon = relayoutPanelContents(items, { ...base, shape: 'polygon' }, {
+      ...opts,
+      panelShape: 'polygon',
+    })
+    for (const id of ['a', 'b', 'c', 'd']) {
+      const r = rect.items.find((i) => i.id === id)!
+      const n = ngon.items.find((i) => i.id === id)!
+      expect(n.x).toBe(r.x)
+      expect(n.y).toBe(r.y)
+      expect(n.width).toBe(r.width)
+      expect(n.height).toBe(r.height)
+    }
+    expect(rect.panel.shape).toBe('rect')
+    expect(ngon.panel.shape).toBe('polygon')
   })
 
   it('relayoutPanelContents on L1 rebuilds nested L2 chrome to follow cards', () => {

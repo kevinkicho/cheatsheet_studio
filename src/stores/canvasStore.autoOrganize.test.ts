@@ -154,5 +154,117 @@ describe("autoOrganize store wiring", () => {
     expect(snap?.panelBorderLevels).toEqual([1, 2]);
     expect(snap?.panelNgonLevels).toEqual([2]);
   });
+
+  it("autoLayoutSelectedPanel applies blockGap and keeps panel origin", () => {
+    useCanvasStore.setState({
+      items: [
+        {
+          id: "a",
+          type: "equation",
+          x: 110,
+          y: 120,
+          width: 90,
+          height: 50,
+          zIndex: 1,
+          latex: "a",
+          title: "A",
+          folderId: "f1",
+        },
+        {
+          id: "b",
+          type: "equation",
+          x: 220,
+          y: 120,
+          width: 90,
+          height: 50,
+          zIndex: 2,
+          latex: "b",
+          title: "B",
+          folderId: "f1",
+        },
+        {
+          id: "c",
+          type: "equation",
+          x: 110,
+          y: 190,
+          width: 90,
+          height: 50,
+          zIndex: 3,
+          latex: "c",
+          title: "C",
+          folderId: "f1",
+        },
+        {
+          id: "d",
+          type: "equation",
+          x: 220,
+          y: 190,
+          width: 90,
+          height: 50,
+          zIndex: 4,
+          latex: "d",
+          title: "D",
+          folderId: "f1",
+        },
+      ],
+      folders: [{ id: "f1", name: "1.1 Sub", parentId: null, order: 0 }],
+      canvas: {
+        ...DEFAULT_CANVAS,
+        layoutPanels: [
+          {
+            id: "p1",
+            title: "1.1 Sub",
+            x: 100,
+            y: 100,
+            width: 280,
+            height: 200,
+            memberIds: ["a", "b", "c", "d"],
+            shape: "rect",
+            showTitle: true,
+            hierarchyLevel: 2,
+            contentSort: "name-asc",
+          },
+        ],
+      },
+      selectedPanelId: "p1",
+      dirty: false,
+    });
+
+    useCanvasStore.getState().autoLayoutSelectedPanel("rect", {
+      blockGap: 48,
+    });
+    const s = useCanvasStore.getState();
+    const p = s.canvas.layoutPanels?.find((x) => x.id === "p1");
+    expect(p?.x).toBe(100);
+    expect(p?.y).toBe(100);
+    expect(s.lastAutoLayout?.blockGap).toBe(48);
+
+    const cards = s.items.filter((i) =>
+      ["a", "b", "c", "d"].includes(i.id),
+    );
+    let minG = Infinity;
+    for (let i = 0; i < cards.length; i++) {
+      for (let j = i + 1; j < cards.length; j++) {
+        const a = cards[i]!;
+        const b = cards[j]!;
+        const xOl =
+          Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x);
+        const yOl =
+          Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y);
+        if (xOl > 5) {
+          minG = Math.min(
+            minG,
+            Math.max(0, Math.max(b.y - (a.y + a.height), a.y - (b.y + b.height))),
+          );
+        } else if (yOl > 5) {
+          minG = Math.min(
+            minG,
+            Math.max(0, Math.max(b.x - (a.x + a.width), a.x - (b.x + b.width))),
+          );
+        }
+      }
+    }
+    expect(minG).toBeGreaterThanOrEqual(40);
+  });
 });
 

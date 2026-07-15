@@ -464,12 +464,6 @@ export function packCheatsheetLayout(
     : 0
   const nestInsetCells =
     nestInsetPx > 0 ? Math.min(1, Math.ceil(nestInsetPx / grid)) : 0
-  // Gravity floor: keep card tops below reserved L1 title chrome.
-  const gravityContentTop =
-    multiLevelHierarchy && outerLevelsStroke
-      ? packTop + Math.max(0, outerTitleCells * grid)
-      : packTop
-
   const placeOpts = {
     sortByHeight: !nameOrdered,
     readingFlow: nameOrdered,

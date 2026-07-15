@@ -6,6 +6,7 @@ import type { CanvasItem, SheetCanvas } from '@/types'
 import {
   getContentBox,
   packCheatsheetLayout,
+  normalizeGroupChrome,
   type CheatsheetLayoutOptions,
   type ContentDensity,
   DENSITY_PRESETS,
@@ -29,7 +30,11 @@ export type AiLayoutPlacement = {
 
 export type AiLayoutSuggestion = {
   density?: ContentDensity
+  /** @deprecated Prefer l1PanelGap */
   gap?: number
+  l1PanelGap?: number
+  l2PanelGap?: number
+  blockGap?: number
   columns?: number | 'auto'
   mode?: 'columns' | 'flow'
   /** Topic chrome from model or UI preference. */
@@ -196,16 +201,13 @@ function normalizeSuggestion(
     }
   }
 
-  const chromeRaw = raw.groupChrome
-  // Legacy both (labels+panels) → panels
+  // Accept legacy "both" / string from model; normalize to GroupChrome
   const groupChrome =
-    chromeRaw === 'both'
-      ? ('panels' as const)
-      : chromeRaw === 'labels' ||
-          chromeRaw === 'panels' ||
-          chromeRaw === 'none'
-        ? chromeRaw
-        : undefined
+    raw.groupChrome != null
+      ? normalizeGroupChrome(
+          raw.groupChrome as import('@/lib/autoOrganize').GroupChrome | 'both',
+        )
+      : undefined
 
   return {
     density: dens,
@@ -290,10 +292,12 @@ export async function suggestCheatsheetLayoutWithOllama(
     suggestion.mode = preferred.mode
   }
   if (preferred?.groupChrome && !suggestion.groupChrome) {
-    suggestion.groupChrome = preferred.groupChrome
+    suggestion.groupChrome = normalizeGroupChrome(preferred.groupChrome)
   }
 
-  const groupChrome = suggestion.groupChrome ?? preferred?.groupChrome ?? 'labels'
+  const groupChrome = normalizeGroupChrome(
+    suggestion.groupChrome ?? preferred?.groupChrome ?? 'labels',
+  )
 
   if (suggestion.placements && suggestion.placements.length > 0) {
     const byId = new Map(suggestion.placements.map((p) => [p.id, p]))

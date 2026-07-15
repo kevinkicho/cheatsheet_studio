@@ -1,53 +1,39 @@
 import type { CanvasItem, LayoutPanel } from '@/types'
-import { ORGANIZE_GRID, gapPxToCells } from '../constants'
+import { ORGANIZE_GRID } from '../constants'
 import { chromeFromMembers } from '../polyomino'
-import {
-  enforcePanelLayoutInvariants,
-  separateLeafCardsByGap,
-} from '../densify'
+import { enforcePanelLayoutInvariants } from '../densify'
 import type { FolderRef } from '../folders'
-import {
-  placeTopicRegionsDense,
-  packClusterTight,
-  type PackOrderStrategy,
-} from '../shelf'
+import { packBBoxScore, type PackOrderStrategy } from '../shelf'
 import {
   exclusiveTitleBandPx,
   NESTED_TITLE_BAND_PX,
   L1_TITLE_BAND_PX,
   L1_NESTED_TITLE_BAND_PX,
 } from './hierarchy'
+import { relayoutPanelDenseSheetParity } from './denseRelayout'
 
-/** Per-panel click counter so each Auto-layout inside panel tries a new seed. */
+/** Per-panel click counter so each Auto-layout click can try a new seed. */
 const panelPackSeedById = new Map<string, number>()
 
 type InPanelSeed = {
+  /** Optional single-order override; default = full multi-order (sheet densify). */
   orders?: PackOrderStrategy[]
   multiOrder: boolean
-  /** Fraction of content width for free-flow columns (1 = full). */
+  /**
+   * Fraction of content width. Always 1 to match full-sheet densify
+   * (narrow fracs produced sparse mosaics unlike sheet auto-layout).
+   */
   widthFrac: number
   leafSort: 'name' | 'height' | 'area' | 'input' | 'input-rev'
 }
 
-/** Rectangular tetris seeds — may vary column width for different mosaics. */
-const RECT_PACK_SEEDS: InPanelSeed[] = [
-  { multiOrder: true, widthFrac: 1, leafSort: 'name' },
-  { multiOrder: true, orders: ['height-desc'], widthFrac: 1, leafSort: 'height' },
-  { multiOrder: true, orders: ['area-desc'], widthFrac: 1, leafSort: 'area' },
-  { multiOrder: true, orders: ['width-desc'], widthFrac: 1, leafSort: 'name' },
-  { multiOrder: true, orders: ['perimeter-desc'], widthFrac: 0.85, leafSort: 'height' },
-  { multiOrder: true, orders: ['input'], widthFrac: 1, leafSort: 'input' },
-  { multiOrder: true, orders: ['input-rev'], widthFrac: 1, leafSort: 'input-rev' },
-  { multiOrder: true, orders: ['height-asc'], widthFrac: 0.75, leafSort: 'area' },
-  { multiOrder: true, orders: ['area-asc'], widthFrac: 0.9, leafSort: 'name' },
-  { multiOrder: true, widthFrac: 0.66, leafSort: 'height' },
-]
-
 /**
- * N-gon hard-tetris seeds — match full-sheet polygon pack: multi-order dense
- * free-flow, full width, 0–1 cell gaps (never sparse widthFrac shrinks).
+ * Sheet-matching pack seeds (rect + n-gon share the same packing).
+ * Seed 0 = full multi-order densest free-flow at full width (same engine as
+ * sheet densifyPlacedGroups / packClusterTight). Later seeds only change
+ * leaf insertion order — never shrink width.
  */
-const NGON_PACK_SEEDS: InPanelSeed[] = [
+const SHEET_MATCH_SEEDS: InPanelSeed[] = [
   { multiOrder: true, widthFrac: 1, leafSort: 'height' },
   { multiOrder: true, widthFrac: 1, leafSort: 'area' },
   { multiOrder: true, widthFrac: 1, leafSort: 'name' },
@@ -56,8 +42,8 @@ const NGON_PACK_SEEDS: InPanelSeed[] = [
   { multiOrder: true, orders: ['width-desc'], widthFrac: 1, leafSort: 'height' },
   { multiOrder: true, orders: ['perimeter-desc'], widthFrac: 1, leafSort: 'area' },
   { multiOrder: true, orders: ['input'], widthFrac: 1, leafSort: 'input' },
+  { multiOrder: true, orders: ['input-rev'], widthFrac: 1, leafSort: 'input-rev' },
   { multiOrder: true, orders: ['height-asc'], widthFrac: 1, leafSort: 'name' },
-  { multiOrder: true, orders: ['area-asc'], widthFrac: 1, leafSort: 'height' },
 ]
 
 export function peekPanelPackSeed(panelId: string): number {
@@ -231,75 +217,350 @@ function sortCards(
   return cards
 }
 
+type PackedCard = { id: string; x: number; y: number; w: number; h: number }
+type PackResult = { out: PackedCard[]; width: number; height: number }
+
+const PIXEL_PACK_ORDERS: PackOrderStrategy[] = [
+  'height-desc',
+  'area-desc',
+  'width-desc',
+  'perimeter-desc',
+  'height-asc',
+  'input',
+  'input-rev',
+  'area-asc',
+]
+
+function orderCardsForPack(
+  cards: CanvasItem[],
+  strategy: PackOrderStrategy,
+): CanvasItem[] {
+  const entries = cards.map((c, i) => ({
+    c,
+    i,
+    area: c.width * c.height,
+    peri: 2 * (c.width + c.height),
+  }))
+  switch (strategy) {
+    case 'height-desc':
+      entries.sort((a, b) => b.c.height - a.c.height || b.area - a.area || a.i - b.i)
+      break
+    case 'height-asc':
+      entries.sort((a, b) => a.c.height - b.c.height || b.area - a.area || a.i - b.i)
+      break
+    case 'area-desc':
+      entries.sort((a, b) => b.area - a.area || b.c.height - a.c.height || a.i - b.i)
+      break
+    case 'area-asc':
+      entries.sort((a, b) => a.area - b.area || b.c.height - a.c.height || a.i - b.i)
+      break
+    case 'width-desc':
+      entries.sort((a, b) => b.c.width - a.c.width || b.c.height - a.c.height || a.i - b.i)
+      break
+    case 'perimeter-desc':
+      entries.sort((a, b) => b.peri - a.peri || b.area - a.area || a.i - b.i)
+      break
+    case 'input-rev':
+      entries.reverse()
+      break
+    case 'input':
+    default:
+      break
+  }
+  return entries.map((e) => e.c)
+}
+
 /**
- * Free-flow (skyline) pack of cards into a content box on the organize grid.
- * Always keeps original card sizes — never shrinks (repeated Auto-layout
- * clicks used to compound scale-down).
+ * Pixel skyline pack — true stacking without cell-ceil waste.
+ * Cell free-flow (ceil(w/grid)) reserved full cells for partial cards, so
+ * short cards could not nest beside tall ones → "stacking not happening well".
+ * Places at exact pixel sizes + exact gapPx; multi-order densest bbox.
  */
-function packCardsDenseFreeFlow(
+function packCardsPixelSkyline(
   cards: CanvasItem[],
   ox: number,
   oy: number,
   boxW: number,
-  grid: number,
-  gapCells: number,
+  gapPx: number,
   orderOpts?: {
     multiOrder?: boolean
     orders?: PackOrderStrategy[]
   },
-): { out: Array<{ id: string; x: number; y: number; w: number; h: number }>; width: number; height: number } {
-  if (cards.length === 0) {
-    return { out: [], width: 0, height: 0 }
+): PackResult {
+  if (cards.length === 0) return { out: [], width: 0, height: 0 }
+  const gap = Math.max(0, Math.round(gapPx))
+  const bandW = Math.max(48, Math.round(boxW))
+  const strategies =
+    orderOpts?.multiOrder === false
+      ? (orderOpts.orders?.length ? orderOpts.orders : (['height-desc'] as PackOrderStrategy[]))
+      : orderOpts?.orders?.length
+        ? orderOpts.orders
+        : PIXEL_PACK_ORDERS
+
+  const filled = cards.reduce((s, c) => s + c.width * c.height, 0)
+  let best: PackResult & { score: number } | null = null
+
+  for (const strategy of strategies) {
+    const ordered = orderCardsForPack(cards, strategy)
+    const placed = placePixelSkylineOnce(ordered, ox, oy, bandW, gap)
+    compactPixelPack(placed, ox, oy, bandW, gap)
+    let maxX = ox
+    let maxY = oy
+    for (const p of placed) {
+      maxX = Math.max(maxX, p.x + p.w)
+      maxY = Math.max(maxY, p.y + p.h)
+    }
+    const width = Math.max(8, maxX - ox)
+    const height = Math.max(8, maxY - oy)
+    const score = packBBoxScore(
+      Math.max(1, Math.ceil(width / 8)),
+      Math.max(1, Math.ceil(height / 8)),
+      Math.max(1, Math.ceil(filled / 64)),
+    )
+    if (!best || score < best.score) {
+      best = { out: placed.map((p) => ({ ...p })), width, height, score }
+    }
   }
-  const g = Math.max(4, grid)
+  return best ?? { out: [], width: 0, height: 0 }
+}
+
+function placePixelSkylineOnce(
+  cards: CanvasItem[],
+  ox: number,
+  oy: number,
+  boxW: number,
+  gap: number,
+): PackedCard[] {
+  const placed: PackedCard[] = []
   const boxRight = ox + boxW
-  // Pixel budget for columns — never place past boxRight
-  const pageCols = Math.max(1, Math.floor(boxW / g))
-  const regions = cards.map((m, i) => {
-    // Clamp card width to box so cw never implies a right edge past boxW
-    const w = Math.max(24, Math.min(boxW, Math.round(m.width)))
-    const h = Math.max(20, Math.round(m.height))
-    return {
-      index: i,
-      cw: Math.min(pageCols, Math.max(1, Math.ceil(w / g))),
-      ch: Math.max(1, Math.ceil(h / g)),
+
+  const collides = (x: number, y: number, w: number, h: number) => {
+    for (const p of placed) {
+      if (
+        x < p.x + p.w + gap &&
+        x + w + gap > p.x &&
+        y < p.y + p.h + gap &&
+        y + h + gap > p.y
+      ) {
+        return true
+      }
+    }
+    return false
+  }
+
+  const contact = (x: number, y: number, w: number, h: number) => {
+    let c = 0
+    for (const p of placed) {
+      const yOl = Math.min(y + h, p.y + p.h) - Math.max(y, p.y)
+      if (yOl > 0) {
+        if (x + w + gap === p.x || p.x + p.w + gap === x) c += yOl
+      }
+      const xOl = Math.min(x + w, p.x + p.w) - Math.max(x, p.x)
+      if (xOl > 0) {
+        if (y + h + gap === p.y || p.y + p.h + gap === y) c += xOl
+      }
+    }
+    if (x === ox) c += h * 0.25
+    if (y === oy) c += w * 0.25
+    return c
+  }
+
+  for (const card of cards) {
+    const w = Math.max(24, Math.min(boxW, Math.round(card.width)))
+    const h = Math.max(20, Math.round(card.height))
+    // Candidate anchors: origin + right/bottom edges of placed (classic BL)
+    const xCands = new Set<number>([ox])
+    const yCands = new Set<number>([oy])
+    for (const p of placed) {
+      xCands.add(p.x)
+      xCands.add(p.x + p.w + gap)
+      yCands.add(p.y)
+      yCands.add(p.y + p.h + gap)
+    }
+    let best: { x: number; y: number; score: number } | null = null
+    const ys = [...yCands].filter((y) => y >= oy).sort((a, b) => a - b)
+    const xs = [...xCands]
+      .filter((x) => x >= ox && x + w <= boxRight + 0.5)
+      .sort((a, b) => a - b)
+    for (const y of ys) {
+      for (const x of xs) {
+        if (collides(x, y, w, h)) continue
+        const bottom =
+          Math.max(
+            placed.reduce((m, p) => Math.max(m, p.y + p.h), oy),
+            y + h,
+          ) - oy
+        const score = bottom * 1e9 + y * 1e5 + x * 10 - contact(x, y, w, h) * 50
+        if (!best || score < best.score) best = { x, y, score }
+      }
+    }
+    // Fallback: stack under current pile at left
+    if (!best) {
+      const y =
+        placed.length === 0
+          ? oy
+          : Math.max(...placed.map((p) => p.y + p.h)) + gap
+      best = { x: ox, y, score: y }
+    }
+    placed.push({
+      id: card.id,
+      x: Math.round(best.x),
+      y: Math.round(best.y),
       w,
       h,
-      id: m.id,
+    })
+  }
+  return placed
+}
+
+/** Pull each card up then left while honoring gap (closes residual voids). */
+function compactPixelPack(
+  placed: PackedCard[],
+  ox: number,
+  oy: number,
+  boxW: number,
+  gap: number,
+): void {
+  const boxRight = ox + boxW
+  const collides = (
+    id: string,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+  ) => {
+    for (const p of placed) {
+      if (p.id === id) continue
+      if (
+        x < p.x + p.w + gap &&
+        x + w + gap > p.x &&
+        y < p.y + p.h + gap &&
+        y + h + gap > p.y
+      ) {
+        return true
+      }
     }
-  })
-  const pos = placeTopicRegionsDense(
-    regions.map((r) => ({ index: r.index, cw: r.cw, ch: r.ch })),
-    pageCols,
-    Math.max(0, gapCells),
-    {
-      multiOrder: orderOpts?.multiOrder !== false,
-      orders: orderOpts?.orders,
-      readingFlow: false,
-    },
+    return false
+  }
+
+  for (let sweep = 0; sweep < 10; sweep++) {
+    let moved = false
+    // Up first (bottom-most cards first)
+    for (const p of [...placed].sort((a, b) => b.y - a.y || a.x - b.x)) {
+      let lo = oy
+      let hi = p.y
+      let best = p.y
+      while (lo <= hi) {
+        const mid = Math.floor((lo + hi) / 2)
+        if (!collides(p.id, p.x, mid, p.w, p.h)) {
+          best = mid
+          hi = mid - 1
+        } else lo = mid + 1
+      }
+      if (best < p.y) {
+        p.y = best
+        moved = true
+      }
+    }
+    // Left (right-most first)
+    for (const p of [...placed].sort((a, b) => b.x - a.x || a.y - b.y)) {
+      let lo = ox
+      let hi = p.x
+      let best = p.x
+      while (lo <= hi) {
+        const mid = Math.floor((lo + hi) / 2)
+        if (
+          mid + p.w <= boxRight + 0.5 &&
+          !collides(p.id, mid, p.y, p.w, p.h)
+        ) {
+          best = mid
+          hi = mid - 1
+        } else lo = mid + 1
+      }
+      if (best < p.x) {
+        p.x = best
+        moved = true
+      }
+    }
+    if (!moved) break
+  }
+}
+
+/**
+ * Pixel skyline for arbitrary rects (L2 chrome footprints).
+ * Same engine as card packing so leaf frames stack without overlap.
+ */
+function packRectsPixelSkyline(
+  rects: Array<{ id: string; w: number; h: number }>,
+  ox: number,
+  oy: number,
+  boxW: number,
+  gapPx: number,
+  orderOpts?: { multiOrder?: boolean; orders?: PackOrderStrategy[] },
+): PackResult {
+  // Reuse card packer via synthetic CanvasItems
+  const cards = rects.map((r, i) => ({
+    id: r.id,
+    type: 'equation' as const,
+    x: 0,
+    y: 0,
+    width: Math.max(8, Math.round(r.w)),
+    height: Math.max(8, Math.round(r.h)),
+    zIndex: i,
+    latex: r.id,
+  }))
+  return packCardsPixelSkyline(cards, ox, oy, boxW, gapPx, orderOpts)
+}
+
+/**
+ * Pixel pack at several candidate widths; keep densest bbox.
+ * Critical for L2 leaves under an L1: packing every leaf into the *full* L1
+ * width made each leaf AABB full-width → only vertical stack → sparse L1.
+ */
+function packCardsDenseBestWidth(
+  cards: CanvasItem[],
+  ox: number,
+  oy: number,
+  maxBoxW: number,
+  gapPx: number,
+  orderOpts?: {
+    multiOrder?: boolean
+    orders?: PackOrderStrategy[]
+  },
+): PackResult {
+  if (cards.length === 0) return { out: [], width: 0, height: 0 }
+  const maxCardW = Math.max(...cards.map((c) => c.width), 48)
+  const area = cards.reduce((s, c) => s + c.width * c.height, 0)
+  const candidates = Array.from(
+    new Set(
+      [
+        maxBoxW,
+        Math.ceil((maxBoxW * 3) / 4),
+        Math.ceil((maxBoxW * 2) / 3),
+        Math.ceil(maxBoxW / 2),
+        Math.ceil(maxBoxW / 3),
+        Math.min(maxBoxW, Math.max(maxCardW, Math.ceil(Math.sqrt(area * 1.25)))),
+        Math.min(maxBoxW, maxCardW + 8),
+      ]
+        .map((w) => Math.max(maxCardW, Math.min(maxBoxW, w)))
+        .filter((w) => w >= 24),
+    ),
+  ).sort((a, b) => b - a)
+
+  const filled = area
+  let best: PackResult & { score: number } | null = null
+  for (const boxW of candidates) {
+    const packed = packCardsPixelSkyline(cards, ox, oy, boxW, gapPx, orderOpts)
+    const score = packBBoxScore(
+      Math.max(1, Math.ceil(packed.width / 8)),
+      Math.max(1, Math.ceil(packed.height / 8)),
+      Math.max(1, Math.ceil(filled / 64)),
+    )
+    if (!best || score < best.score) best = { ...packed, score }
+  }
+  return (
+    best ?? packCardsPixelSkyline(cards, ox, oy, maxBoxW, gapPx, orderOpts)
   )
-  const out: Array<{ id: string; x: number; y: number; w: number; h: number }> =
-    []
-  let maxX = ox
-  let maxY = oy
-  for (const r of regions) {
-    const p = pos.get(r.index) ?? { c: 0, r: 0 }
-    let x = Math.round(ox + p.c * g)
-    const y = Math.round(oy + p.r * g)
-    const ww = r.w
-    // Hard clamp into [ox, boxRight] — cell snap + full pixel width used to
-    // spill past the panel (right overflow on each Auto-layout click).
-    if (x + ww > boxRight) x = Math.round(boxRight - ww)
-    if (x < ox) x = ox
-    out.push({ id: r.id, x, y, w: ww, h: r.h })
-    maxX = Math.max(maxX, x + ww)
-    maxY = Math.max(maxY, y + r.h)
-  }
-  return {
-    out,
-    width: Math.max(8, Math.min(boxW, maxX - ox)),
-    height: Math.max(8, maxY - oy),
-  }
 }
 
 function sortLeafPanels(
@@ -368,8 +629,8 @@ export function relayoutPanelContents(
     /** Full layout panel list — nested children are rebuilt in place. */
     allPanels?: LayoutPanel[]
     /**
-     * Packing seed index. When omitted in dense mode, advances a per-panel
-     * counter so each Auto-layout click tries a different arrangement.
+     * Packing seed index. When omitted in dense mode, uses densest multi-order
+     * (seed 0 = sheet match). Pass a number only for variety tests.
      */
     packSeed?: number
     /**
@@ -380,6 +641,13 @@ export function relayoutPanelContents(
     blockGapPx?: number
     /** L2 sibling panel gap (px). Default 4. */
     l2PanelGapPx?: number
+    /** Folder tree — enables sheet densifyPlacedGroups / repackLeafInteriors. */
+    folders?: FolderRef[]
+    /**
+     * Printable content right edge (px). Dense mode may grow panel width up to
+     * this (matches sheet pack band). Default: keep original panel right.
+     */
+    contentRight?: number
   },
 ): { items: CanvasItem[]; panel: LayoutPanel; panels?: LayoutPanel[] } {
   const ids = new Set(panel.memberIds ?? [])
@@ -391,16 +659,14 @@ export function relayoutPanelContents(
   const pad = Math.max(2, opts?.panelPad ?? 4)
   const grid = opts?.grid ?? ORGANIZE_GRID
   const dense = opts?.mode === 'dense'
-  // Default: Name A→Z (user preference for Auto-layout inside panel)
+  // Default: Name A→Z for shelf mode; dense free-flow matches sheet multi-order
   const sort = panel.contentSort ?? 'name-asc'
-  // N-gon = denser multi-order seeds; both shapes honor gap knobs
+  // Shape only affects chrome (rect AABB vs n-gon stepped) — packing is shared
   const chromeShape = opts?.panelShape ?? panel.shape ?? 'rect'
-  const hardTetris = chromeShape === 'polygon'
-  const packSeed =
-    opts?.packSeed ??
-    (dense ? takePanelPackSeed(panel.id) : 0)
-  const seedTable = hardTetris ? NGON_PACK_SEEDS : RECT_PACK_SEEDS
-  const seedCfg = seedTable[packSeed % seedTable.length]!
+  // Dense default: always densest multi-order (seed 0). Optional packSeed for tests.
+  const packSeed = opts?.packSeed ?? 0
+  const seedCfg = SHEET_MATCH_SEEDS[packSeed % SHEET_MATCH_SEEDS.length]!
+  const folders = opts?.folders ?? []
 
   const allPanels = opts?.allPanels ?? []
   const hasNestedStroke = allPanels.some(
@@ -426,16 +692,20 @@ export function relayoutPanelContents(
   members = sortCards(members, sort, panel.memberIds)
   if (members.length === 0) return { items, panel }
 
-  // Target content box from current panel (dense: use panel as budget)
-  const contentX = panel.x + pad
-  const contentY = panel.y + pad + titleBand
-  const contentW = Math.max(
-    48,
-    panel.width - pad * 2,
-    ...members.map((m) => m.width),
-  )
-  const contentH = Math.max(48, panel.height - pad * 2 - titleBand)
-  void contentH
+  // Pack inside the *incoming* panel box. pinW/pinH are locked as the
+  // horizontal (and vertical) budget for this click — never shrink the root
+  // frame on rebuild (repeated clicks were walking the right edge left:
+  // pack → shrink-wrap to content → narrower pack next time).
+  const pinX = panel.x
+  const pinY = panel.y
+  const pinW = Math.max(48, panel.width)
+  const pinH = Math.max(48, panel.height)
+  const contentX = pinX + pad
+  const contentY = pinY + pad + titleBand
+  const packLimitRight = pinX + pinW - pad
+  // Available content width = panel interior only (not max(card) which can
+  // inflate the pack band beyond the panel, then shrink-wrap fights it).
+  const contentW = Math.max(48, packLimitRight - contentX)
 
   type Place = { id: string; x: number; y: number; w: number; h: number }
   let places: Place[] = []
@@ -471,6 +741,38 @@ export function relayoutPanelContents(
     nameDir,
   )
 
+  // Dense mode: same refinePlacedCards brain as full-sheet auto-layout
+  // (densify / repackLeaf / repackGroupsInParents / block gaps), scoped to
+  // this panel. Custom pixel/rigid packers repeatedly failed on stack/overlap.
+  if (dense) {
+    return relayoutPanelDenseSheetParity({
+      items,
+      panel,
+      members,
+      memberIds: ids,
+      folders,
+      allPanels,
+      pinX,
+      pinY,
+      pinW,
+      pinH,
+      contentX,
+      contentY,
+      packLimitRight,
+      contentW,
+      pad,
+      grid,
+      blockGapPx,
+      l2PanelGapPx,
+      l1GapPx: gap,
+      chromeShape,
+      titleBand,
+      orderedLeaves,
+      level,
+      hasNestedStroke,
+    })
+  }
+
   const packShelfInBox = (
     group: CanvasItem[],
     ox: number,
@@ -504,37 +806,35 @@ export function relayoutPanelContents(
     }
   }
 
-  // Coarse free-flow cells (nearest cell; small px → 0; pixel pass below)
-  // Card free-flow gap from blockGap (rect + n-gon both honor this)
-  const cardGapCells = gapPxToCells(blockGapPx, grid)
-  // L2 sibling frames: user gap + pad only (title reserved inside chrome)
-  const leafGapCells = hasNestedStroke
-    ? gapPxToCells(l2PanelGapPx + pad * 2, grid)
-    : gapPxToCells(l2PanelGapPx, grid)
-  // N-gon prefers full width seeds; rect may try narrower mosaics
-  const packBoxW = hardTetris
-    ? contentW
-    : Math.max(
-        48,
-        Math.round(contentW * Math.min(1, Math.max(0.5, seedCfg.widthFrac))),
-      )
+  // ── Dense pack: pixel skyline (true stacking) ─────────────────────────
+  // Cell free-flow wasted up to almost one grid cell per card edge so short
+  // cards could not nest beside tall ones. Pixel skyline stacks with exact
+  // blockGap and multi-order densest placement.
+  const packBoxW = Math.max(48, contentW)
   const orderOpts = {
-    multiOrder: seedCfg.multiOrder,
+    multiOrder: true as const,
     orders: seedCfg.orders,
   }
+  void hasNestedStroke
 
   if (dense && orderedLeaves.length >= 1) {
-    // Hierarchical: free-flow cards inside each leaf (hard tetris gaps for n-gon),
-    // then packClusterTight leaf boxes — mirrors sheet hierarchical n-gon pack.
+    // Hierarchical L1⊃L2: pack cards inside each leaf, then pack *chrome
+    // footprints* (title + pad) so L2 frames never overlap (screenshot
+    // 120437: Molecular Biology over Biochemistry when only content AABBs
+    // were packed flush).
     type LeafPack = {
       places: Place[]
-      cw: number
-      ch: number
-      w: number
-      h: number
+      /** Chrome footprint width/height used for inter-leaf packing */
+      footW: number
+      footH: number
+      memberIds: string[]
     }
     const leaves: LeafPack[] = []
     const claimed = new Set<string>()
+    const titlePx = NESTED_TITLE_BAND_PX
+    // Max content width inside an L2 chrome: panel band minus L2 side pads
+    const leafContentMaxW = Math.max(48, packBoxW - pad * 2)
+
     for (const child of orderedLeaves) {
       const group = sortCards(
         members.filter((m) => child.memberIds?.includes(m.id)),
@@ -543,28 +843,24 @@ export function relayoutPanelContents(
       )
       if (group.length === 0) continue
       for (const m of group) claimed.add(m.id)
-      const local = packCardsDenseFreeFlow(
+      const local = packCardsDenseBestWidth(
         group,
         0,
         0,
-        packBoxW,
-        grid,
-        cardGapCells,
+        leafContentMaxW,
+        blockGapPx,
         orderOpts,
       )
-      // Nested L2 title band (n-gon chrome hugs cards + this strip)
-      const titlePx = NESTED_TITLE_BAND_PX
-      const w = local.width
-      const h = local.height + titlePx
+      // Cards relative to chrome top-left: inset by pad, below title band
       leaves.push({
         places: local.out.map((p) => ({
           ...p,
-          y: p.y + titlePx,
+          x: p.x + pad,
+          y: p.y + titlePx + pad,
         })),
-        w,
-        h,
-        cw: Math.max(1, Math.ceil(w / grid)),
-        ch: Math.max(1, Math.ceil(h / grid)),
+        footW: local.width + pad * 2,
+        footH: local.height + titlePx + pad * 2,
+        memberIds: group.map((m) => m.id),
       })
     }
     const rest = sortCards(
@@ -573,40 +869,48 @@ export function relayoutPanelContents(
       panel.memberIds,
     )
     if (rest.length > 0) {
-      const local = packCardsDenseFreeFlow(
+      const local = packCardsDenseBestWidth(
         rest,
         0,
         0,
-        packBoxW,
-        grid,
-        cardGapCells,
+        leafContentMaxW,
+        blockGapPx,
         orderOpts,
       )
       leaves.push({
-        places: local.out,
-        w: local.width,
-        h: local.height,
-        cw: Math.max(1, Math.ceil(local.width / grid)),
-        ch: Math.max(1, Math.ceil(local.height / grid)),
+        places: local.out.map((p) => ({
+          ...p,
+          x: p.x + pad,
+          y: p.y + pad,
+        })),
+        footW: local.width + pad * 2,
+        footH: local.height + pad * 2,
+        memberIds: rest.map((m) => m.id),
       })
     }
     if (leaves.length > 0) {
-      const pageCols = Math.max(1, Math.floor(contentW / grid))
-      const tight = packClusterTight(
-        leaves.map((L, i) => ({
-          index: i,
-          cw: Math.min(pageCols, L.cw),
-          ch: L.ch,
-        })),
-        pageCols,
-        leafGapCells,
+      // Pixel pack leaf chrome footprints with L2 gap (not cell packClusterTight)
+      const leafGap = Math.max(0, l2PanelGapPx)
+      const footRects = leaves.map((L, i) => ({
+        id: `leaf-${i}`,
+        w: L.footW,
+        h: L.footH,
+      }))
+      const footPack = packRectsPixelSkyline(
+        footRects,
+        0,
+        0,
+        packBoxW,
+        leafGap,
+        { multiOrder: true },
       )
+      const footById = new Map(footPack.out.map((p) => [p.id, p]))
       const abs: Place[] = []
       for (let i = 0; i < leaves.length; i++) {
         const leaf = leaves[i]!
-        const p = tight.pos.get(i) ?? { c: 0, r: 0 }
-        const baseX = contentX + p.c * grid
-        const baseY = contentY + p.r * grid
+        const fp = footById.get(`leaf-${i}`)
+        const baseX = contentX + (fp?.x ?? 0)
+        const baseY = contentY + (fp?.y ?? 0)
         for (const pl of leaf.places) {
           abs.push({
             id: pl.id,
@@ -620,71 +924,140 @@ export function relayoutPanelContents(
       places = abs
     }
   } else if (dense) {
-    // Flat dense free-flow — n-gon uses hard multi-order tetris at full width
-    const packed = packCardsDenseFreeFlow(
+    // Flat leaf: pixel skyline across full panel content width + block gap
+    const packed = packCardsPixelSkyline(
       members,
       contentX,
       contentY,
       packBoxW,
-      grid,
-      cardGapCells,
+      blockGapPx,
       orderOpts,
     )
     places = packed.out
   } else {
-    // Simple shelf (keep sizes) — contentSort path
     places = packShelfInBox(members, contentX, contentY, contentW).out
   }
 
   const byPlace = new Map(places.map((p) => [p.id, p]))
-  // Dense: move only — never rewrite card width/height (avoids shrink spiral)
   let nextItems = items.map((it) => {
     const p = byPlace.get(it.id)
     if (!p) return it
-    return {
-      ...it,
-      x: p.x,
-      y: p.y,
-    }
+    return { ...it, x: p.x, y: p.y }
   })
 
-  // Pixel-exact block gap among cards that share a leaf (nested L2 or flat)
-  if (blockGapPx > 0 && dense) {
-    const leafGroups: string[][] = []
-    if (orderedLeaves.length > 0) {
-      for (const leaf of orderedLeaves) {
-        if (leaf.memberIds?.length) leafGroups.push([...leaf.memberIds])
-      }
-    } else {
-      leafGroups.push([...ids])
+  const memberSet = new Set(panel.memberIds ?? [])
+  const contentLeft = contentX
+  const contentRightLimit = packLimitRight
+
+  // Soft clamp into band
+  nextItems = nextItems.map((it) => {
+    if (!memberSet.has(it.id) || it.hidden) return it
+    let x = it.x
+    let y = it.y
+    if (x < contentLeft) x = contentLeft
+    if (y < contentY) y = contentY
+    if (
+      x + it.width > contentRightLimit &&
+      it.width <= contentRightLimit - contentLeft
+    ) {
+      x = Math.max(contentLeft, contentRightLimit - it.width)
     }
+    return { ...it, x: Math.round(x), y: Math.round(y) }
+  })
+
+  // Build leaf member groups once (L2 clusters or whole panel)
+  const leafGroups: string[][] = []
+  if (orderedLeaves.length > 0) {
+    for (const leaf of orderedLeaves) {
+      if (leaf.memberIds?.length) leafGroups.push([...leaf.memberIds])
+    }
+  } else {
+    leafGroups.push([...ids])
+  }
+
+  // Block gap inside each leaf (per-leaf top floor — never pull to L1 top)
+  if (dense) {
     for (const leafIds of leafGroups) {
       if (leafIds.length < 2) continue
-      // Synthetic folder map so separateLeafCardsByGap can group
-      const synthFolders: FolderRef[] = [
-        { id: '__leaf__', order: 0, name: 'leaf', parentId: null },
-      ]
-      const withFolder = nextItems.map((it) =>
-        leafIds.includes(it.id) ? { ...it, folderId: '__leaf__' } : it,
-      )
-      const separated = separateLeafCardsByGap(withFolder, synthFolders, 1, {
-        grid,
-        minGapPx: blockGapPx,
-        contentRight: contentX + contentW,
-      })
-      const sepById = new Map(separated.map((i) => [i.id, i]))
-      nextItems = nextItems.map((it) => {
-        if (!leafIds.includes(it.id)) return it
-        const s = sepById.get(it.id)
-        return s ? { ...it, x: s.x, y: s.y } : it
+      const groupYs = nextItems
+        .filter((i) => leafIds.includes(i.id) && !i.hidden)
+        .map((i) => i.y)
+      const leafTop =
+        groupYs.length > 0
+          ? Math.max(contentY, Math.min(...groupYs))
+          : contentY
+      nextItems = separateNeighborsByGap(nextItems, leafIds, blockGapPx, {
+        left: contentLeft,
+        right: contentRightLimit,
+        top: leafTop,
       })
     }
   }
 
+  // Hierarchical: separate + gravity-compact L2 clusters as rigid bodies.
+  // Hard right wall = panel content edge. Prefer side-by-side when it fits
+  // (fill horizontal budget); only stack when it does not (screenshot 125333:
+  // preferVertical-first left a huge empty right interior).
+  if (dense && orderedLeaves.length >= 2) {
+    nextItems = resolveRigidLeafClusters(nextItems, leafGroups, {
+      contentLeft,
+      contentTop: contentY,
+      contentRight: contentRightLimit,
+      pad,
+      titlePx: NESTED_TITLE_BAND_PX,
+      gapPx: Math.max(0, l2PanelGapPx),
+      preferVertical: false,
+    })
+  }
+
+  // Hard clamp cards into the original panel content band (no right overflow)
+  nextItems = clampMembersToBand(nextItems, memberSet, {
+    left: contentLeft,
+    right: contentRightLimit,
+    top: contentY,
+  })
+
   const moved = nextItems.filter((i) => ids.has(i.id) && !i.hidden)
   if (moved.length === 0) return { items: nextItems, panel }
 
-  const byId = new Map(nextItems.map((i) => [i.id, i]))
+  // Pin content under fixed chrome origin (translate only — keeps density)
+  {
+    const minMemX = Math.min(...moved.map((m) => m.x))
+    const minMemY = Math.min(...moved.map((m) => m.y))
+    const dx = Math.round(contentX - minMemX)
+    const dy = Math.round(contentY - minMemY)
+    if (dx !== 0 || dy !== 0) {
+      nextItems = nextItems.map((it) =>
+        memberSet.has(it.id)
+          ? { ...it, x: Math.round(it.x + dx), y: Math.round(it.y + dy) }
+          : it,
+      )
+    }
+  }
+  nextItems = clampMembersToBand(nextItems, memberSet, {
+    left: contentLeft,
+    right: contentRightLimit,
+    top: contentY,
+  })
+
+  // Compact again after pin — fill voids, stay in-band
+  if (dense && orderedLeaves.length >= 2) {
+    nextItems = resolveRigidLeafClusters(nextItems, leafGroups, {
+      contentLeft,
+      contentTop: contentY,
+      contentRight: contentRightLimit,
+      pad,
+      titlePx: NESTED_TITLE_BAND_PX,
+      gapPx: Math.max(0, l2PanelGapPx),
+      preferVertical: false,
+    })
+    nextItems = clampMembersToBand(nextItems, memberSet, {
+      left: contentLeft,
+      right: contentRightLimit,
+      top: contentY,
+    })
+  }
+
   const forceShape = chromeShape
   const chromeOpts = {
     grid,
@@ -692,22 +1065,10 @@ export function relayoutPanelContents(
     allPanels,
     forceShape: forceShape as 'rect' | 'polygon',
   }
-
-  // Ensure default contentSort is persisted; apply chosen chrome shape
   const panelWithSort: LayoutPanel = {
     ...panel,
     contentSort: panel.contentSort ?? 'name-asc',
     shape: forceShape,
-  }
-
-  const nextPanel = rebuildPanelChromeFromMembers(
-    panelWithSort,
-    byId,
-    chromeOpts,
-  )
-
-  if (!allPanels.length) {
-    return { items: nextItems, panel: nextPanel }
   }
 
   const nestedIds = new Set<string>()
@@ -716,182 +1077,112 @@ export function relayoutPanelContents(
     if (!p.memberIds?.length) continue
     if (p.memberIds.every((id) => ids.has(id))) nestedIds.add(p.id)
   }
-
   const nestedSorted = allPanels
     .filter((p) => nestedIds.has(p.id))
     .sort((a, b) => (b.hierarchyLevel ?? 1) - (a.hierarchyLevel ?? 1))
 
-  const rebuilt = new Map<string, LayoutPanel>()
-  rebuilt.set(panel.id, nextPanel)
-  for (const child of nestedSorted) {
-    rebuilt.set(
-      child.id,
-      rebuildPanelChromeFromMembers(child, byId, {
-        ...chromeOpts,
-        allPanels: allPanels.map((p) => rebuilt.get(p.id) ?? p),
-      }),
-    )
-  }
-
-  /**
-   * Rebuild parent chrome from children.
-   * N-gon: union of child frames as blocks (stepped L) — not a solid AABB
-   * (that wiped n-gon and looked like rectangle packing).
-   * Rect: solid AABB hug of children.
-   */
-  const rebuildParentFromChildren = (
-    itemsNow: CanvasItem[],
-    childPanels: LayoutPanel[],
-  ): LayoutPanel => {
+  const rebuildAll = (itemsNow: CanvasItem[]): LayoutPanel[] => {
     const byIdNow = new Map(itemsNow.map((i) => [i.id, i]))
-    const members = (panel.memberIds ?? [])
-      .map((id) => byIdNow.get(id))
-      .filter((m): m is CanvasItem => m != null && !m.hidden)
-    if (members.length === 0) return panelWithSort
-    const titleBand = exclusiveTitleBandPx(panelWithSort, [
-      panelWithSort,
-      ...childPanels,
-    ])
-    const strokedKids = childPanels.filter((c) => c.showStroke !== false)
-    if (forceShape === 'polygon' && strokedKids.length > 0) {
-      const chrome = chromeFromMembers(members, {
-        pad,
-        titleBand,
-        shape: 'polygon',
-        grid,
-        solidMode: 'blocks',
-        blocks: strokedKids.map((c) => ({
-          x: c.x,
-          y: c.y,
-          width: c.width,
-          height: c.height,
-        })),
-      })
-      return {
-        ...panelWithSort,
-        ...chrome,
-        shape: 'polygon',
-        showStroke: panelWithSort.showStroke,
-        id: panelWithSort.id,
-        folderId: panelWithSort.folderId,
-        title: panelWithSort.title,
-        showTitle: panelWithSort.showTitle,
-        contentSort: panelWithSort.contentSort,
-        memberIds: panelWithSort.memberIds,
-        accent: panelWithSort.accent,
-        zIndex: panelWithSort.zIndex,
-        hierarchyLevel: panelWithSort.hierarchyLevel,
-      }
-    }
-    // Rect (or no stroked kids): solid AABB around members + pad/title
-    return rebuildPanelChromeFromMembers(panelWithSort, byIdNow, {
-      ...chromeOpts,
-      allPanels: [panelWithSort, ...childPanels],
-    })
-  }
-
-  if (nestedSorted.length > 0) {
-    const kids = nestedSorted
-      .map((c) => rebuilt.get(c.id)!)
-      .filter(Boolean)
-    rebuilt.set(panel.id, rebuildParentFromChildren(nextItems, kids))
-  }
-
-  // ── Clamp members into original panel content box (no right overflow) ──
-  // Pack band is [pinX+pad, pinX+origW-pad]. Grow height only, never width.
-  const pinX = panel.x
-  const pinY = panel.y
-  const pinW = panel.width
-  const contentLeft = pinX + pad
-  const contentRight = pinX + pinW - pad
-  const memberSet = new Set(panel.memberIds ?? [])
-  nextItems = nextItems.map((it) => {
-    if (!memberSet.has(it.id) || it.hidden) return it
-    let x = it.x
-    let y = it.y
-    const w = it.width
-    if (x + w > contentRight) x = contentRight - w
-    if (x < contentLeft) x = contentLeft
-    return { ...it, x: Math.round(x), y: Math.round(y) }
-  })
-  {
-    const byIdClamp = new Map(nextItems.map((i) => [i.id, i]))
-    for (const id of nestedIds) {
-      const prev = rebuilt.get(id)
-      if (!prev) continue
+    const rebuilt = new Map<string, LayoutPanel>()
+    for (const child of nestedSorted) {
       rebuilt.set(
-        id,
-        rebuildPanelChromeFromMembers(prev, byIdClamp, {
+        child.id,
+        rebuildPanelChromeFromMembers(child, byIdNow, {
           ...chromeOpts,
           allPanels: allPanels.map((p) => rebuilt.get(p.id) ?? p),
         }),
       )
     }
-    if (nestedSorted.length > 0) {
-      const kids = nestedSorted
-        .map((c) => rebuilt.get(c.id)!)
-        .filter(Boolean)
-      rebuilt.set(panel.id, rebuildParentFromChildren(nextItems, kids))
-    } else {
-      rebuilt.set(
-        panel.id,
-        rebuildPanelChromeFromMembers(panelWithSort, byIdClamp, chromeOpts),
-      )
+    const kids = nestedSorted
+      .map((c) => rebuilt.get(c.id)!)
+      .filter(Boolean)
+    const parent =
+      kids.length > 0
+        ? rebuildPanelChromeFromMembers(panelWithSort, byIdNow, {
+            ...chromeOpts,
+            allPanels: [panelWithSort, ...kids],
+          })
+        : rebuildPanelChromeFromMembers(panelWithSort, byIdNow, chromeOpts)
+    // Hug packed content from pinned origin. Width floors at the *pack band*
+    // used this click (pinW) only when content nearly fills it — otherwise
+    // shrink-wrap so we don't leave a huge empty right (screenshot 125333).
+    // Next click re-measures from this chrome, so packing can reflow into the
+    // true used width without a one-way right-edge walk.
+    const memNow = itemsNow.filter(
+      (i) => memberSet.has(i.id) && !i.hidden,
+    )
+    const contentMaxX =
+      memNow.length > 0
+        ? Math.max(...memNow.map((i) => i.x + i.width))
+        : pinX + pinW
+    const contentMaxY =
+      memNow.length > 0
+        ? Math.max(...memNow.map((i) => i.y + i.height))
+        : pinY + pinH
+    const needW = Math.max(48, Math.round(contentMaxX - pinX + pad))
+    const needH = Math.round(contentMaxY - pinY + pad)
+    // Pack budget is pinW (hard max). Hug content when it does not fill the
+    // band; keep pinW when content nearly spans it (stable re-clicks).
+    const fillRatio = needW / Math.max(1, pinW)
+    const lockedW =
+      fillRatio >= 0.85 ? pinW : Math.min(pinW, Math.max(needW, parent.width))
+    const locked: LayoutPanel = {
+      ...parent,
+      x: pinX,
+      y: pinY,
+      width: Math.max(48, Math.min(pinW, lockedW)),
+      height: Math.max(pinH, needH, parent.height),
+    }
+    if (kids.length > 0 || locked.shape !== 'polygon') {
+      locked.runs = [
+        {
+          x: locked.x,
+          y: locked.y,
+          width: locked.width,
+          height: locked.height,
+        },
+      ]
+      locked.outlinePath = undefined
+    }
+    rebuilt.set(panel.id, locked)
+    return allPanels.map((p) => rebuilt.get(p.id) ?? p)
+  }
+
+  const lockRootFrame = (p: LayoutPanel): LayoutPanel => {
+    // Never exceed the pack budget to the right; never walk origin.
+    // Allow shrink-wrap below pinW when content is clearly narrower (empty
+    // right interior); never grow past pinW (horizontal overflow).
+    const w = Math.min(pinW, Math.max(48, p.width))
+    const h = Math.max(pinH, p.height)
+    const runs =
+      p.runs?.length && (p.shape !== 'polygon' || nestedIds.size > 0)
+        ? [{ x: pinX, y: pinY, width: w, height: h }]
+        : p.runs
+    return {
+      ...p,
+      x: pinX,
+      y: pinY,
+      width: w,
+      height: h,
+      ...(runs ? { runs } : {}),
     }
   }
 
-  let panelsOut = allPanels.map((p) => rebuilt.get(p.id) ?? p)
+  let panelsOut = allPanels.length
+    ? rebuildAll(nextItems)
+    : [
+        lockRootFrame(
+          rebuildPanelChromeFromMembers(
+            panelWithSort,
+            new Map(nextItems.map((i) => [i.id, i])),
+            chromeOpts,
+          ),
+        ),
+      ]
 
-  // ── Pin origin once: shift cluster so root top-left stays at (pinX, pinY)
-  const pinCluster = (
-    itemsIn: CanvasItem[],
-    panelsIn: LayoutPanel[],
-  ): { items: CanvasItem[]; panels: LayoutPanel[] } => {
-    const root = panelsIn.find((p) => p.id === panel.id)
-    if (!root) return { items: itemsIn, panels: panelsIn }
-    const dx = Math.round(pinX - root.x)
-    const dy = Math.round(pinY - root.y)
-    if (dx === 0 && dy === 0) return { items: itemsIn, panels: panelsIn }
-    const moved = itemsIn.map((it) => {
-      if (!memberSet.has(it.id)) return it
-      return { ...it, x: Math.round(it.x + dx), y: Math.round(it.y + dy) }
-    })
-    // Also clamp after pin so we don't slide past right when correcting left
-    const clamped = moved.map((it) => {
-      if (!memberSet.has(it.id) || it.hidden) return it
-      let x = it.x
-      if (x + it.width > contentRight) x = contentRight - it.width
-      if (x < contentLeft) x = contentLeft
-      return { ...it, x: Math.round(x) }
-    })
-    const byIdP = new Map(clamped.map((i) => [i.id, i]))
-    const nextP = panelsIn.map((p) => {
-      if (p.id !== panel.id && !nestedIds.has(p.id)) return p
-      return rebuildPanelChromeFromMembers(p, byIdP, {
-        ...chromeOpts,
-        allPanels: panelsIn,
-      })
-    })
-    // Parent from children again after pin
-    if (nestedIds.size > 0) {
-      const kids = nextP.filter((p) => nestedIds.has(p.id))
-      const parent = rebuildParentFromChildren(clamped, kids)
-      return {
-        items: clamped,
-        panels: nextP.map((p) => (p.id === panel.id ? parent : p)),
-      }
-    }
-    return { items: clamped, panels: nextP }
-  }
-
-  {
-    const pinned = pinCluster(nextItems, panelsOut)
-    nextItems = pinned.items
-    panelsOut = pinned.panels
-  }
-
-  // Enforce only inside the edited cluster — honor L2 (and L1) gap knobs
+  // Title clearance + L2 sibling separation via frame geometry
   const scopePanelIds = new Set<string>([panel.id, ...nestedIds])
+  // Pack/enforce band = original panel content width (hard right wall)
   const fixed = enforcePanelLayoutInvariants(nextItems, panelsOut, {
     grid,
     panelPad: pad,
@@ -899,16 +1190,612 @@ export function relayoutPanelContents(
     l1GapPx: Math.max(0, gap),
     l2GapPx: Math.max(0, l2PanelGapPx),
     contentLeft,
-    contentRight,
+    contentRight: packLimitRight,
+    contentTop: pinY,
     scopePanelIds,
-    rootPanelId: panel.id,
+  })
+  nextItems = clampMembersToBand(fixed.items, memberSet, {
+    left: contentLeft,
+    right: packLimitRight,
+    top: contentY,
   })
 
-  // Final pin + clamp (enforce title-clear may shift y; never walk right)
-  const after = pinCluster(fixed.items, fixed.panels)
-  return {
-    items: after.items,
-    panel: after.panels.find((p) => p.id === panel.id) ?? nextPanel,
-    panels: after.panels,
+  // Final rigid cluster resolve — fill horizontal budget, hard right wall
+  if (dense && orderedLeaves.length >= 2) {
+    nextItems = resolveRigidLeafClusters(nextItems, leafGroups, {
+      contentLeft,
+      contentTop: contentY,
+      contentRight: packLimitRight,
+      pad,
+      titlePx: NESTED_TITLE_BAND_PX,
+      gapPx: Math.max(0, l2PanelGapPx),
+      preferVertical: false,
+    })
+    nextItems = clampMembersToBand(nextItems, memberSet, {
+      left: contentLeft,
+      right: packLimitRight,
+      top: contentY,
+    })
   }
+
+  // Re-pin top-left of whole cluster to content origin
+  {
+    const mem = nextItems.filter((i) => memberSet.has(i.id) && !i.hidden)
+    if (mem.length > 0) {
+      const minMemX = Math.min(...mem.map((m) => m.x))
+      const minMemY = Math.min(...mem.map((m) => m.y))
+      const dx = Math.round(contentX - minMemX)
+      const dy = Math.round(contentY - minMemY)
+      if (dx !== 0 || dy !== 0) {
+        nextItems = nextItems.map((it) =>
+          memberSet.has(it.id)
+            ? { ...it, x: Math.round(it.x + dx), y: Math.round(it.y + dy) }
+            : it,
+        )
+      }
+    }
+  }
+
+  // Block gaps one last time (per-leaf floor)
+  if (dense) {
+    for (const leafIds of leafGroups) {
+      if (leafIds.length < 2) continue
+      const groupYs = nextItems
+        .filter((i) => leafIds.includes(i.id) && !i.hidden)
+        .map((i) => i.y)
+      const leafTop =
+        groupYs.length > 0
+          ? Math.max(contentY, Math.min(...groupYs))
+          : contentY
+      nextItems = separateNeighborsByGap(nextItems, leafIds, blockGapPx, {
+        left: contentLeft,
+        right: contentRightLimit,
+        top: leafTop,
+      })
+    }
+  }
+
+  panelsOut = allPanels.length
+    ? rebuildAll(nextItems)
+    : [
+        lockRootFrame(
+          rebuildPanelChromeFromMembers(
+            panelWithSort,
+            new Map(nextItems.map((i) => [i.id, i])),
+            chromeOpts,
+          ),
+        ),
+      ]
+
+  // Final hard lock: origin + never-shrink width/height
+  panelsOut = panelsOut.map((p) =>
+    p.id === panel.id ? lockRootFrame(p) : p,
+  )
+
+  return {
+    items: nextItems,
+    panel: panelsOut.find((p) => p.id === panel.id) ?? panelWithSort,
+    panels: panelsOut,
+  }
+}
+
+/**
+ * Treat each leaf's cards as a rigid body. Separate chrome footprints
+ * (content AABB + title + pad) so frames never overlap, then gravity-compact
+ * up/left to fill skyline voids (screenshot 122251 empty pocket).
+ */
+function clampMembersToBand(
+  items: CanvasItem[],
+  memberSet: Set<string>,
+  band: { left: number; right: number; top: number },
+): CanvasItem[] {
+  return items.map((it) => {
+    if (!memberSet.has(it.id) || it.hidden) return it
+    let x = it.x
+    let y = it.y
+    if (x < band.left) x = band.left
+    if (y < band.top) y = band.top
+    if (it.width <= band.right - band.left) {
+      if (x + it.width > band.right) x = Math.max(band.left, band.right - it.width)
+    } else {
+      x = band.left
+    }
+    return { ...it, x: Math.round(x), y: Math.round(y) }
+  })
+}
+
+function resolveRigidLeafClusters(
+  items: CanvasItem[],
+  groups: string[][],
+  opts: {
+    contentLeft: number
+    contentTop: number
+    contentRight: number
+    pad: number
+    titlePx: number
+    gapPx: number
+    /** Prefer stacking below over expanding right (default true). */
+    preferVertical?: boolean
+  },
+): CanvasItem[] {
+  if (groups.length < 2) return items
+  const gap = Math.max(0, opts.gapPx)
+  const pad = Math.max(0, opts.pad)
+  const titlePx = Math.max(0, opts.titlePx)
+  const preferVertical = opts.preferVertical !== false
+  const next = items.map((i) => ({ ...i }))
+
+  type Cluster = {
+    ids: string[]
+    // chrome footprint
+    fx: number
+    fy: number
+    fw: number
+    fh: number
+  }
+
+  const build = (): Cluster[] => {
+    const list: Cluster[] = []
+    for (const ids of groups) {
+      const mem = next.filter((i) => ids.includes(i.id) && !i.hidden)
+      if (mem.length === 0) continue
+      const minX = Math.min(...mem.map((m) => m.x))
+      const minY = Math.min(...mem.map((m) => m.y))
+      const maxX = Math.max(...mem.map((m) => m.x + m.width))
+      const maxY = Math.max(...mem.map((m) => m.y + m.height))
+      // Match rebuildPanelChromeFromMembers: pad around cards + title above
+      list.push({
+        ids: mem.map((m) => m.id),
+        fx: minX - pad,
+        fy: minY - titlePx - pad,
+        fw: maxX - minX + pad * 2,
+        fh: maxY - minY + titlePx + pad * 2,
+      })
+    }
+    return list
+  }
+
+  const shiftCluster = (c: Cluster, dx: number, dy: number) => {
+    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return
+    for (const id of c.ids) {
+      const bi = next.findIndex((x) => x.id === id)
+      if (bi >= 0) {
+        next[bi] = {
+          ...next[bi]!,
+          x: Math.round(next[bi]!.x + dx),
+          y: Math.round(next[bi]!.y + dy),
+        }
+      }
+    }
+  }
+
+  // ── A: separate chrome footprints (no overlap + min stroke gap) ──
+  for (let pass = 0; pass < 16; pass++) {
+    const clusters = build().sort(
+      (a, b) => a.fy - b.fy || a.fx - b.fx || a.ids[0]!.localeCompare(b.ids[0]!),
+    )
+    let any = false
+    for (let i = 0; i < clusters.length; i++) {
+      for (let j = i + 1; j < clusters.length; j++) {
+        const a = clusters[i]!
+        const b = clusters[j]!
+        const xOl =
+          Math.min(a.fx + a.fw, b.fx + b.fw) - Math.max(a.fx, b.fx)
+        const yOl =
+          Math.min(a.fy + a.fh, b.fy + b.fh) - Math.max(a.fy, b.fy)
+        const xGap = Math.max(
+          0,
+          Math.max(a.fx - (b.fx + b.fw), b.fx - (a.fx + a.fw)),
+        )
+        const yGap = Math.max(
+          0,
+          Math.max(a.fy - (b.fy + b.fh), b.fy - (a.fy + a.fh)),
+        )
+        const tooCloseH = yOl > 1 && xGap < gap
+        const tooCloseV = xOl > 1 && yGap < gap
+        const hit = xOl > 0.5 && yOl > 0.5
+        if (!(hit || tooCloseH || tooCloseV)) continue
+
+        const stackBelow = () => {
+          const top = a.fy <= b.fy ? a : b
+          const bot = a.fy <= b.fy ? b : a
+          const need = top.fy + top.fh + gap - bot.fy
+          if (need > 0.5) {
+            shiftCluster(bot, 0, Math.ceil(need))
+            return true
+          }
+          return false
+        }
+        const pushRight = () => {
+          const left = a.fx <= b.fx ? a : b
+          const right = a.fx <= b.fx ? b : a
+          const need = left.fx + left.fw + gap - right.fx
+          if (need <= 0.5) return false
+          // Only push right if the whole chrome footprint still fits in band
+          const nx = right.fx + need
+          if (nx + right.fw > opts.contentRight + 0.5) return false
+          shiftCluster(right, Math.ceil(need), 0)
+          return true
+        }
+
+        // Horizontal-first when it fits in-band (fill width); else stack.
+        // preferVertical forces stack-first (rarely needed).
+        if (preferVertical) {
+          if (tooCloseV || hit || tooCloseH) {
+            if (stackBelow() || pushRight()) any = true
+          }
+        } else {
+          if (tooCloseH || (hit && yOl > xOl)) {
+            if (pushRight() || stackBelow()) any = true
+          } else if (tooCloseV || hit) {
+            if (stackBelow() || pushRight()) any = true
+          }
+        }
+      }
+    }
+    if (!any) break
+  }
+
+  // ── B: gravity compact — pull each cluster up then left into voids ──
+  const clusterCollides = (
+    c: Cluster,
+    fx: number,
+    fy: number,
+    others: Cluster[],
+  ) => {
+    const probe = { ...c, fx, fy }
+    for (const o of others) {
+      if (o.ids[0] === c.ids[0]) continue
+      const xOl =
+        Math.min(probe.fx + probe.fw, o.fx + o.fw) - Math.max(probe.fx, o.fx)
+      const yOl =
+        Math.min(probe.fy + probe.fh, o.fy + o.fh) - Math.max(probe.fy, o.fy)
+      // Hard overlap
+      if (xOl > 0.5 && yOl > 0.5) return true
+      // Side-by-side too close
+      if (yOl > 1) {
+        const xG = Math.max(
+          0,
+          Math.max(probe.fx - (o.fx + o.fw), o.fx - (probe.fx + probe.fw)),
+        )
+        if (xG < gap) return true
+      }
+      // Stacked too close
+      if (xOl > 1) {
+        const yG = Math.max(
+          0,
+          Math.max(probe.fy - (o.fy + o.fh), o.fy - (probe.fy + probe.fh)),
+        )
+        if (yG < gap) return true
+      }
+    }
+    return false
+  }
+
+  for (let sweep = 0; sweep < 12; sweep++) {
+    let any = false
+    let clusters = build()
+    // Up (bottom-most first)
+    clusters = clusters.sort((a, b) => b.fy - a.fy || a.fx - b.fx)
+    for (const c of clusters) {
+      const others = build()
+      let lo = opts.contentTop
+      let hi = c.fy
+      let best = c.fy
+      while (lo <= hi) {
+        const mid = Math.floor((lo + hi) / 2)
+        if (!clusterCollides(c, c.fx, mid, others)) {
+          best = mid
+          hi = mid - 1
+        } else lo = mid + 1
+      }
+      const dy = best - c.fy
+      if (dy < -0.5) {
+        shiftCluster(c, 0, dy)
+        any = true
+      }
+    }
+    // Left (right-most first)
+    clusters = build().sort((a, b) => b.fx - a.fx || a.fy - b.fy)
+    for (const c of clusters) {
+      const others = build()
+      let lo = opts.contentLeft
+      let hi = c.fx
+      let best = c.fx
+      while (lo <= hi) {
+        const mid = Math.floor((lo + hi) / 2)
+        if (
+          mid + c.fw <= opts.contentRight + 0.5 &&
+          !clusterCollides(c, mid, c.fy, others)
+        ) {
+          best = mid
+          hi = mid - 1
+        } else lo = mid + 1
+      }
+      const dx = best - c.fx
+      if (dx < -0.5) {
+        shiftCluster(c, dx, 0)
+        any = true
+      }
+    }
+    if (!any) break
+  }
+
+  return next
+}
+
+/**
+ * Open exact minGap between neighbors, then compact left/up so free-flow cell
+ * snap air collapses. Keeps skyline topology; does not shelf-rebuild.
+ */
+function separateNeighborsByGap(
+  items: CanvasItem[],
+  memberIds: string[],
+  minGapPx: number,
+  band: { left: number; right: number; top: number },
+): CanvasItem[] {
+  const minGap = Math.max(0, minGapPx)
+  const idSet = new Set(memberIds)
+  const next = items.map((i) => ({ ...i }))
+
+  const live = () =>
+    next
+      .filter((i) => idSet.has(i.id) && !i.hidden)
+      .sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id))
+
+  const setPos = (id: string, x: number, y: number) => {
+    const bi = next.findIndex((t) => t.id === id)
+    if (bi >= 0) next[bi] = { ...next[bi]!, x: Math.round(x), y: Math.round(y) }
+  }
+
+  // Soft left/top
+  for (const it of live()) {
+    let x = it.x
+    let y = it.y
+    if (x < band.left) x = band.left
+    if (y < band.top) y = band.top
+    if (x !== it.x || y !== it.y) setPos(it.id, x, y)
+  }
+
+  // ── Open gaps that are too tight ──
+  for (let pass = 0; pass < 12; pass++) {
+    const list = live()
+    let any = false
+    for (let i = 0; i < list.length; i++) {
+      for (let j = i + 1; j < list.length; j++) {
+        const A = next.find((x) => x.id === list[i]!.id)!
+        const B = next.find((x) => x.id === list[j]!.id)!
+        const yOverlap =
+          Math.min(A.y + A.height, B.y + B.height) - Math.max(A.y, B.y)
+        const xOverlap =
+          Math.min(A.x + A.width, B.x + B.width) - Math.max(A.x, B.x)
+        const xGap = Math.max(
+          0,
+          Math.max(A.x - (B.x + B.width), B.x - (A.x + A.width)),
+        )
+        const yGap = Math.max(
+          0,
+          Math.max(A.y - (B.y + B.height), B.y - (A.y + A.height)),
+        )
+
+        if (yOverlap > 4 && xGap < minGap) {
+          const left = A.x <= B.x ? A : B
+          const rightC = A.x <= B.x ? B : A
+          const need = left.x + left.width + minGap - rightC.x
+          if (need > 0.5) {
+            const nx = Math.round(rightC.x + need)
+            if (nx + rightC.width <= band.right + 0.5) {
+              setPos(rightC.id, nx, rightC.y)
+              any = true
+            } else {
+              setPos(
+                rightC.id,
+                Math.max(
+                  band.left,
+                  Math.min(left.x, band.right - rightC.width),
+                ),
+                left.y + left.height + minGap,
+              )
+              any = true
+            }
+            continue
+          }
+        }
+
+        if (xOverlap > 4 && yGap < minGap) {
+          const top = A.y <= B.y ? A : B
+          const bot = A.y <= B.y ? B : A
+          const needY = top.y + top.height + minGap - bot.y
+          if (needY > 0.5) {
+            setPos(bot.id, bot.x, bot.y + needY)
+            any = true
+          }
+          continue
+        }
+
+        if (xOverlap > 0.5 && yOverlap > 0.5) {
+          const top = A.y <= B.y ? A : B
+          const bot = A.y <= B.y ? B : A
+          const needY = top.y + top.height + minGap - bot.y
+          if (needY > 0.5) {
+            setPos(bot.id, bot.x, bot.y + Math.max(needY, minGap))
+            any = true
+          }
+        }
+      }
+    }
+    if (!any) break
+  }
+
+  // ── Compact left then up (close free-flow cell voids, keep minGap) ──
+  const collides = (
+    id: string,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+  ): boolean => {
+    for (const o of live()) {
+      if (o.id === id) continue
+      const xOl = Math.min(x + w, o.x + o.width) - Math.max(x, o.x)
+      const yOl = Math.min(y + h, o.y + o.height) - Math.max(y, o.y)
+      if (xOl > 0.5 && yOl > 0.5) return true
+      // too-close horizontal neighbor
+      if (yOl > 4) {
+        const gap = Math.max(0, Math.max(x - (o.x + o.width), o.x - (x + w)))
+        if (gap < minGap - 0.5) return true
+      }
+      // too-close vertical neighbor
+      if (xOl > 4) {
+        const gap = Math.max(0, Math.max(y - (o.y + o.height), o.y - (y + h)))
+        if (gap < minGap - 0.5) return true
+      }
+    }
+    return false
+  }
+
+  for (let pass = 0; pass < 8; pass++) {
+    let any = false
+    // Pull left (rightmost first so they slide toward left neighbors)
+    for (const c of [...live()].sort((a, b) => b.x - a.x || a.y - b.y)) {
+      let lo = band.left
+      let hi = c.x
+      let best = c.x
+      while (lo <= hi) {
+        const mid = Math.floor((lo + hi) / 2)
+        if (!collides(c.id, mid, c.y, c.width, c.height)) {
+          best = mid
+          hi = mid - 1
+        } else {
+          lo = mid + 1
+        }
+      }
+      if (best < c.x - 0.5) {
+        setPos(c.id, best, c.y)
+        any = true
+      }
+    }
+    // Pull up (bottom-most first)
+    for (const c of [...live()].sort((a, b) => b.y - a.y || a.x - b.x)) {
+      let lo = band.top
+      let hi = c.y
+      let best = c.y
+      while (lo <= hi) {
+        const mid = Math.floor((lo + hi) / 2)
+        if (!collides(c.id, c.x, mid, c.width, c.height)) {
+          best = mid
+          hi = mid - 1
+        } else {
+          lo = mid + 1
+        }
+      }
+      if (best < c.y - 0.5) {
+        setPos(c.id, c.x, best)
+        any = true
+      }
+    }
+    if (!any) break
+  }
+
+  return next.map((it) => {
+    if (!idSet.has(it.id) || it.hidden) return it
+    let x = it.x
+    let y = it.y
+    if (x < band.left) x = band.left
+    if (y < band.top) y = band.top
+    if (x + it.width > band.right && it.width <= band.right - band.left) {
+      x = Math.max(band.left, band.right - it.width)
+    }
+    return { ...it, x: Math.round(x), y: Math.round(y) }
+  })
+}
+
+/**
+ * Push leaf card-clusters apart so content AABBs honor minGap (for L2 frame air).
+ */
+function separateLeafClusterAabbs(
+  items: CanvasItem[],
+  groups: string[][],
+  minGapPx: number,
+  contentRight: number,
+): CanvasItem[] {
+  if (groups.length < 2 || minGapPx < 0) return items
+  const next = items.map((i) => ({ ...i }))
+  const byId = () => new Map(next.map((i) => [i.id, i]))
+
+  type Box = {
+    ids: string[]
+    minX: number
+    minY: number
+    maxX: number
+    maxY: number
+  }
+  const boxes = (): Box[] => {
+    const map = byId()
+    return groups
+      .map((ids) => {
+        const mem = ids
+          .map((id) => map.get(id))
+          .filter((m): m is CanvasItem => m != null && !m.hidden)
+        if (mem.length === 0) return null
+        return {
+          ids,
+          minX: Math.min(...mem.map((m) => m.x)),
+          minY: Math.min(...mem.map((m) => m.y)),
+          maxX: Math.max(...mem.map((m) => m.x + m.width)),
+          maxY: Math.max(...mem.map((m) => m.y + m.height)),
+        }
+      })
+      .filter(Boolean) as Box[]
+  }
+
+  for (let pass = 0; pass < 6; pass++) {
+    const list = boxes().sort((a, b) => a.minY - b.minY || a.minX - b.minX)
+    let any = false
+    for (let i = 0; i < list.length; i++) {
+      for (let j = i + 1; j < list.length; j++) {
+        const a = list[i]!
+        const b = list[j]!
+        const xOl = Math.min(a.maxX, b.maxX) - Math.max(a.minX, b.minX)
+        const yOl = Math.min(a.maxY, b.maxY) - Math.max(a.minY, b.minY)
+        const xGap = Math.max(0, Math.max(a.minX - b.maxX, b.minX - a.maxX))
+        const yGap = Math.max(0, Math.max(a.minY - b.maxY, b.minY - a.maxY))
+        // Prefer vertical separation when x-overlap
+        if (xOl > 4 && yGap < minGapPx) {
+          const top = a.minY <= b.minY ? a : b
+          const bot = a.minY <= b.minY ? b : a
+          const need = top.maxY + minGapPx - bot.minY
+          if (need > 0.5) {
+            const dy = Math.ceil(need)
+            for (const id of bot.ids) {
+              const idx = next.findIndex((x) => x.id === id)
+              if (idx >= 0) next[idx] = { ...next[idx]!, y: next[idx]!.y + dy }
+            }
+            any = true
+            continue
+          }
+        }
+        if (yOl > 4 && xGap < minGapPx) {
+          const left = a.minX <= b.minX ? a : b
+          const right = a.minX <= b.minX ? b : a
+          const need = left.maxX + minGapPx - right.minX
+          if (need > 0.5) {
+            let dx = Math.ceil(need)
+            const maxDx = Math.max(0, contentRight - right.maxX)
+            dx = Math.min(dx, Math.floor(maxDx))
+            if (dx > 0) {
+              for (const id of right.ids) {
+                const idx = next.findIndex((x) => x.id === id)
+                if (idx >= 0)
+                  next[idx] = { ...next[idx]!, x: next[idx]!.x + dx }
+              }
+              any = true
+            }
+          }
+        }
+      }
+    }
+    if (!any) break
+  }
+  return next
 }

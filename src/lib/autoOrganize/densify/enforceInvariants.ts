@@ -136,12 +136,12 @@ export function enforcePanelLayoutInvariants(
   ): LayoutPanel => {
     const members = (p.memberIds ?? [])
       .map((id) => byId.get(id))
-      .filter((m): m is CanvasItem => Boolean(m) && !m.hidden)
+      .filter((m): m is CanvasItem => m != null && !m.hidden)
     if (members.length === 0) return p
     const titleBand = exclusiveBand(p, allPanels)
     const useNgon = p.shape === 'polygon'
     // Leaf panels (no nested stroked children): n-gon from card footprints.
-    // Parent panels that wrap L2s: solid AABB ΓÇö stepped union of all cards
+    // Parent panels that wrap L2s: solid AABB — stepped union of all cards
     // recreates empty L-notches / snaking outer chrome (screenshot 031425).
     const hasNestedStrokeKids = allPanels.some(
       (c) =>

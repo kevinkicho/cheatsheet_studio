@@ -113,15 +113,20 @@ export function separateLeafCardsByGap(
             0,
             Math.max(a.y - (b.y + b.height), b.y - (a.y + a.height)),
           )
-          // Side-by-side neighbors
+          // Side-by-side neighbors — prefer opening horizontal gap (grow right).
+          // Only fall back to vertical stack when a hard contentRight budget is
+          // set and the right card cannot fit past it.
           if (yOverlap > 4 && xGap < minGap) {
             const left = a.x <= b.x ? a : b
             const rightC = a.x <= b.x ? b : a
             const need = left.x + left.width + minGap - rightC.x
             if (need > 0.5) {
               let nx = Math.round(rightC.x + need)
-              if (nx + rightC.width > contentRight) {
-                // Fall back to vertical separation
+              const hitsBudget =
+                Number.isFinite(contentRight) &&
+                nx + rightC.width > contentRight + 0.5
+              if (hitsBudget) {
+                // Fall back to vertical separation only when budget is finite
                 const top = a.y <= b.y ? a : b
                 const bot = a.y <= b.y ? b : a
                 const needY = top.y + top.height + minGap - bot.y

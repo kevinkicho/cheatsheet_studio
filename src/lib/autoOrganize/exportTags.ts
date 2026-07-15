@@ -6,6 +6,7 @@ import {
   normalizePanelGroupLevels,
   normalizeLevelSubset,
   normalizeNgonLevels,
+  normalizeGroupChrome,
   resolveLayoutGaps,
 } from './constants'
 
@@ -119,7 +120,7 @@ export function snapshotAutoLayoutOptions(
   const gaps = resolveLayoutGaps(opts)
   return {
     density: opts.density ?? 'sm',
-    groupChrome: opts.groupChrome ?? 'labels',
+    groupChrome: normalizeGroupChrome(opts.groupChrome ?? 'labels'),
     panelShape: opts.panelShape,
     panelPadding: opts.panelPadding,
     panelGroupLevels: opts.panelGroupLevels,

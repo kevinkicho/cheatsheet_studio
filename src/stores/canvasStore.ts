@@ -240,8 +240,16 @@ interface CanvasState {
   /**
    * Dense free-flow re-pack inside the selected panel.
    * @param shape rectangle vs n-gon chrome for this panel + nested children
+   * @param gaps optional L1 / L2 / block gap overrides (px); defaults from lastAutoLayout
    */
-  autoLayoutSelectedPanel: (shape?: import('@/types').PanelShape) => void
+  autoLayoutSelectedPanel: (
+    shape?: import('@/types').PanelShape,
+    gaps?: {
+      l1PanelGap?: number
+      l2PanelGap?: number
+      blockGap?: number
+    },
+  ) => void
   /**
    * Move a layout panel and its member cards by (dx, dy). Nested child panels
    * whose members are all inside this panel move with it.
@@ -1104,7 +1112,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       }
     }),
 
-  autoLayoutSelectedPanel: (shape) =>
+  autoLayoutSelectedPanel: (shape, gaps) =>
     set((s) => {
       const id = s.selectedPanelId
       if (!id) return s
@@ -1117,6 +1125,20 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           : panel.shape === 'polygon'
             ? 'polygon'
             : 'rect'
+      // Explicit UI gaps win; else last sheet auto-layout; else 2px defaults.
+      // In-panel UI: L1 → L2+block knobs; L2+ → block only.
+      const level = panel.hierarchyLevel ?? 1
+      const l2 =
+        gaps?.l2PanelGap !== undefined
+          ? gaps.l2PanelGap
+          : (s.lastAutoLayout?.l2PanelGap ?? s.lastAutoLayout?.gap ?? 2)
+      const block =
+        gaps?.blockGap !== undefined
+          ? gaps.blockGap
+          : (s.lastAutoLayout?.blockGap ?? 2)
+      // Peer L1 gap not controlled in-panel; keep last sheet value for enforce
+      const l1 =
+        s.lastAutoLayout?.l1PanelGap ?? s.lastAutoLayout?.gap ?? 2
       // Default sort for in-panel auto-layout: Name A→Z
       const panelForLayout = {
         ...panel,
@@ -1128,20 +1150,42 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         panelForLayout,
         {
           grid: s.canvas.gridSpacing ?? 24,
-          gapPx:
-            s.lastAutoLayout?.l1PanelGap ?? s.lastAutoLayout?.gap ?? 2,
-          blockGapPx: s.lastAutoLayout?.blockGap ?? 2,
-          l2PanelGapPx:
-            s.lastAutoLayout?.l2PanelGap ?? s.lastAutoLayout?.gap ?? 2,
+          gapPx: Math.max(0, l1),
+          // Nested L2 sibling gap when packing inside L1; unused on leaf L2 packs
+          l2PanelGapPx: Math.max(0, l2),
+          blockGapPx: Math.max(0, block),
           panelPad: s.lastAutoLayout?.panelPadding ?? 4,
           mode: 'dense',
           allPanels: panels,
           panelShape: chromeShape,
+          // Folders enable densify; pack stays inside original panel bounds
+          folders: s.folders?.map((f) => ({
+            id: f.id,
+            name: f.name,
+            parentId: f.parentId,
+          })),
         },
       )
+      // Remember relevant gaps so next open stays in sync
+      const prev = s.lastAutoLayout
+      const lastAutoLayout = prev
+        ? {
+            ...prev,
+            ...(level <= 1 ? { l2PanelGap: Math.max(0, l2) } : {}),
+            blockGap: Math.max(0, block),
+          }
+        : {
+            density: 'sm' as const,
+            groupChrome: 'panels' as const,
+            gap: Math.max(0, l1),
+            l1PanelGap: Math.max(0, l1),
+            l2PanelGap: Math.max(0, l2),
+            blockGap: Math.max(0, block),
+          }
       return {
         items,
         dirty: true,
+        lastAutoLayout,
         canvas: {
           ...s.canvas,
           layoutPanels:

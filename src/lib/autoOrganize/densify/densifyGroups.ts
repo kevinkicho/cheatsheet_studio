@@ -5,7 +5,7 @@ import {
   type FolderRef,
   isHeadingCard,
 } from '../folders'
-import { packClusterTight, placeTopicRegionsDense } from '../shelf'
+import { placeTopicRegionsDense } from '../shelf'
 
 /**
  * After packing, densify cards within each folder group (prefer leaf level)

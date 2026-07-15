@@ -5,7 +5,7 @@ import {
   type FolderRef,
   isHeadingCard,
 } from '../folders'
-import { packClusterTight, placeTopicRegionsDense } from '../shelf'
+import { packClusterTight } from '../shelf'
 
 /**
  * Re-pack every leaf (L2/L3) group *inside* its parent (L1) into a tight

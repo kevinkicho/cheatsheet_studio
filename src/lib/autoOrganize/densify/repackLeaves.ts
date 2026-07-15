@@ -5,7 +5,7 @@ import {
   type FolderRef,
   isHeadingCard,
 } from '../folders'
-import { packClusterTight, placeTopicRegionsDense } from '../shelf'
+import { placeTopicRegionsDense } from '../shelf'
 
 /**
  * Re-pack card interiors of every leaf group with multi-order free-flow

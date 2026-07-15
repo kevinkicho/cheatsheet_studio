@@ -1,5 +1,5 @@
 import type { CanvasItem } from '@/types'
-import { ORGANIZE_GRID, type PanelGroupLevel } from '../constants'
+import type { PanelGroupLevel } from '../constants'
 import {
   folderAtGroupLevel,
   type FolderRef,
@@ -15,7 +15,6 @@ export function separateFolderClusters(
   level: PanelGroupLevel,
   opts?: { grid?: number; minGapPx?: number },
 ): CanvasItem[] {
-  const grid = Math.max(4, opts?.grid ?? ORGANIZE_GRID)
   const minGap = Math.max(0, opts?.minGapPx ?? 0)
   const cards = items.filter(
     (i) => !i.hidden && !isHeadingCard(i) && i.folderId,

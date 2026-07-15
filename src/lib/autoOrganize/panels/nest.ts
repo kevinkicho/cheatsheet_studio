@@ -39,7 +39,7 @@ export function nestContainPanels(
   const memberEnvelope = (p: LayoutPanel) => {
     const mem = (p.memberIds ?? [])
       .map((id) => byId.get(id))
-      .filter((m): m is CanvasItem => Boolean(m) && !m.hidden)
+      .filter((m): m is CanvasItem => m != null && !m.hidden)
     if (mem.length === 0) return null
     const minX = Math.min(...mem.map((m) => m.x))
     const minY = Math.min(...mem.map((m) => m.y))
@@ -56,7 +56,7 @@ export function nestContainPanels(
     if (!env) continue
     const mem = (p.memberIds ?? [])
       .map((id) => byId.get(id))
-      .filter((m): m is CanvasItem => Boolean(m) && !m.hidden)
+      .filter((m): m is CanvasItem => m != null && !m.hidden)
     // Match buildNestedHierarchyPanels / exclusiveTitleBandPx
     const titleExtra =
       p.showTitle === false
@@ -250,12 +250,12 @@ export function rebuildMultiChildOuters(
   },
 ): LayoutPanel[] {
   if (panels.length <= 1) return panels
-  const pad = Math.max(0, opts?.panelPad ?? 4)
   const grid = Math.max(4, opts?.grid ?? ORGANIZE_GRID)
   const left = opts?.contentLeft
   const right = opts?.contentRight
   const top = opts?.contentTop
   const next = panels.map((p) => ({ ...p }))
+  void opts?.panelPad
 
   for (let i = 0; i < next.length; i++) {
     const parent = next[i]!

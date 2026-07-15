@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { LayoutGrid, LayoutTemplate } from 'lucide-react'
 import type { LayoutPanel, PanelShape } from '@/types'
 import { useCanvasStore } from '@/stores/canvasStore'
@@ -11,12 +12,55 @@ export function PanelProperties({ panel }: { panel: LayoutPanel }) {
     (s) => s.autoLayoutSelectedPanel,
   )
   const selectPanel = useCanvasStore((s) => s.selectPanel)
+  const lastAutoLayout = useCanvasStore((s) => s.lastAutoLayout)
+
+  // Gap knobs for in-panel pack — seed from last sheet/panel auto-layout
+  const [l2PanelGap, setL2PanelGap] = useState(
+    () => lastAutoLayout?.l2PanelGap ?? lastAutoLayout?.gap ?? 2,
+  )
+  const [blockGap, setBlockGap] = useState(
+    () => lastAutoLayout?.blockGap ?? 2,
+  )
+  // Keep sliders in sync when sheet auto-layout or prior in-panel run updates gaps
+  useEffect(() => {
+    if (lastAutoLayout?.l2PanelGap != null) {
+      setL2PanelGap(lastAutoLayout.l2PanelGap)
+    } else if (lastAutoLayout?.gap != null) {
+      setL2PanelGap(lastAutoLayout.gap)
+    }
+    if (lastAutoLayout?.blockGap != null) {
+      setBlockGap(lastAutoLayout.blockGap)
+    }
+  }, [
+    lastAutoLayout?.l2PanelGap,
+    lastAutoLayout?.blockGap,
+    lastAutoLayout?.gap,
+  ])
+
   const memberCount = panel.memberIds?.length ?? 0
   const showTitle = panel.showTitle !== false
   // Default: Name A→Z (top option, on by default for Auto-layout inside panel)
   const contentSort = panel.contentSort ?? 'name-asc'
-  const level = panel.hierarchyLevel
+  const level = panel.hierarchyLevel ?? 1
   const shape = panel.shape ?? 'rect'
+  // Gap knobs depend on selected panel depth:
+  //   L1 → L2 sibling gap + block gap (packing subsections + cards)
+  //   L2+ → block gap only (leaf card pack)
+  const showL2Gap = level <= 1
+  const showBlockGap = true
+
+  const runInPanel = (shape: PanelShape) => {
+    // Always pass numeric gaps (including 0) so store never falls back to stale defaults
+    const gaps = showL2Gap
+      ? {
+          l2PanelGap: Math.max(0, Number(l2PanelGap) || 0),
+          blockGap: Math.max(0, Number(blockGap) || 0),
+        }
+      : {
+          blockGap: Math.max(0, Number(blockGap) || 0),
+        }
+    autoLayoutSelectedPanel(shape, gaps)
+  }
 
   return (
     <div className="space-y-3 p-3" data-testid="panel-properties">
@@ -40,6 +84,58 @@ export function PanelProperties({ panel }: { panel: LayoutPanel }) {
         <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
           Auto-layout inside panel
         </p>
+
+        <div className="mb-2 space-y-2 rounded-md border border-zinc-800 bg-zinc-950/30 p-2">
+          <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+            Gap
+          </p>
+          <p className="text-[9px] leading-snug text-zinc-600">
+            {showL2Gap
+              ? 'L1 selected: set L2 subsection spacing and card (block) gap.'
+              : 'L2+ selected: set spacing between cards inside this panel.'}
+          </p>
+          {showL2Gap ? (
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] text-zinc-500">
+                Level 2 panel gap · {l2PanelGap}px
+              </span>
+              <input
+                type="range"
+                min={0}
+                max={48}
+                step={2}
+                value={l2PanelGap}
+                onChange={(e) => setL2PanelGap(Number(e.target.value))}
+                className="w-full"
+                data-testid="panel-l2-gap-slider"
+              />
+              <span className="text-[9px] text-zinc-600">
+                Distance between L2 subsection frames inside this L1.
+              </span>
+            </label>
+          ) : null}
+          {showBlockGap ? (
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] text-zinc-500">
+                Block gap · {blockGap}px
+              </span>
+              <input
+                type="range"
+                min={0}
+                max={48}
+                step={2}
+                value={blockGap}
+                onChange={(e) => setBlockGap(Number(e.target.value))}
+                className="w-full"
+                data-testid="panel-block-gap-slider"
+              />
+              <span className="text-[9px] text-zinc-600">
+                Distance between cards (blocks) inside a leaf pack.
+              </span>
+            </label>
+          ) : null}
+        </div>
+
         <div className="grid grid-cols-2 gap-1.5">
           {(
             [
@@ -51,7 +147,7 @@ export function PanelProperties({ panel }: { panel: LayoutPanel }) {
               key={id}
               type="button"
               data-testid={`panel-auto-layout-${id}`}
-              onClick={() => autoLayoutSelectedPanel(id as PanelShape)}
+              onClick={() => runInPanel(id as PanelShape)}
               disabled={memberCount === 0}
               className="inline-flex items-center justify-center gap-1 rounded-md border border-indigo-500/40 bg-indigo-500/15 px-2 py-1.5 text-[11px] font-medium text-indigo-100 hover:bg-indigo-500/25 disabled:cursor-not-allowed disabled:opacity-40"
             >
@@ -61,10 +157,11 @@ export function PanelProperties({ panel }: { panel: LayoutPanel }) {
           ))}
         </div>
         <p className="mt-1 text-[9px] leading-snug text-zinc-600">
-          <strong className="font-medium text-zinc-500">Rectangle</strong> —
-          free-flow with normal gaps. <strong className="font-medium text-zinc-500">N-gon</strong>{' '}
-          — hard tetris (0-gap multi-order pack, same as sheet n-gon auto-layout)
-          + stepped chrome. Each click tries a new seed; card sizes stay fixed.
+          Uses the same densify engine as sheet auto-layout (multi-order free-flow
+          + leaf re-pack). Panel grows to fit; top-left stays put.{' '}
+          <strong className="font-medium text-zinc-500">Rectangle</strong> /{' '}
+          <strong className="font-medium text-zinc-500">N-gon</strong> only change
+          chrome. Gaps above apply on each click.
         </p>
       </div>
 
