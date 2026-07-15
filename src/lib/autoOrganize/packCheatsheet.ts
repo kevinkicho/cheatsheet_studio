@@ -49,6 +49,7 @@ import {
   repackGroupsInParents,
   separateFolderClusters,
   resolveCardOverlaps,
+  separateLeafCardsByGap,
   resolveSameLevelPanelCollisions,
   enforcePanelLayoutInvariants,
 } from './densify'
@@ -449,25 +450,24 @@ export function packCheatsheetLayout(
   const nestInsetPx = useHierarchicalPlace ? panelPad : 0
 
   // L1 title strip is reserved via titleCells *inside* each parent.
-  // L2 title strip is inside each L2 chrome — leaf free-flow must still leave
-  // enough air so the next L2 title band is not covered (title + pad floor).
   const L1_TITLE_CLEAR_PX = 26
-  const L2_TITLE_PX = leafLevelsStroke ? 16 : 0
+  // L2 local chip ~16px — free-flow must leave this vertical room or
+  // ensureLeafTitleClearance shoves groups apart into sparse voids.
+  const L2_TITLE_PACK_PX = leafLevelsStroke ? 16 : 0
 
   // Content-to-content clearance so stroked frames sit ~userGap apart:
   // contentGap = userGap + 2×pad (pad lives inside each frame).
-  // Title bands are inside chrome, not added again into L1 leaf gaps.
   const l1ContentClearPx = usePanels
     ? Math.max(0, l1GapPx) + (outerLevelsStroke ? panelPad * 2 : 0)
     : Math.max(0, l1GapPx)
-  // L2: user gap + pad on both frames + room so next L2 title is free of
-  // previous L2's cards (header-clear rule).
+  // L2 free-flow: user gap + pad + title pack floor (stable dense shelves).
+  // Final stroke-to-stroke gap is still enforced at pure l2GapPx later.
   const l2ContentClearPx =
     usePanels && leafLevelsStroke
-      ? Math.max(0, l2GapPx) + panelPad * 2 + L2_TITLE_PX
+      ? Math.max(0, l2GapPx) + panelPad * 2 + L2_TITLE_PACK_PX
       : Math.max(0, l2GapPx)
 
-  // Free-flow cells — any positive px gap → ≥1 cell (see gapPxToCells)
+  // Free-flow cells — nearest-cell (small user px → 0; title floor often 1 cell)
   const leafGapCells = gapPxToCells(l2ContentClearPx, grid)
   const outerGapCells = gapPxToCells(l1ContentClearPx, grid)
 
@@ -745,7 +745,7 @@ export function packCheatsheetLayout(
     contentRight: packRight,
   })
 
-  // Only separate true leaf AABB overlaps (minGap = user gap only)
+  // Only separate true leaf AABB overlaps (minGap = user L2 frame gap + pad)
   if (usePanels && leafLevelsStroke && (options.folders?.length ?? 0) > 0) {
     result = resolveLeafGroupCollisions(
       result,
@@ -753,7 +753,7 @@ export function packCheatsheetLayout(
       deepLevel,
       {
         grid,
-        // L2 frame air: user l2 gap (+ pad floor already in content clear)
+        // Content clearance so stroked L2 frames can sit ~l2Gap apart after pad
         minGapPx: Math.max(0, l2ContentClearPx),
         parentLevel: shallowLevel,
       },
@@ -811,6 +811,20 @@ export function packCheatsheetLayout(
       {
         grid,
         minGapPx: stackGap,
+      },
+    )
+  }
+
+  // Pixel-exact block gap AFTER hierarchical repositions (or they wipe air)
+  if ((options.folders?.length ?? 0) > 0 && blockGapPx > 0) {
+    result = separateLeafCardsByGap(
+      result,
+      options.folders ?? [],
+      deepLevel,
+      {
+        grid,
+        minGapPx: blockGapPx,
+        contentRight: packRight,
       },
     )
   }
@@ -1005,11 +1019,9 @@ export function packCheatsheetLayout(
         grid,
       })
     }
-    // Clip L2/L3 n-gon runs into L1 so stepped chrome cannot paint outside
-    // the parent frame (screenshot 235248).
-    layoutPanels = clipNestedPanelRunsToParents(layoutPanels)
     // Hard invariants: same-level panels never overlap; title bands never
-    // covered by cards or nested panel headers.
+    // covered by cards or nested panel headers; L1/L2 stroke gaps honored.
+    // (Run before clip so L2 n-gon rebuild fully encloses cards first.)
     {
       const fixed = enforcePanelLayoutInvariants(merged, layoutPanels, {
         grid,
@@ -1017,7 +1029,10 @@ export function packCheatsheetLayout(
         contentLeft: box.left,
         contentRight: box.left + box.width,
         contentTop: box.top,
-        minGapPx: Math.max(2, gapPx),
+        // Pixel stroke-to-stroke gaps (panel rebuild path — free-flow is cell-quantized)
+        minGapPx: Math.max(0, l1GapPx),
+        l1GapPx: Math.max(0, l1GapPx),
+        l2GapPx: Math.max(0, l2GapPx),
       })
       // Replace card positions in merged (panel members only move)
       const movedById = new Map(fixed.items.map((i) => [i.id, i]))
@@ -1027,6 +1042,18 @@ export function packCheatsheetLayout(
       }
       layoutPanels = fixed.panels
     }
+    // Grow parents to cover rebuilt children (n-gon leaf may have grown pad)
+    layoutPanels = nestContainPanels(layoutPanels, {
+      insetPx: multiLevelHierarchy ? Math.max(2, panelPad) : 0,
+      contentLeft: box.left,
+      contentRight: box.left + box.width,
+      contentTop: box.top,
+      placed: merged,
+      panelPad,
+    })
+    // Soft clip: only trim paint that sticks outside parent — do not shrink
+    // L2 below its member cards (031956 overflow was clip-before-enforce).
+    layoutPanels = clipNestedPanelRunsToParents(layoutPanels)
     // Final hard clamp LAST — rebuild outlines from clamped runs so n-gon
     // path vertices never sit past the content box (outline x=772 > 768).
     layoutPanels = clampPanelsToContentBox(layoutPanels, {

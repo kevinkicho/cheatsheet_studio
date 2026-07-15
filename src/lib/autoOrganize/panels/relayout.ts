@@ -1,7 +1,11 @@
 import type { CanvasItem, LayoutPanel } from '@/types'
-import { ORGANIZE_GRID } from '../constants'
+import { ORGANIZE_GRID, gapPxToCells } from '../constants'
 import { chromeFromMembers } from '../polyomino'
-import { enforcePanelLayoutInvariants } from '../densify'
+import {
+  enforcePanelLayoutInvariants,
+  separateLeafCardsByGap,
+} from '../densify'
+import type { FolderRef } from '../folders'
 import {
   placeTopicRegionsDense,
   packClusterTight,
@@ -164,12 +168,22 @@ function rebuildPanelChromeFromMembers(
   const pad = Math.max(2, opts.panelPad)
   const shape = opts.forceShape ?? p.shape ?? 'rect'
   const useNgon = shape === 'polygon'
+  const hasNestedStrokeKids = all.some(
+    (c) =>
+      c.id !== p.id &&
+      c.showStroke !== false &&
+      (c.hierarchyLevel ?? 1) > (p.hierarchyLevel ?? 1) &&
+      c.memberIds?.length &&
+      p.memberIds?.length &&
+      c.memberIds.every((id) => p.memberIds!.includes(id)),
+  )
   const chrome = chromeFromMembers(members, {
     pad,
     titleBand,
     shape: useNgon ? 'polygon' : 'rect',
     grid: opts.grid,
-    solidMode: useNgon ? 'blocks' : 'solid-aabb',
+    // Parent wrapping L2s: solid; leaf: n-gon card blocks
+    solidMode: useNgon && !hasNestedStrokeKids ? 'blocks' : 'solid-aabb',
   })
   return {
     ...p,
@@ -490,17 +504,13 @@ export function relayoutPanelContents(
     }
   }
 
-  // Any gap > 0 → ≥1 grid cell so sub-grid settings still produce air
-  const gapPxToCellsLocal = (px: number) => {
-    if (px <= 0) return 0
-    return Math.max(1, Math.ceil(px / grid))
-  }
+  // Coarse free-flow cells (nearest cell; small px → 0; pixel pass below)
   // Card free-flow gap from blockGap (rect + n-gon both honor this)
-  const cardGapCells = gapPxToCellsLocal(blockGapPx)
-  // L2 sibling frames: user l2 gap + pad floor + title band when nested stroke
+  const cardGapCells = gapPxToCells(blockGapPx, grid)
+  // L2 sibling frames: user gap + pad only (title reserved inside chrome)
   const leafGapCells = hasNestedStroke
-    ? gapPxToCellsLocal(l2PanelGapPx + pad * 2 + NESTED_TITLE_BAND_PX)
-    : gapPxToCellsLocal(l2PanelGapPx)
+    ? gapPxToCells(l2PanelGapPx + pad * 2, grid)
+    : gapPxToCells(l2PanelGapPx, grid)
   // N-gon prefers full width seeds; rect may try narrower mosaics
   const packBoxW = hardTetris
     ? contentW
@@ -637,6 +647,39 @@ export function relayoutPanelContents(
       y: p.y,
     }
   })
+
+  // Pixel-exact block gap among cards that share a leaf (nested L2 or flat)
+  if (blockGapPx > 0 && dense) {
+    const leafGroups: string[][] = []
+    if (orderedLeaves.length > 0) {
+      for (const leaf of orderedLeaves) {
+        if (leaf.memberIds?.length) leafGroups.push([...leaf.memberIds])
+      }
+    } else {
+      leafGroups.push([...ids])
+    }
+    for (const leafIds of leafGroups) {
+      if (leafIds.length < 2) continue
+      // Synthetic folder map so separateLeafCardsByGap can group
+      const synthFolders: FolderRef[] = [
+        { id: '__leaf__', order: 0, name: 'leaf', parentId: null },
+      ]
+      const withFolder = nextItems.map((it) =>
+        leafIds.includes(it.id) ? { ...it, folderId: '__leaf__' } : it,
+      )
+      const separated = separateLeafCardsByGap(withFolder, synthFolders, 1, {
+        grid,
+        minGapPx: blockGapPx,
+        contentRight: contentX + contentW,
+      })
+      const sepById = new Map(separated.map((i) => [i.id, i]))
+      nextItems = nextItems.map((it) => {
+        if (!leafIds.includes(it.id)) return it
+        const s = sepById.get(it.id)
+        return s ? { ...it, x: s.x, y: s.y } : it
+      })
+    }
+  }
 
   const moved = nextItems.filter((i) => ids.has(i.id) && !i.hidden)
   if (moved.length === 0) return { items: nextItems, panel }
@@ -847,12 +890,14 @@ export function relayoutPanelContents(
     panelsOut = pinned.panels
   }
 
-  // Enforce only inside the edited cluster
+  // Enforce only inside the edited cluster — honor L2 (and L1) gap knobs
   const scopePanelIds = new Set<string>([panel.id, ...nestedIds])
   const fixed = enforcePanelLayoutInvariants(nextItems, panelsOut, {
     grid,
     panelPad: pad,
-    minGapPx: 2,
+    minGapPx: Math.max(0, l2PanelGapPx),
+    l1GapPx: Math.max(0, gap),
+    l2GapPx: Math.max(0, l2PanelGapPx),
     contentLeft,
     contentRight,
     scopePanelIds,

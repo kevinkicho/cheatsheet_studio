@@ -175,7 +175,17 @@ export function AutoLayoutPanel() {
         })
       }
       if (result.suggestion.density) setDensity(result.suggestion.density)
-      if (result.suggestion.gap != null) setGap(result.suggestion.gap)
+      if (result.suggestion.l1PanelGap != null) {
+        setL1PanelGap(result.suggestion.l1PanelGap)
+      } else if (result.suggestion.gap != null) {
+        setL1PanelGap(result.suggestion.gap)
+      }
+      if (result.suggestion.l2PanelGap != null) {
+        setL2PanelGap(result.suggestion.l2PanelGap)
+      }
+      if (result.suggestion.blockGap != null) {
+        setBlockGap(result.suggestion.blockGap)
+      }
       if (result.suggestion.groupChrome) {
         setGroupChrome(normalizeGroupChrome(result.suggestion.groupChrome))
       }

@@ -283,7 +283,12 @@ export function rebuildMultiChildOuters(
       (parent.hierarchyLevel ?? 1) <= 1
         ? Math.max(22, opts?.titleBandPx ?? 16) + 4
         : Math.max(16, opts?.titleBandPx ?? 16)
-    // Synthetic members = child frames; pad 0 (children already include pad)
+
+    // Multi-child outer: ALWAYS solid AABB hug.
+    // Stepped union of L2 frames leaves notches at every inter-child gap and
+    // snaking empty L-corners (screenshot 031425) — looks broken for both
+    // dense grids and sparse free-flow. N-gon silhouette belongs on *leaf*
+    // panels (card footprints), not on the outer L1 frame around children.
     const chrome = chromeFromMembers(
       blocks.map((b) => ({
         x: b.x,
@@ -296,8 +301,7 @@ export function rebuildMultiChildOuters(
         titleBand,
         shape: 'polygon',
         grid,
-        solidMode: 'blocks',
-        blocks,
+        solidMode: 'solid-aabb',
       },
     )
     let { x, y, width, height } = chrome
@@ -324,6 +328,7 @@ export function rebuildMultiChildOuters(
         width: Math.max(8, Math.round(r.width)),
         height: Math.max(8, Math.round(r.height)),
       })),
+      // Keep polygon flag for UI; outline may be rect when sparse
       shape: 'polygon',
       outlinePath:
         chrome.outlinePath || rectPerimeterPathD(x, y, width, height),
@@ -333,14 +338,65 @@ export function rebuildMultiChildOuters(
 }
 
 /**
- * Clip every child panel's runs/AABB into its stroked parent so n-gon L2/L3
- * never paints outside L1 (screenshot 235248).
+ * Keep nested child chrome painting inside parents without shrinking L2
+ * frames under their cards (031956: clip-to-parent caused card overflow).
+ *
+ * Strategy: **grow parents** to cover children; only soft-clip child *runs*
+ * that paint past the (expanded) parent — never reduce child AABB.
  */
 export function clipNestedPanelRunsToParents(
   panels: LayoutPanel[],
 ): LayoutPanel[] {
   if (panels.length <= 1) return panels
   const next = panels.map((p) => ({ ...p }))
+
+  // 1) Expand each stroked parent AABB to fully cover stroked children
+  for (let i = 0; i < next.length; i++) {
+    const parent = next[i]!
+    if (parent.showStroke === false) continue
+    const kids = next.filter(
+      (c) =>
+        c.id !== parent.id &&
+        c.showStroke !== false &&
+        (c.hierarchyLevel ?? 1) > (parent.hierarchyLevel ?? 1) &&
+        isPanelChildOf(parent, c),
+    )
+    if (kids.length === 0) continue
+    const minX = Math.min(parent.x, ...kids.map((k) => k.x))
+    const minY = Math.min(parent.y, ...kids.map((k) => k.y))
+    const maxX = Math.max(
+      parent.x + parent.width,
+      ...kids.map((k) => k.x + k.width),
+    )
+    const maxY = Math.max(
+      parent.y + parent.height,
+      ...kids.map((k) => k.y + k.height),
+    )
+    const x = Math.round(minX)
+    const y = Math.round(minY)
+    const width = Math.max(8, Math.round(maxX - minX))
+    const height = Math.max(8, Math.round(maxY - minY))
+    if (
+      x === parent.x &&
+      y === parent.y &&
+      width === parent.width &&
+      height === parent.height
+    ) {
+      continue
+    }
+    // Solid outer hug (parents stay clean AABB)
+    next[i] = {
+      ...parent,
+      x,
+      y,
+      width,
+      height,
+      runs: [{ x, y, width, height }],
+      outlinePath: rectPerimeterPathD(x, y, width, height),
+    }
+  }
+
+  // 2) Soft-clip child runs into parent box (AABB of child unchanged)
   for (let i = 0; i < next.length; i++) {
     const child = next[i]!
     if (child.showStroke === false) continue
@@ -351,46 +407,33 @@ export function clipNestedPanelRunsToParents(
         isPanelChildOf(p, child),
     )
     if (parents.length === 0) continue
-    // Tightest parent (deepest)
     const parent = parents.sort(
       (a, b) => (b.hierarchyLevel ?? 1) - (a.hierarchyLevel ?? 1),
     )[0]!
-    const inset = 1
-    const pl = parent.x + inset
-    const pt = parent.y + inset
-    const pr = parent.x + parent.width - inset
-    const pb = parent.y + parent.height - inset
+    const pl = parent.x
+    const pt = parent.y
+    const pr = parent.x + parent.width
+    const pb = parent.y + parent.height
     if (!(pr > pl && pb > pt)) continue
 
-    let x = child.x
-    let y = child.y
-    let width = child.width
-    let height = child.height
-    if (x < pl) {
-      width -= pl - x
-      x = pl
-    }
-    if (y < pt) {
-      height -= pt - y
-      y = pt
-    }
-    if (x + width > pr) width = Math.max(8, pr - x)
-    if (y + height > pb) height = Math.max(8, pb - y)
-    x = Math.round(x)
-    y = Math.round(y)
-    width = Math.max(8, Math.round(width))
-    height = Math.max(8, Math.round(height))
-
+    // Keep child AABB — only trim paint runs that spill outside parent
     const runs = (
       child.runs?.length
         ? child.runs
-        : [{ x: child.x, y: child.y, width: child.width, height: child.height }]
+        : [
+            {
+              x: child.x,
+              y: child.y,
+              width: child.width,
+              height: child.height,
+            },
+          ]
     )
       .map((r) => {
-        const rx0 = Math.max(r.x, x, pl)
-        const ry0 = Math.max(r.y, y, pt)
-        const rx1 = Math.min(r.x + r.width, x + width, pr)
-        const ry1 = Math.min(r.y + r.height, y + height, pb)
+        const rx0 = Math.max(r.x, pl)
+        const ry0 = Math.max(r.y, pt)
+        const rx1 = Math.min(r.x + r.width, pr)
+        const ry1 = Math.min(r.y + r.height, pb)
         if (rx1 - rx0 < 4 || ry1 - ry0 < 4) return null
         return {
           x: Math.round(rx0),
@@ -406,22 +449,27 @@ export function clipNestedPanelRunsToParents(
       height: number
     }>
 
-    const finalRuns =
-      runs.length > 0 ? runs : [{ x, y, width, height }]
+    if (runs.length === 0) continue
+    // If runs still cover child's AABB footprint, keep original outline when
+    // child already sits inside parent (no visual change).
+    const childInside =
+      child.x >= pl - 0.5 &&
+      child.y >= pt - 0.5 &&
+      child.x + child.width <= pr + 0.5 &&
+      child.y + child.height <= pb + 0.5
+    if (childInside) continue
+
     next[i] = {
       ...child,
-      x,
-      y,
-      width,
-      height,
-      runs: finalRuns,
+      // AABB unchanged so cards stay inside the frame
+      runs,
       outlinePath: outlineFromClampedRuns(
-        finalRuns,
+        runs,
         child.shape,
-        x,
-        y,
-        width,
-        height,
+        child.x,
+        child.y,
+        child.width,
+        child.height,
       ),
     }
   }

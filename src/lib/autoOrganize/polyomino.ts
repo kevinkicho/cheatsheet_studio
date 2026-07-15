@@ -206,13 +206,15 @@ export function rowBlocksFromMembers(
 /**
  * Tetris / n-gon chrome from free-flow card footprints.
  *
- * Strategy (screenshot 235248 — snaking L, swiss-cheese, empty notches):
- * 1. **Dense pack → solid rect**: if cards already fill ≥78% of their AABB,
- *    use a clean rectangle (best default; avoids fake steps).
- * 2. **Else row strips**: one solid band per horizontal shelf (never per-card
- *    blocks — unequal card heights refused to merge and drew broken L-shapes).
- * 3. **Title**: grow the top strip upward (no separate title stem that snakes).
- * 4. **Merge** abutting strips; exterior path from the union.
+ * Strategy:
+ * 1. Cluster into horizontal shelf strips (never per-card blocks — unequal
+ *    heights left unmerged L-notches / swiss-cheese).
+ * 2. If multi-shelf with a real step, keep stepped runs.
+ * 3. **Always fully enclose every member + pad** (overflow fix 031956).
+ * 4. Solid AABB when no step or empty-corner waste is high.
+ * 5. Title: grow the top strip upward.
+ * 6. Exterior path from union; rasterize **outward** so stroke never sits
+ *    inside card edges.
  */
 export function steppedLChromeFromMembers(
   members: Array<{ x: number; y: number; width: number; height: number }>,
@@ -245,10 +247,6 @@ export function steppedLChromeFromMembers(
   const minY = Math.min(...members.map((m) => m.y))
   const maxX = Math.max(...members.map((m) => m.x + m.width))
   const maxY = Math.max(...members.map((m) => m.y + m.height))
-  const aabbW = Math.max(1, maxX - minX)
-  const aabbH = Math.max(1, maxY - minY)
-  const cardArea = members.reduce((s, m) => s + m.width * m.height, 0)
-  const fill = cardArea / (aabbW * aabbH)
 
   const solidAabb = () => {
     const x = Math.round(minX - edge)
@@ -265,47 +263,122 @@ export function steppedLChromeFromMembers(
     }
   }
 
-  // Single card, or cards already pack into a near-rectangle → clean frame
-  if (members.length === 1 || fill >= 0.78) {
+  // Single card → clean frame
+  if (members.length === 1) {
     return solidAabb()
   }
 
-  // Multi-card free-flow: solid horizontal shelf strips (not per-card blocks).
-  // Per-card blocks + unequal heights left unmerged L-notches (Molecular Biology
-  // yellow empty L, Biochemistry stepped void in 235248).
+  const stepTol = Math.max(4, Math.min(edge || 4, 8))
+  const measureStep = (
+    rs: Array<{ x: number; y: number; width: number; height: number }>,
+  ) => {
+    if (rs.length <= 1) return false
+    const widths = rs.map((r) => r.width)
+    const lefts = rs.map((r) => r.x)
+    const rights = rs.map((r) => r.x + r.width)
+    const widthStep = Math.max(...widths) - Math.min(...widths)
+    const leftStep = Math.max(...lefts) - Math.min(...lefts)
+    const rightStep = Math.max(...rights) - Math.min(...rights)
+    return widthStep >= stepTol || leftStep >= stepTol || rightStep >= stepTol
+  }
+
+  /** True if rect fully contains member inset by 0 (member must be inside). */
+  const runCovers = (
+    r: { x: number; y: number; width: number; height: number },
+    m: { x: number; y: number; width: number; height: number },
+    eps = 0.5,
+  ) =>
+    r.x <= m.x + eps &&
+    r.y <= m.y + eps &&
+    r.x + r.width >= m.x + m.width - eps &&
+    r.y + r.height >= m.y + m.height - eps
+
+  /**
+   * Grow runs so every member (+ pad) is fully inside some run.
+   * Prevents cards poking past the L2 n-gon stroke (031956).
+   */
+  const ensureEnclosure = (
+    input: Array<{ x: number; y: number; width: number; height: number }>,
+  ) => {
+    const next = input.map((r) => ({ ...r }))
+    for (const m of members) {
+      const need = {
+        x: m.x - edge,
+        y: m.y - edge,
+        width: m.width + edge * 2,
+        height: m.height + edge * 2,
+      }
+      let covered = false
+      for (let i = 0; i < next.length; i++) {
+        const r = next[i]!
+        // Same shelf / overlapping: expand this run to cover member+pad
+        const xOl =
+          Math.min(r.x + r.width, need.x + need.width) - Math.max(r.x, need.x)
+        const yOl =
+          Math.min(r.y + r.height, need.y + need.height) - Math.max(r.y, need.y)
+        if (xOl > 0 && yOl > 0) {
+          const x0 = Math.min(r.x, need.x)
+          const y0 = Math.min(r.y, need.y)
+          const x1 = Math.max(r.x + r.width, need.x + need.width)
+          const y1 = Math.max(r.y + r.height, need.y + need.height)
+          next[i] = {
+            x: Math.round(x0),
+            y: Math.round(y0),
+            width: Math.max(8, Math.round(x1 - x0)),
+            height: Math.max(8, Math.round(y1 - y0)),
+          }
+          covered = true
+          break
+        }
+      }
+      if (!covered) {
+        // Orphan: add a pad-inflated block for this card
+        next.push({
+          x: Math.round(need.x),
+          y: Math.round(need.y),
+          width: Math.max(8, Math.round(need.width)),
+          height: Math.max(8, Math.round(need.height)),
+        })
+      }
+    }
+    // Final pass: any member still uncovered? (after expand) → solid
+    for (const m of members) {
+      if (!next.some((r) => runCovers(r, m))) {
+        return null
+      }
+    }
+    return next
+  }
+
+  // Prefer row strips (clean shelves). Fall back to per-card blocks.
   let runs = rowBlocksFromMembers(members).map((r) => ({
     x: Math.round(r.x - edge),
     y: Math.round(r.y - edge),
     width: Math.max(8, Math.round(r.width + edge * 2)),
     height: Math.max(8, Math.round(r.height + edge * 2)),
   }))
+  // Bridge small gaps between strips so near-touching rows fuse
+  runs = mergeAbuttingRuns(runs, Math.max(2, edge + Math.floor(grid / 4)))
 
-  // One shelf after clustering → solid rect (side-by-side pack)
-  if (runs.length <= 1) {
-    return solidAabb()
-  }
-
-  // Bridge small gaps between strips (≤ pad+grid/2) so near-touching rows fuse
-  runs = mergeAbuttingRuns(runs, Math.max(2, edge + Math.floor(grid / 2)))
-
-  // After merge, if we collapsed to one run or high strip-fill → solid
-  if (runs.length <= 1) {
-    return solidAabb()
-  }
-  {
-    const rx0 = Math.min(...runs.map((r) => r.x))
-    const ry0 = Math.min(...runs.map((r) => r.y))
-    const rx1 = Math.max(...runs.map((r) => r.x + r.width))
-    const ry1 = Math.max(...runs.map((r) => r.y + r.height))
-    const stripArea = runs.reduce((s, r) => s + r.width * r.height, 0)
-    const boxArea = Math.max(1, (rx1 - rx0) * (ry1 - ry0))
-    if (stripArea / boxArea >= 0.9) {
+  if (runs.length <= 1 || !measureStep(runs)) {
+    const cardRuns = members.map((m) => ({
+      x: Math.round(m.x - edge),
+      y: Math.round(m.y - edge),
+      width: Math.max(8, Math.round(m.width + edge * 2)),
+      height: Math.max(8, Math.round(m.height + edge * 2)),
+    }))
+    const cardMerged = mergeAbuttingRuns(
+      cardRuns,
+      Math.max(2, edge + Math.floor(grid / 4)),
+    )
+    if (cardMerged.length > 1 && measureStep(cardMerged)) {
+      runs = cardMerged
+    } else if (runs.length <= 1 || !measureStep(runs)) {
       return solidAabb()
     }
   }
 
-  // Title band: grow the topmost strip upward (same width) — never a separate
-  // narrow stem that snakes into empty space.
+  // Title band: grow the topmost strip upward (same width)
   if (titleBand > 0 && runs.length > 0) {
     const topIdx = runs.reduce(
       (bi, r, i, arr) =>
@@ -321,13 +394,36 @@ export function steppedLChromeFromMembers(
   }
 
   runs = mergeAbuttingRuns(runs, Math.max(2, edge))
+  const enclosed = ensureEnclosure(runs)
+  if (!enclosed) return solidAabb()
+  runs = mergeAbuttingRuns(enclosed, Math.max(2, edge))
 
-  const x0 = Math.min(...runs.map((r) => r.x))
-  const y0 = Math.min(...runs.map((r) => r.y))
-  const x1 = Math.max(...runs.map((r) => r.x + r.width))
-  const y1 = Math.max(...runs.map((r) => r.y + r.height))
+  let x0 = Math.min(...runs.map((r) => r.x))
+  let y0 = Math.min(...runs.map((r) => r.y))
+  let x1 = Math.max(...runs.map((r) => r.x + r.width))
+  let y1 = Math.max(...runs.map((r) => r.y + r.height))
 
-  // Rasterize strips → exterior outline (no hole-fill: keep true step silhouette)
+  // Hard AABB floor: never smaller than solid enclosure of members
+  const solidX = Math.round(minX - edge)
+  const solidY = Math.round(minY - edge - titleBand)
+  const solidR = Math.round(maxX + edge)
+  const solidB = Math.round(maxY + edge)
+  x0 = Math.min(x0, solidX)
+  y0 = Math.min(y0, solidY)
+  x1 = Math.max(x1, solidR)
+  y1 = Math.max(y1, solidB)
+
+  // Empty-corner guard: sparse L with huge void → solid rect
+  {
+    const stripArea = runs.reduce((s, r) => s + r.width * r.height, 0)
+    const boxArea = Math.max(1, (x1 - x0) * (y1 - y0))
+    if (stripArea / boxArea < 0.62) {
+      return solidAabb()
+    }
+  }
+
+  // Rasterize strips → exterior outline. Use ceil so cells cover full run
+  // rects (floor on max edge shrank the stroke inside cards).
   const originX = x0
   const originY = y0
   const unit = new Set<string>()
@@ -335,13 +431,29 @@ export function steppedLChromeFromMembers(
     const c0 = Math.floor((r.x - originX) / grid)
     const c1 = Math.max(
       c0 + 1,
-      Math.floor((r.x + r.width - originX + 1e-6) / grid),
+      Math.ceil((r.x + r.width - originX - 1e-9) / grid),
     )
     const r0 = Math.floor((r.y - originY) / grid)
     const r1 = Math.max(
       r0 + 1,
-      Math.floor((r.y + r.height - originY + 1e-6) / grid),
+      Math.ceil((r.y + r.height - originY - 1e-9) / grid),
     )
+    for (let rr = r0; rr < r1; rr++) {
+      for (let cc = c0; cc < c1; cc++) {
+        unit.add(`${cc},${rr}`)
+      }
+    }
+  }
+  // Also stamp every member+pad so outline never undercuts content
+  for (const m of members) {
+    const mx0 = m.x - edge
+    const my0 = m.y - edge
+    const mx1 = m.x + m.width + edge
+    const my1 = m.y + m.height + edge
+    const c0 = Math.floor((mx0 - originX) / grid)
+    const c1 = Math.max(c0 + 1, Math.ceil((mx1 - originX - 1e-9) / grid))
+    const r0 = Math.floor((my0 - originY) / grid)
+    const r1 = Math.max(r0 + 1, Math.ceil((my1 - originY - 1e-9) / grid))
     for (let rr = r0; rr < r1; rr++) {
       for (let cc = c0; cc < c1; cc++) {
         unit.add(`${cc},${rr}`)
@@ -352,6 +464,7 @@ export function steppedLChromeFromMembers(
     polyominoExteriorPathD(unit, grid, originX, originY, 0) ||
     rectPerimeterPathD(x0, y0, x1 - x0, y1 - y0)
 
+  // Panel AABB from union of runs + solid floor (fill regions stay run-based)
   return {
     x: x0,
     y: y0,

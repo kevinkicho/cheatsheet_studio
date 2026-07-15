@@ -213,16 +213,20 @@ export function resolveLayoutGaps(options: {
 }
 
 /**
- * Convert a pixel gap to free-flow grid cells.
- * Any gap > 0 becomes at least 1 cell so sub-grid settings (e.g. 2px on a
- * 24px grid) still produce visible air — previously `px < grid/2 → 0` made
- * all small gaps a no-op.
+ * Convert a pixel gap to free-flow grid cells (approximate coarse pack).
+ *
+ * Uses nearest-cell rounding so small user gaps (e.g. 2px on a 24px grid)
+ * stay **0 cells** — pixel-exact air is applied later by panel/card gap
+ * post-passes. Large gaps still expand free-flow (48px → 2 cells).
+ *
+ * Previously `ceil` + min-1 forced every gap>0 to ≥24px, so the 2px default
+ * looked identical to a full grid gutter and sliders felt dead until 25+.
  */
 export function gapPxToCells(px: number, grid: number): number {
   const g = Math.max(4, grid)
   const p = Math.max(0, px)
   if (p <= 0) return 0
-  return Math.max(1, Math.ceil(p / g))
+  return Math.max(0, Math.round(p / g))
 }
 
 // Export filename helpers live in exportTags.ts (avoid star-export conflicts).

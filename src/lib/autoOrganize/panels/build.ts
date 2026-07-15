@@ -275,17 +275,18 @@ export function buildNestedHierarchyPanels(args: {
 
       /**
        * Chrome policy:
-       * - Level in n-gon set → stepped blocks (card footprints)
-       * - Else → solid AABB rectangle (clean frame)
-       *
-       * Multi-child L1 is NOT forced to polygon — that produced snaking
-       * “weird boxes” connecting free-flow L2s (screenshot 214119).
+       * - Leaf levels in n-gon set → stepped blocks (card footprints)
+       * - Multi-level outermost (L1 wrapping L2s) → solid AABB always
+       *   (stepped union of free-flow L2s = snaking empty L, 031425/214119)
+       * - Else → solid AABB rectangle
        */
       const useNgon = ngonSet.has(level)
       const chromeShape: PanelShape = useNgon ? 'polygon' : 'rect'
-      const solidMode: 'solid-aabb' | 'close' | 'silhouette' | 'blocks' = useNgon
-        ? 'blocks'
-        : 'solid-aabb'
+      // Outer multi-level frame wraps free-flow children — never stepped L
+      const outerMulti =
+        multi && isOutermost && effectiveLevels.length > 1
+      const solidMode: 'solid-aabb' | 'close' | 'silhouette' | 'blocks' =
+        useNgon && !outerMulti ? 'blocks' : 'solid-aabb'
       const chrome = chromeFromMembers(members, {
         pad: effPad,
         titleBand,

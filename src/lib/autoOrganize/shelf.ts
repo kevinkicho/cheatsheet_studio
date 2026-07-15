@@ -81,9 +81,22 @@ function orderIndices(
  * Score a placement: lower is better (tetris / density).
  * Primary: height, then bounding area, then width (prefer short stacks that
  * fill width rather than tall left-aligned slabs).
+ * When `filledArea` is provided, heavily penalize empty AABB corners so
+ * free-flow does not leave Swiss-cheese voids inside parent frames.
  */
-export function packBBoxScore(usedCw: number, usedCh: number): number {
-  return usedCh * 1e6 + usedCw * usedCh * 8 + usedCw * 0.25
+export function packBBoxScore(
+  usedCw: number,
+  usedCh: number,
+  filledArea?: number,
+): number {
+  const box = Math.max(1, usedCw * usedCh)
+  const fill =
+    filledArea != null && filledArea > 0
+      ? Math.min(1, filledArea / box)
+      : 1
+  // Empty corner tax — sparse L packs look broken inside outer panels
+  const emptyTax = (1 - fill) * 5e5
+  return usedCh * 1e6 + box * 8 + usedCw * 0.25 + emptyTax
 }
 
 function usedExtent(
@@ -321,11 +334,15 @@ export function placeTopicRegionsDense(
     })
   }
 
-  // Density: multi-order best-of
+  // Density: multi-order best-of (prefer high fill, not just short height)
   const strategies = opts?.orders?.length ? opts.orders : DENSITY_ORDERS
   let bestPos: Map<number, { c: number; r: number }> | null = null
   let bestScore = Infinity
   let bestUsed = { usedCw: pageCols, usedCh: 1e9 }
+  const filled = regions.reduce(
+    (s, r) => s + Math.max(1, r.cw) * Math.max(1, r.ch),
+    0,
+  )
 
   for (const strategy of strategies) {
     const order = orderIndices(regions, strategy)
@@ -337,7 +354,7 @@ export function placeTopicRegionsDense(
       { readingFlow: false },
     )
     const ext = usedExtent(candidate, regions, pageCols)
-    const score = packBBoxScore(ext.usedCw, ext.usedCh)
+    const score = packBBoxScore(ext.usedCw, ext.usedCh, filled)
     if (
       score < bestScore - 1e-9 ||
       (Math.abs(score - bestScore) < 1e-9 &&
@@ -409,7 +426,8 @@ export function packClusterTight(
       readingFlow: false,
     })
     const ext = usedExtent(pos, sized, cols)
-    const score = packBBoxScore(ext.usedCw, ext.usedCh)
+    const filled = sized.reduce((s, m) => s + m.cw * m.ch, 0)
+    const score = packBBoxScore(ext.usedCw, ext.usedCh, filled)
     if (!best || score < best.score) {
       best = {
         pos,
@@ -467,7 +485,8 @@ export function placePlansHierarchical(
   const pos = new Map<number, { c: number; r: number }>()
   if (pageCols < 1 || plans.length === 0) return pos
 
-  const gap = Math.max(0, Math.min(gapCells, 6))
+  // Honor full leaf gap (do not cap — large L2 panel gaps must pass through)
+  const gap = Math.max(0, gapCells)
   const outerGap = Math.max(0, opts?.outerGapCells ?? 0)
   const outerTitle = Math.max(0, opts?.outerTitleCells ?? 0)
   const nestInset = Math.max(0, opts?.nestInsetCells ?? 0)

@@ -374,8 +374,8 @@ export function resolveLeafGroupCollisions(
       if (newMinY >= h.y1 + minGap) continue
       newMinY = Math.max(newMinY, h.y1 + minGap)
     }
-    const dy =
-      newMinY > g.y0 ? Math.ceil((newMinY - g.y0) / grid) * grid : 0
+    // Pixel-exact (grid snap turned small L2 gaps into full cells)
+    const dy = newMinY > g.y0 ? Math.ceil(newMinY - g.y0) : 0
     if (dy !== 0) {
       dyOf.set(g.key, dy)
       g.y0 += dy
@@ -905,8 +905,8 @@ export function separateFolderClusters(
       if (newMinY >= hy1 + minGap) continue
       newMinY = Math.max(newMinY, hy1 + minGap)
     }
-    const dy =
-      newMinY > g.minY ? Math.ceil((newMinY - g.minY) / grid) * grid : 0
+    // Pixel-exact so L1 gap=2 does not become 24
+    const dy = newMinY > g.minY ? Math.ceil(newMinY - g.minY) : 0
     if (dy !== 0) dyOf.set(g.key, dy)
     if (dy !== 0) {
       g.minY += dy
@@ -972,6 +972,123 @@ export function resolveCardOverlaps(
 }
 
 /**
+ * Pixel-exact card-to-card gap inside each leaf folder group (block gap knob).
+ * Free-flow is cell-quantized; this pass opens (or keeps) stroke-free air
+ * between neighbor cards so blockGap=2 actually means ~2px, not 24px.
+ */
+export function separateLeafCardsByGap(
+  items: CanvasItem[],
+  folders: FolderRef[],
+  leafLevel: PanelGroupLevel,
+  opts: {
+    grid?: number
+    minGapPx: number
+    contentRight?: number
+  },
+): CanvasItem[] {
+  const minGap = Math.max(0, opts.minGapPx)
+  if (minGap <= 0) return items
+  const contentRight = opts.contentRight ?? Infinity
+  const cards = items.filter(
+    (i) => !i.hidden && !isHeadingCard(i) && i.folderId,
+  )
+  if (cards.length < 2) return items
+
+  const groups = new Map<string, string[]>()
+  for (const c of cards) {
+    const key =
+      folderAtGroupLevel(c.folderId, folders, leafLevel) ??
+      c.folderId ??
+      c.id
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key)!.push(c.id)
+  }
+
+  const next = items.map((it) => ({ ...it }))
+  const byId = () => new Map(next.map((i) => [i.id, i]))
+
+  for (let pass = 0; pass < 8; pass++) {
+    let any = false
+    const map = byId()
+    for (const ids of groups.values()) {
+      if (ids.length < 2) continue
+      const list = ids
+        .map((id) => map.get(id)!)
+        .filter(Boolean)
+        .sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id))
+      for (let i = 0; i < list.length; i++) {
+        for (let j = i + 1; j < list.length; j++) {
+          const a = list[i]!
+          const b = list[j]!
+          const yOverlap =
+            Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y)
+          const xOverlap =
+            Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x)
+          const xGap = Math.max(
+            0,
+            Math.max(a.x - (b.x + b.width), b.x - (a.x + a.width)),
+          )
+          const yGap = Math.max(
+            0,
+            Math.max(a.y - (b.y + b.height), b.y - (a.y + a.height)),
+          )
+          // Side-by-side neighbors
+          if (yOverlap > 4 && xGap < minGap) {
+            const left = a.x <= b.x ? a : b
+            const rightC = a.x <= b.x ? b : a
+            const need = left.x + left.width + minGap - rightC.x
+            if (need > 0.5) {
+              let nx = Math.round(rightC.x + need)
+              if (nx + rightC.width > contentRight) {
+                // Fall back to vertical separation
+                const top = a.y <= b.y ? a : b
+                const bot = a.y <= b.y ? b : a
+                const needY = top.y + top.height + minGap - bot.y
+                if (needY > 0.5) {
+                  const bi = next.findIndex((x) => x.id === bot.id)
+                  if (bi >= 0) {
+                    next[bi] = {
+                      ...next[bi]!,
+                      y: Math.round(bot.y + needY),
+                    }
+                    any = true
+                  }
+                }
+              } else {
+                const bi = next.findIndex((x) => x.id === rightC.id)
+                if (bi >= 0) {
+                  next[bi] = { ...next[bi]!, x: nx }
+                  any = true
+                }
+              }
+              continue
+            }
+          }
+          // Vertical stack neighbors
+          if (xOverlap > 4 && yGap < minGap) {
+            const top = a.y <= b.y ? a : b
+            const bot = a.y <= b.y ? b : a
+            const needY = top.y + top.height + minGap - bot.y
+            if (needY > 0.5) {
+              const bi = next.findIndex((x) => x.id === bot.id)
+              if (bi >= 0) {
+                next[bi] = {
+                  ...next[bi]!,
+                  y: Math.round(bot.y + needY),
+                }
+                any = true
+              }
+            }
+          }
+        }
+      }
+    }
+    if (!any) break
+  }
+  return next
+}
+
+/**
  * Rebuild chrome for same-level sibling panels that still overlap after pack
  * (residual pad collisions). Nested parent/child pairs are ignored.
  */
@@ -1027,6 +1144,9 @@ export function resolveSameLevelPanelCollisions(
     if (members.length === 0) return p
     const titleBand = titleBandFor(p)
     const useNgon = p.shape === 'polygon'
+    // Outer multi-level: solid AABB (not stepped from all nested cards)
+    const isOuterMulti =
+      multi && (p.hierarchyLevel ?? 1) === outerLevel
     const minX = Math.min(...members.map((m) => m.x))
     const maxX = Math.max(...members.map((m) => m.x + m.width))
     let effPad = Math.max(0, pad)
@@ -1041,7 +1161,7 @@ export function resolveSameLevelPanelCollisions(
       titleBand,
       shape: useNgon ? 'polygon' : 'rect',
       grid,
-      solidMode: useNgon ? 'blocks' : 'solid-aabb',
+      solidMode: useNgon && !isOuterMulti ? 'blocks' : 'solid-aabb',
     })
     let { x, y, width, height } = chrome
     if (opts.contentLeft != null && x < opts.contentLeft) {
@@ -1113,6 +1233,7 @@ export function resolveSameLevelPanelCollisions(
  * Hard panel layout invariants (fast):
  * - cards clear visual panel header chips (incl. nested L2 under L1)
  * - same-level stroked panels do not overlap
+ * - same-level frames respect user L1 / L2 panel gaps (stroke-to-stroke)
  *
  * Batches moves and rebuilds once per pass (not per collision).
  *
@@ -1129,7 +1250,15 @@ export function enforcePanelLayoutInvariants(
     contentLeft?: number
     contentRight?: number
     contentTop?: number
+    /**
+     * Fallback min frame gap (legacy). Prefer `l1GapPx` / `l2GapPx`.
+     * Used when level-specific gaps are omitted.
+     */
     minGapPx?: number
+    /** Stroke-to-stroke gap between L1 (outer) sibling panels. */
+    l1GapPx?: number
+    /** Stroke-to-stroke gap between L2+ sibling panels. */
+    l2GapPx?: number
     /**
      * Limit title clearance + internal sibling separation to these panels
      * (edited panel + nested children). External same-level panels are only
@@ -1143,7 +1272,10 @@ export function enforcePanelLayoutInvariants(
   if (panels.length === 0) return { items, panels }
   const grid = Math.max(4, opts?.grid ?? ORGANIZE_GRID)
   const padBudget = Math.max(0, opts?.panelPad ?? 4)
-  const minGap = Math.max(0, opts?.minGapPx ?? 2)
+  const minGapFallback = Math.max(0, opts?.minGapPx ?? 2)
+  const l1Gap = Math.max(0, opts?.l1GapPx ?? minGapFallback)
+  const l2Gap = Math.max(0, opts?.l2GapPx ?? minGapFallback)
+  const gapForLevel = (level: number) => (level <= 1 ? l1Gap : l2Gap)
   const left = opts?.contentLeft
   const right = opts?.contentRight
   const top = opts?.contentTop
@@ -1192,6 +1324,32 @@ export function enforcePanelLayoutInvariants(
     )
   }
 
+  /**
+   * True siblings under the same outer parent (or both L1 peers).
+   * Separating L2s from *different* L1 parents was blowing layouts apart —
+   * Biology L2s got shoved by Chemistry L2s, leaving huge empty voids.
+   */
+  const areSiblings = (a: LayoutPanel, b: LayoutPanel, all: LayoutPanel[]) => {
+    const la = a.hierarchyLevel ?? 1
+    const lb = b.hierarchyLevel ?? 1
+    if (la !== lb) return false
+    if (la <= 1) return true
+    if (!a.memberIds?.length || !b.memberIds?.length) return false
+    const parentsOf = (p: LayoutPanel) =>
+      all.filter(
+        (o) =>
+          o.id !== p.id &&
+          o.showStroke !== false &&
+          (o.hierarchyLevel ?? 1) < (p.hierarchyLevel ?? 1) &&
+          o.memberIds?.length &&
+          p.memberIds!.every((id) => o.memberIds!.includes(id)),
+      )
+    const pa = parentsOf(a)
+    const pb = parentsOf(b)
+    if (pa.length === 0 && pb.length === 0) return true
+    return pa.some((p) => pb.some((q) => q.id === p.id))
+  }
+
   const padOf = new Map<string, number>(
     panels.map((p) => [p.id, padBudget]),
   )
@@ -1208,6 +1366,18 @@ export function enforcePanelLayoutInvariants(
     if (members.length === 0) return p
     const titleBand = exclusiveBand(p, allPanels)
     const useNgon = p.shape === 'polygon'
+    // Leaf panels (no nested stroked children): n-gon from card footprints.
+    // Parent panels that wrap L2s: solid AABB — stepped union of all cards
+    // recreates empty L-notches / snaking outer chrome (screenshot 031425).
+    const hasNestedStrokeKids = allPanels.some(
+      (c) =>
+        c.id !== p.id &&
+        c.showStroke !== false &&
+        (c.hierarchyLevel ?? 1) > (p.hierarchyLevel ?? 1) &&
+        c.memberIds?.length &&
+        p.memberIds?.length &&
+        c.memberIds.every((id) => p.memberIds!.includes(id)),
+    )
     let effPad = Math.max(0, padUse ?? padOf.get(p.id) ?? padBudget)
     const minX = Math.min(...members.map((m) => m.x))
     const maxX = Math.max(...members.map((m) => m.x + m.width))
@@ -1222,7 +1392,8 @@ export function enforcePanelLayoutInvariants(
       titleBand,
       shape: useNgon ? 'polygon' : 'rect',
       grid,
-      solidMode: useNgon ? 'blocks' : 'solid-aabb',
+      solidMode:
+        useNgon && !hasNestedStrokeKids ? 'blocks' : 'solid-aabb',
     })
     let { x, y, width, height } = chrome
     if (left != null && x < left) {
@@ -1309,21 +1480,26 @@ export function enforcePanelLayoutInvariants(
     })
   }
 
-  // ── B: sibling non-overlap ────────────────────────────────────────────
-  // Scoped mode: only separate pairs both in the edited cluster (≤2 passes).
-  // Unscoped: full sheet (≤4 passes).
-  const maxSibPasses = scope ? 2 : 4
+  // ── B: sibling non-overlap + user frame gaps ──────────────────────────
+  // Enforce stroke-to-stroke min gap (L1/L2 knobs). Previous logic only
+  // separated true overlaps and treated minGap as rectsOverlap eps (which
+  // does NOT push frames that are merely closer than the user gap).
+  // Scoped mode: only pairs both in the edited cluster (≤3 passes).
+  // Unscoped: full sheet (≤6 passes).
+  const maxSibPasses = scope ? 3 : 6
   for (let pass = 0; pass < maxSibPasses; pass++) {
     nextPanels = rebuildAll(nextItems, nextPanels)
     const byIdPanel = new Map(nextPanels.map((p) => [p.id, p]))
     let any = false
-    const dyCluster = new Map<string, number>() // panelId → dy for its members
+    const dyCluster = new Map<string, number>() // panelId → dy
+    const dxCluster = new Map<string, number>() // panelId → dx
 
     const levels = [
       ...new Set(nextPanels.map((p) => p.hierarchyLevel ?? 1)),
     ].sort((a, b) => a - b)
 
     for (const level of levels) {
+      const needGap = gapForLevel(level)
       const list = nextPanels
         .filter(
           (p) =>
@@ -1339,28 +1515,90 @@ export function enforcePanelLayoutInvariants(
           if (isNestedPair(a, b)) continue
           // Scoped: only resolve collisions inside the edited cluster
           if (scope && !(inScope(a.id) && inScope(b.id))) continue
-          if (!(panelRunsOverlap(a, b, 0) || rectsOverlap(a, b, minGap))) {
-            continue
-          }
+
           const yOverlap =
             Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y)
           const xOverlap =
             Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x)
+          const runsHit = panelRunsOverlap(a, b, 0)
+          const boxHit = rectsOverlap(a, b, 0)
+          const siblings = areSiblings(a, b, nextPanels)
+          // Cross-parent L2s: only separate true paint overlaps (gap=0).
+          // Never apply L2 gap between Biology vs Chemistry children.
+          if (!siblings && !(runsHit || boxHit)) continue
+          const gap = siblings ? needGap : 0
+
+          const xGap = Math.max(
+            0,
+            Math.max(a.x - (b.x + b.width), b.x - (a.x + a.width)),
+          )
+          const yGap = Math.max(
+            0,
+            Math.max(a.y - (b.y + b.height), b.y - (a.y + a.height)),
+          )
+          const shareX = xOverlap > 1
+          const shareY = yOverlap > 1
+          const tooCloseV = siblings && shareX && yGap < gap
+          const tooCloseH = siblings && shareY && xGap < gap
+          if (!(runsHit || boxHit || tooCloseV || tooCloseH)) continue
+
           const padA = padOf.get(a.id) ?? padBudget
           const padB = padOf.get(b.id) ?? padBudget
-          // Prefer vertical separation over pad-shrink
-          const needY = a.y + a.height + minGap - b.y
-          if (needY > 0.5 && b.memberIds?.length && yOverlap > 0) {
-            const dy = Math.ceil(needY / grid) * grid
-            dyCluster.set(b.id, Math.max(dyCluster.get(b.id) ?? 0, dy))
-            any = true
-            continue
+
+          // Pixel-exact push (do NOT snap to grid — that turned 2px gaps into 24px).
+          // Vertical stack / vertical collision: push lower panel down
+          if (shareX || (runsHit && yOverlap >= xOverlap) || tooCloseV) {
+            const top = a.y <= b.y ? a : b
+            const bot = a.y <= b.y ? b : a
+            const needY = top.y + top.height + gap - bot.y
+            if (needY > 0.5 && bot.memberIds?.length) {
+              const dy = Math.ceil(needY)
+              dyCluster.set(bot.id, Math.max(dyCluster.get(bot.id) ?? 0, dy))
+              any = true
+              continue
+            }
           }
+
+          // Side-by-side: push rightward panel right (honor L1/L2 gap)
+          if (shareY || tooCloseH) {
+            const leftP = a.x <= b.x ? a : b
+            const rightP = a.x <= b.x ? b : a
+            const needX = leftP.x + leftP.width + gap - rightP.x
+            if (needX > 0.5 && rightP.memberIds?.length) {
+              let dx = Math.ceil(needX)
+              if (right != null) {
+                const maxDx = Math.max(
+                  0,
+                  right - (rightP.x + rightP.width),
+                )
+                dx = Math.min(dx, Math.max(0, Math.floor(maxDx)))
+              }
+              if (dx > 0.5) {
+                dxCluster.set(
+                  rightP.id,
+                  Math.max(dxCluster.get(rightP.id) ?? 0, dx),
+                )
+                any = true
+                continue
+              }
+              // Can't move right (at content edge) → fall back to vertical push
+              const top = a.y <= b.y ? a : b
+              const bot = a.y <= b.y ? b : a
+              const needY = top.y + top.height + gap - bot.y
+              if (needY > 0.5 && bot.memberIds?.length) {
+                const dy = Math.ceil(needY)
+                dyCluster.set(bot.id, Math.max(dyCluster.get(bot.id) ?? 0, dy))
+                any = true
+                continue
+              }
+            }
+          }
+
           // Thin side-pad collision only: trim pad but never below 2px
           if (
             xOverlap > 0 &&
             yOverlap > 0 &&
-            xOverlap <= padA + padB + minGap + 2 &&
+            xOverlap <= padA + padB + gap + 2 &&
             (padA > 2 || padB > 2)
           ) {
             padOf.set(a.id, Math.max(2, padA - 2))
@@ -1371,9 +1609,10 @@ export function enforcePanelLayoutInvariants(
       }
     }
 
-    if (dyCluster.size === 0 && !any) break
-    if (dyCluster.size > 0) {
+    if (dyCluster.size === 0 && dxCluster.size === 0 && !any) break
+    if (dyCluster.size > 0 || dxCluster.size > 0) {
       const idDy = new Map<string, number>()
+      const idDx = new Map<string, number>()
       for (const [pid, dy] of dyCluster) {
         const p = byIdPanel.get(pid)
         if (!p?.memberIds) continue
@@ -1381,9 +1620,22 @@ export function enforcePanelLayoutInvariants(
           idDy.set(id, Math.max(idDy.get(id) ?? 0, dy))
         }
       }
+      for (const [pid, dx] of dxCluster) {
+        const p = byIdPanel.get(pid)
+        if (!p?.memberIds) continue
+        for (const id of p.memberIds) {
+          idDx.set(id, Math.max(idDx.get(id) ?? 0, dx))
+        }
+      }
       nextItems = nextItems.map((it) => {
-        const dy = idDy.get(it.id)
-        return dy ? { ...it, y: Math.round(it.y + dy) } : it
+        const dy = idDy.get(it.id) ?? 0
+        const dx = idDx.get(it.id) ?? 0
+        if (!dy && !dx) return it
+        return {
+          ...it,
+          x: Math.round(it.x + dx),
+          y: Math.round(it.y + dy),
+        }
       })
     }
     if (!any) break
@@ -1398,20 +1650,28 @@ export function enforcePanelLayoutInvariants(
     if (root && root.showStroke !== false) {
       const idDy = new Map<string, number>()
       const rootLevel = root.hierarchyLevel ?? 1
+      const needGap = gapForLevel(rootLevel)
       for (const other of nextPanels) {
         if (other.id === rootId) continue
         if (other.showStroke === false) continue
         if ((other.hierarchyLevel ?? 1) !== rootLevel) continue
         if (inScope(other.id)) continue
         if (isNestedPair(root, other)) continue
-        if (!(panelRunsOverlap(root, other, 0) || rectsOverlap(root, other, minGap))) {
-          continue
-        }
+        const xOverlap =
+          Math.min(root.x + root.width, other.x + other.width) -
+          Math.max(root.x, other.x)
+        const yGap = Math.max(0, other.y - (root.y + root.height))
+        const hits =
+          panelRunsOverlap(root, other, 0) ||
+          rectsOverlap(root, other, 0) ||
+          (xOverlap > 1 && yGap < needGap)
+        if (!hits) continue
         // Only push panels that start at/below the root (below-neighbors)
         if (other.y + other.height / 2 < root.y + root.height / 2) continue
-        const needY = root.y + root.height + minGap - other.y
+        const needY = root.y + root.height + needGap - other.y
         if (needY <= 0.5 || !other.memberIds?.length) continue
-        const dy = Math.ceil(needY / grid) * grid
+        // Pixel-exact (match sibling pass)
+        const dy = Math.ceil(needY)
         for (const id of other.memberIds) {
           idDy.set(id, Math.max(idDy.get(id) ?? 0, dy))
         }

@@ -874,13 +874,6 @@ describe('packCheatsheetLayout', () => {
         folders,
         groupSort: 'name-asc',
       })
-    const ySpan = (out: ReturnType<typeof packCheatsheetLayout>) => {
-      const cards = out.items.filter((i) => !i.hidden)
-      return (
-        Math.max(...cards.map((c) => c.y + c.height)) -
-        Math.min(...cards.map((c) => c.y))
-      )
-    }
     const topicGap = (out: ReturnType<typeof packCheatsheetLayout>) => {
       const a = out.items.filter((i) => i.folderId === 'f1' && !i.hidden)
       const b = out.items.filter((i) => i.folderId === 'f2' && !i.hidden)
@@ -898,10 +891,158 @@ describe('packCheatsheetLayout', () => {
     expect(topicGap(pack('polygon', 48, 0))).toBeGreaterThan(
       topicGap(pack('polygon', 0, 0)),
     )
-    // Larger block gap → taller overall when cards stack under densify
-    expect(ySpan(pack('rect', 2, 48))).toBeGreaterThanOrEqual(
-      ySpan(pack('rect', 2, 0)),
+    // Hard guarantee: large L1 gap leaves real content air between topics
+    expect(topicGap(pack('rect', 48, 0))).toBeGreaterThanOrEqual(40)
+  })
+
+  it('nested L2 panel gap and n-gon multi-run chrome honor settings', () => {
+    const folders = [
+      { id: 'f1', order: 0, name: '1. Alpha', parentId: null },
+      { id: 'f1a', order: 0, name: '1.1 SubA', parentId: 'f1' },
+      { id: 'f1b', order: 1, name: '1.2 SubB', parentId: 'f1' },
+      { id: 'f2', order: 1, name: '2. Beta', parentId: null },
+      { id: 'f2a', order: 0, name: '2.1 Sub', parentId: 'f2' },
+    ]
+    // Uneven card sizes so free-flow leaves a stepped L silhouette for n-gon
+    const items: CanvasItem[] = [
+      card('a1', { folderId: 'f1a', title: 'A1', width: 180, height: 80 }),
+      card('a2', { folderId: 'f1a', title: 'A2', width: 100, height: 60 }),
+      card('a3', { folderId: 'f1a', title: 'A3', width: 90, height: 50 }),
+      card('b1', { folderId: 'f1b', title: 'B1', width: 120, height: 70 }),
+      card('b2', { folderId: 'f1b', title: 'B2', width: 160, height: 100 }),
+      card('c1', { folderId: 'f2a', title: 'C1', width: 100, height: 60 }),
+      card('c2', { folderId: 'f2a', title: 'C2', width: 140, height: 90 }),
+    ]
+    const pack = (
+      shape: 'rect' | 'polygon',
+      l1: number,
+      l2: number,
+      block: number,
+    ) =>
+      packCheatsheetLayout(items, DEFAULT_CANVAS, {
+        density: 'sm',
+        groupChrome: 'panels',
+        panelShape: shape,
+        panelGroupLevels: [1, 2],
+        panelBorderLevels: [1, 2],
+        panelNgonLevels: shape === 'polygon' ? [1, 2] : undefined,
+        panelPadding: 4,
+        l1PanelGap: l1,
+        l2PanelGap: l2,
+        blockGap: block,
+        folders,
+        groupSort: 'name-asc',
+        multiPage: true,
+        dissolvePrintArea: true,
+      })
+
+    const l1StrokeGap = (out: ReturnType<typeof packCheatsheetLayout>) => {
+      const L1 = (out.layoutPanels ?? [])
+        .filter((p) => (p.hierarchyLevel ?? 1) === 1 && p.showStroke !== false)
+        .sort((a, b) => a.y - b.y || a.x - b.x)
+      if (L1.length < 2) return 0
+      const a = L1[0]!
+      const b = L1[1]!
+      const xOl = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x)
+      if (xOl > 8) return Math.max(0, b.y - (a.y + a.height), a.y - (b.y + b.height))
+      return Math.max(0, b.x - (a.x + a.width), a.x - (b.x + b.width))
+    }
+    const l2StrokeGap = (out: ReturnType<typeof packCheatsheetLayout>) => {
+      const L1 = (out.layoutPanels ?? []).find(
+        (p) =>
+          (p.hierarchyLevel ?? 1) === 1 &&
+          p.showStroke !== false &&
+          (p.title ?? '').includes('Alpha'),
+      )
+      if (!L1) return 0
+      const set = new Set(L1.memberIds ?? [])
+      const kids = (out.layoutPanels ?? [])
+        .filter(
+          (p) =>
+            (p.hierarchyLevel ?? 1) === 2 &&
+            p.showStroke !== false &&
+            p.memberIds?.every((id) => set.has(id)),
+        )
+        .sort((a, b) => a.y - b.y || a.x - b.x)
+      if (kids.length < 2) return 0
+      let best = 0
+      for (let i = 0; i < kids.length; i++) {
+        for (let j = i + 1; j < kids.length; j++) {
+          const a = kids[i]!
+          const b = kids[j]!
+          const xOl =
+            Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x)
+          const yOl =
+            Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y)
+          if (xOl > 8) {
+            best = Math.max(
+              best,
+              Math.max(0, b.y - (a.y + a.height), a.y - (b.y + b.height)),
+            )
+          } else if (yOl > 8) {
+            best = Math.max(
+              best,
+              Math.max(0, b.x - (a.x + a.width), a.x - (b.x + b.width)),
+            )
+          }
+        }
+      }
+      return best
+    }
+
+    const tight = pack('rect', 2, 2, 2)
+    const airy = pack('rect', 48, 48, 2)
+    expect(l1StrokeGap(airy)).toBeGreaterThanOrEqual(40)
+    expect(l1StrokeGap(airy)).toBeGreaterThan(l1StrokeGap(tight))
+    // L2 siblings under Alpha should open with larger L2 gap
+    expect(l2StrokeGap(airy)).toBeGreaterThanOrEqual(40)
+    expect(l2StrokeGap(airy)).toBeGreaterThan(l2StrokeGap(tight))
+
+    // N-gon: at least some stroked panels use polygon shape
+    const ngon = pack('polygon', 24, 24, 8)
+    const stroked = (ngon.layoutPanels ?? []).filter(
+      (p) => p.showStroke !== false,
     )
+    expect(stroked.some((p) => p.shape === 'polygon')).toBe(true)
+    // shape stays polygon even when a panel collapses to a solid AABB run
+    expect(stroked.filter((p) => p.shape === 'polygon').length).toBeGreaterThan(
+      0,
+    )
+  })
+
+  it('block gap increases leaf card spacing', () => {
+    const folders = [
+      { id: 'f1', order: 0, name: '1. Alpha' },
+    ]
+    const items: CanvasItem[] = [
+      card('a1', { folderId: 'f1', title: 'A1', width: 100, height: 60 }),
+      card('a2', { folderId: 'f1', title: 'A2', width: 100, height: 60 }),
+      card('a3', { folderId: 'f1', title: 'A3', width: 100, height: 60 }),
+      card('a4', { folderId: 'f1', title: 'A4', width: 100, height: 60 }),
+    ]
+    const pack = (block: number) =>
+      packCheatsheetLayout(items, DEFAULT_CANVAS, {
+        density: 'sm',
+        groupChrome: 'panels',
+        panelShape: 'rect',
+        panelGroupLevels: [1],
+        panelBorderLevels: [1],
+        panelPadding: 4,
+        l1PanelGap: 2,
+        l2PanelGap: 2,
+        blockGap: block,
+        folders,
+        groupSort: 'name-asc',
+      })
+    const ySpan = (out: ReturnType<typeof packCheatsheetLayout>) => {
+      const cards = out.items.filter((i) => !i.hidden)
+      return (
+        Math.max(...cards.map((c) => c.y + c.height)) -
+        Math.min(...cards.map((c) => c.y))
+      )
+    }
+    // Larger block gap → taller overall when cards stack under densify
+    expect(ySpan(pack(48))).toBeGreaterThanOrEqual(ySpan(pack(0)))
   })
 
   it('gap + panelPadding together increase inter-panel free-flow clearance', () => {
@@ -1016,6 +1157,102 @@ describe('packCheatsheetLayout', () => {
       expect(p.y).toBeLessThanOrEqual(c.y)
       expect(p.x + p.width).toBeGreaterThanOrEqual(c.x + c.width)
       expect(p.y + p.height).toBeGreaterThanOrEqual(c.y + c.height)
+    }
+  })
+
+  it('n-gon L2 leaf fully encloses unequal cards (no overflow 031956)', () => {
+    // Tall flowchart + wide table + short formulas like Microeconomics
+    const folders = [
+      { id: 't1', name: '1. Economics', parentId: null, order: 0 },
+      { id: 't1a', name: '1.2 Microeconomics', parentId: 't1', order: 0 },
+      { id: 't1b', name: '1.3 Macro', parentId: 't1', order: 1 },
+    ]
+    const items: CanvasItem[] = [
+      card('flow', {
+        folderId: 't1a',
+        title: 'Flow',
+        width: 140,
+        height: 220,
+        latex: 'f',
+      }),
+      card('map', {
+        folderId: 't1a',
+        title: 'Mind',
+        width: 200,
+        height: 180,
+        latex: 'm',
+      }),
+      card('tbl', {
+        folderId: 't1a',
+        title: 'Table',
+        width: 180,
+        height: 100,
+        latex: 't',
+      }),
+      card('eq1', {
+        folderId: 't1a',
+        title: 'Eq1',
+        width: 120,
+        height: 50,
+        latex: 'e1',
+      }),
+      card('eq2', {
+        folderId: 't1a',
+        title: 'Eq2',
+        width: 160,
+        height: 48,
+        latex: 'e2',
+      }),
+      card('b1', {
+        folderId: 't1b',
+        title: 'B1',
+        width: 100,
+        height: 60,
+        latex: 'b',
+      }),
+    ]
+    const out = packCheatsheetLayout(items, DEFAULT_CANVAS, {
+      density: 'sm',
+      groupChrome: 'panels',
+      panelShape: 'polygon',
+      panelPadding: 4,
+      panelGroupLevels: [1, 2],
+      panelBorderLevels: [1, 2],
+      panelNgonLevels: [1, 2],
+      l1PanelGap: 2,
+      l2PanelGap: 2,
+      blockGap: 2,
+      folders,
+      groupSort: 'name-asc',
+    })
+    const L2 = (out.layoutPanels ?? []).filter(
+      (p) => (p.hierarchyLevel ?? 1) === 2 && p.showStroke !== false,
+    )
+    expect(L2.length).toBeGreaterThanOrEqual(1)
+    for (const p of L2) {
+      const mem = (p.memberIds ?? [])
+        .map((id) => out.items.find((i) => i.id === id)!)
+        .filter((c) => c && !c.hidden)
+      for (const c of mem) {
+        // AABB encloses cards
+        expect(p.x).toBeLessThanOrEqual(c.x + 0.5)
+        expect(p.y).toBeLessThanOrEqual(c.y + 0.5)
+        expect(p.x + p.width).toBeGreaterThanOrEqual(c.x + c.width - 0.5)
+        expect(p.y + p.height).toBeGreaterThanOrEqual(c.y + c.height - 0.5)
+        // Union of runs (fill regions) must cover each card
+        const runs =
+          p.runs && p.runs.length > 0
+            ? p.runs
+            : [{ x: p.x, y: p.y, width: p.width, height: p.height }]
+        const covered = runs.some(
+          (r) =>
+            r.x <= c.x + 0.5 &&
+            r.y <= c.y + 0.5 &&
+            r.x + r.width >= c.x + c.width - 0.5 &&
+            r.y + r.height >= c.y + c.height - 0.5,
+        )
+        expect(covered).toBe(true)
+      }
     }
   })
 
