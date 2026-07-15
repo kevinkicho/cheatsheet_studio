@@ -3,13 +3,57 @@ import { ORGANIZE_GRID } from '../constants'
 import { chromeFromMembers } from '../polyomino'
 import { rectPerimeterPathD } from '../geometry'
 import { enforcePanelLayoutInvariants } from '../densify'
-import { placeTopicRegionsDense, packClusterTight } from '../shelf'
+import {
+  placeTopicRegionsDense,
+  packClusterTight,
+  type PackOrderStrategy,
+} from '../shelf'
 import {
   exclusiveTitleBandPx,
   NESTED_TITLE_BAND_PX,
   L1_TITLE_BAND_PX,
   L1_NESTED_TITLE_BAND_PX,
 } from './hierarchy'
+
+/** Per-panel click counter so each Auto-layout inside panel tries a new seed. */
+const panelPackSeedById = new Map<string, number>()
+
+/** Packing seeds: order strategy + optional column width fraction. */
+const IN_PANEL_PACK_SEEDS: Array<{
+  orders?: PackOrderStrategy[]
+  multiOrder: boolean
+  /** Fraction of content width for free-flow columns (1 = full). */
+  widthFrac: number
+  leafSort: 'name' | 'height' | 'area' | 'input' | 'input-rev'
+}> = [
+  { multiOrder: true, widthFrac: 1, leafSort: 'name' },
+  { multiOrder: true, orders: ['height-desc'], widthFrac: 1, leafSort: 'height' },
+  { multiOrder: true, orders: ['area-desc'], widthFrac: 1, leafSort: 'area' },
+  { multiOrder: true, orders: ['width-desc'], widthFrac: 1, leafSort: 'name' },
+  { multiOrder: true, orders: ['perimeter-desc'], widthFrac: 0.85, leafSort: 'height' },
+  { multiOrder: true, orders: ['input'], widthFrac: 1, leafSort: 'input' },
+  { multiOrder: true, orders: ['input-rev'], widthFrac: 1, leafSort: 'input-rev' },
+  { multiOrder: true, orders: ['height-asc'], widthFrac: 0.75, leafSort: 'area' },
+  { multiOrder: true, orders: ['area-asc'], widthFrac: 0.9, leafSort: 'name' },
+  { multiOrder: true, widthFrac: 0.66, leafSort: 'height' },
+]
+
+export function peekPanelPackSeed(panelId: string): number {
+  return panelPackSeedById.get(panelId) ?? 0
+}
+
+/** Advance and return the seed used for this click. */
+export function takePanelPackSeed(panelId: string): number {
+  const n = panelPackSeedById.get(panelId) ?? 0
+  panelPackSeedById.set(panelId, n + 1)
+  return n
+}
+
+/** Test helper: reset seed counter for a panel. */
+export function resetPanelPackSeed(panelId?: string): void {
+  if (panelId) panelPackSeedById.delete(panelId)
+  else panelPackSeedById.clear()
+}
 
 /**
  * Move a layout panel and its member cards by (dx, dy). Nested child panels
@@ -154,16 +198,20 @@ function sortCards(
 
 /**
  * Free-flow (skyline) pack of cards into a content box on the organize grid.
- * Much denser than simple L→R shelf for mixed-size diagram cards.
+ * Always keeps original card sizes — never shrinks (repeated Auto-layout
+ * clicks used to compound scale-down).
  */
 function packCardsDenseFreeFlow(
   cards: CanvasItem[],
   ox: number,
   oy: number,
   boxW: number,
-  scale: number,
   grid: number,
   gapCells: number,
+  orderOpts?: {
+    multiOrder?: boolean
+    orders?: PackOrderStrategy[]
+  },
 ): { out: Array<{ id: string; x: number; y: number; w: number; h: number }>; width: number; height: number } {
   if (cards.length === 0) {
     return { out: [], width: 0, height: 0 }
@@ -171,8 +219,8 @@ function packCardsDenseFreeFlow(
   const g = Math.max(4, grid)
   const pageCols = Math.max(1, Math.floor(boxW / g))
   const regions = cards.map((m, i) => {
-    const w = Math.max(24, Math.round(m.width * scale))
-    const h = Math.max(20, Math.round(m.height * scale))
+    const w = Math.max(24, Math.round(m.width))
+    const h = Math.max(20, Math.round(m.height))
     return {
       index: i,
       cw: Math.min(pageCols, Math.max(1, Math.ceil(w / g))),
@@ -182,12 +230,15 @@ function packCardsDenseFreeFlow(
       id: m.id,
     }
   })
-  // Multi-order best tetris — single height-first often leaves large voids
   const pos = placeTopicRegionsDense(
     regions.map((r) => ({ index: r.index, cw: r.cw, ch: r.ch })),
     pageCols,
     Math.max(0, gapCells),
-    { multiOrder: true, readingFlow: false },
+    {
+      multiOrder: orderOpts?.multiOrder !== false,
+      orders: orderOpts?.orders,
+      readingFlow: false,
+    },
   )
   const out: Array<{ id: string; x: number; y: number; w: number; h: number }> =
     []
@@ -209,6 +260,50 @@ function packCardsDenseFreeFlow(
   }
 }
 
+function sortLeafPanels(
+  leaves: LayoutPanel[],
+  members: CanvasItem[],
+  mode: 'name' | 'height' | 'area' | 'input' | 'input-rev',
+  nameDir: 1 | -1,
+): LayoutPanel[] {
+  const withStats = leaves.map((p) => {
+    const cards = members.filter((m) => p.memberIds?.includes(m.id))
+    const h =
+      cards.length > 0
+        ? Math.max(...cards.map((c) => c.height))
+        : 0
+    const area = cards.reduce((s, c) => s + c.width * c.height, 0)
+    const minY =
+      cards.length > 0 ? Math.min(...cards.map((c) => c.y)) : 0
+    const minX =
+      cards.length > 0 ? Math.min(...cards.map((c) => c.x)) : 0
+    return { p, h, area, minY, minX, title: (p.title ?? p.id).toLocaleLowerCase() }
+  })
+  switch (mode) {
+    case 'height':
+      withStats.sort((a, b) => b.h - a.h || a.title.localeCompare(b.title))
+      break
+    case 'area':
+      withStats.sort((a, b) => b.area - a.area || a.title.localeCompare(b.title))
+      break
+    case 'input':
+      withStats.sort((a, b) => a.minY - b.minY || a.minX - b.minX)
+      break
+    case 'input-rev':
+      withStats.sort((a, b) => b.minY - a.minY || b.minX - a.minX)
+      break
+    case 'name':
+    default:
+      withStats.sort((a, b) => {
+        if (a.title < b.title) return -1 * nameDir
+        if (a.title > b.title) return 1 * nameDir
+        return a.p.id.localeCompare(b.p.id)
+      })
+      break
+  }
+  return withStats.map((x) => x.p)
+}
+
 /**
  * Re-pack cards inside one panel (shelf within panel content box).
  * Used when user sets contentSort or after showTitle changes title band.
@@ -223,10 +318,18 @@ export function relayoutPanelContents(
     grid?: number
     gapPx?: number
     panelPad?: number
-    /** shelf = keep sizes; dense = pack + optional scale-to-fit + rebuild chrome */
+    /**
+     * shelf = keep sizes, row pack.
+     * dense = free-flow tetris at full card size (never shrinks cards).
+     */
     mode?: 'shelf' | 'dense'
     /** Full layout panel list — nested children are rebuilt in place. */
     allPanels?: LayoutPanel[]
+    /**
+     * Packing seed index. When omitted in dense mode, advances a per-panel
+     * counter so each Auto-layout click tries a different arrangement.
+     */
+    packSeed?: number
   },
 ): { items: CanvasItem[]; panel: LayoutPanel; panels?: LayoutPanel[] } {
   const ids = new Set(panel.memberIds ?? [])
@@ -238,6 +341,11 @@ export function relayoutPanelContents(
   const dense = opts?.mode === 'dense'
   // Default: Name A→Z (user preference for Auto-layout inside panel)
   const sort = panel.contentSort ?? 'name-asc'
+  const packSeed =
+    opts?.packSeed ??
+    (dense ? takePanelPackSeed(panel.id) : 0)
+  const seedCfg =
+    IN_PANEL_PACK_SEEDS[packSeed % IN_PANEL_PACK_SEEDS.length]!
 
   const allPanels = opts?.allPanels ?? []
   const hasNestedStroke = allPanels.some(
@@ -298,33 +406,20 @@ export function relayoutPanelContents(
     return !deeper
   })
 
-  // Order leaf groups for packing: name-asc/desc by panel title, else by
-  // current top-left of members (reading order).
-  const orderedLeaves = [...leafNested].sort((a, b) => {
-    if (sort === 'name-asc' || sort === 'name-desc') {
-      const dir = sort === 'name-desc' ? -1 : 1
-      const ta = (a.title ?? a.id).toLocaleLowerCase()
-      const tb = (b.title ?? b.id).toLocaleLowerCase()
-      if (ta < tb) return -1 * dir
-      if (ta > tb) return 1 * dir
-      return a.id.localeCompare(b.id)
-    }
-    const aCards = members.filter((m) => a.memberIds?.includes(m.id))
-    const bCards = members.filter((m) => b.memberIds?.includes(m.id))
-    const ay = aCards.length ? Math.min(...aCards.map((c) => c.y)) : 0
-    const by = bCards.length ? Math.min(...bCards.map((c) => c.y)) : 0
-    const ax = aCards.length ? Math.min(...aCards.map((c) => c.x)) : 0
-    const bx = bCards.length ? Math.min(...bCards.map((c) => c.x)) : 0
-    return ay - by || ax - bx
-  })
+  // Leaf order varies by packing seed (and user name sort when seed uses name)
+  const nameDir: 1 | -1 = sort === 'name-desc' ? -1 : 1
+  const orderedLeaves = sortLeafPanels(
+    leafNested,
+    members,
+    seedCfg.leafSort,
+    nameDir,
+  )
 
   const packShelfInBox = (
     group: CanvasItem[],
     ox: number,
     oy: number,
     boxW: number,
-    scale: number,
-    keepSize: boolean,
   ): { out: Place[]; width: number; height: number } => {
     const out: Place[] = []
     let x = ox
@@ -332,12 +427,8 @@ export function relayoutPanelContents(
     let rowH = 0
     let maxX = ox
     for (const m of group) {
-      const w = keepSize
-        ? m.width
-        : Math.max(24, Math.round(m.width * scale))
-      const h = keepSize
-        ? m.height
-        : Math.max(20, Math.round(m.height * scale))
+      const w = m.width
+      const h = m.height
       if (x > ox && x + w > ox + boxW) {
         x = ox
         y += rowH + gap
@@ -363,79 +454,83 @@ export function relayoutPanelContents(
     gapCells,
     Math.ceil((pad * 2 + NESTED_TITLE_BAND_PX) / grid),
   )
-  // Extra cells reserved above each leaf's cards for L2 title chip
-  const leafTitleCells = Math.max(1, Math.ceil(NESTED_TITLE_BAND_PX / grid))
+  const packBoxW = Math.max(
+    48,
+    Math.round(contentW * Math.min(1, Math.max(0.5, seedCfg.widthFrac))),
+  )
+  const orderOpts = {
+    multiOrder: seedCfg.multiOrder,
+    orders: seedCfg.orders,
+  }
 
   if (dense && orderedLeaves.length >= 1) {
-    // 1) Free-flow pack cards inside each leaf L2/L3
-    // 2) packClusterTight those leaf boxes inside the parent content band
-    const packAllLeaves = (s: number): { out: Place[]; height: number } => {
-      type LeafPack = {
-        places: Place[]
-        cw: number
-        ch: number
-        w: number
-        h: number
-      }
-      const leaves: LeafPack[] = []
-      const claimed = new Set<string>()
-      for (const child of orderedLeaves) {
-        const group = sortCards(
-          members.filter((m) => child.memberIds?.includes(m.id)),
-          sort,
-          child.memberIds,
-        )
-        if (group.length === 0) continue
-        for (const m of group) claimed.add(m.id)
-        const local = packCardsDenseFreeFlow(
-          group,
-          0,
-          0,
-          contentW,
-          s,
-          grid,
-          gapCells,
-        )
-        // Reserve title band above cards (chrome will draw chip here)
-        const titlePx = NESTED_TITLE_BAND_PX
-        const w = local.width
-        const h = local.height + titlePx
-        leaves.push({
-          places: local.out.map((p) => ({
-            ...p,
-            y: p.y + titlePx,
-          })),
-          w,
-          h,
-          cw: Math.max(1, Math.ceil(w / grid)),
-          ch: Math.max(1, Math.ceil(h / grid)),
-        })
-      }
-      const rest = sortCards(
-        members.filter((m) => !claimed.has(m.id)),
+    // Free-flow each leaf at full card size, then packClusterTight leaf boxes.
+    // Panel chrome grows to fit — never scale cards down (that compounded
+    // on every Auto-layout click).
+    type LeafPack = {
+      places: Place[]
+      cw: number
+      ch: number
+      w: number
+      h: number
+    }
+    const leaves: LeafPack[] = []
+    const claimed = new Set<string>()
+    for (const child of orderedLeaves) {
+      const group = sortCards(
+        members.filter((m) => child.memberIds?.includes(m.id)),
         sort,
-        panel.memberIds,
+        child.memberIds,
       )
-      if (rest.length > 0) {
-        const local = packCardsDenseFreeFlow(
-          rest,
-          0,
-          0,
-          contentW,
-          s,
-          grid,
-          gapCells,
-        )
-        leaves.push({
-          places: local.out,
-          w: local.width,
-          h: local.height,
-          cw: Math.max(1, Math.ceil(local.width / grid)),
-          ch: Math.max(1, Math.ceil(local.height / grid)),
-        })
-      }
-      if (leaves.length === 0) return { out: [], height: 0 }
-
+      if (group.length === 0) continue
+      for (const m of group) claimed.add(m.id)
+      const local = packCardsDenseFreeFlow(
+        group,
+        0,
+        0,
+        packBoxW,
+        grid,
+        gapCells,
+        orderOpts,
+      )
+      const titlePx = NESTED_TITLE_BAND_PX
+      const w = local.width
+      const h = local.height + titlePx
+      leaves.push({
+        places: local.out.map((p) => ({
+          ...p,
+          y: p.y + titlePx,
+        })),
+        w,
+        h,
+        cw: Math.max(1, Math.ceil(w / grid)),
+        ch: Math.max(1, Math.ceil(h / grid)),
+      })
+    }
+    const rest = sortCards(
+      members.filter((m) => !claimed.has(m.id)),
+      sort,
+      panel.memberIds,
+    )
+    if (rest.length > 0) {
+      const local = packCardsDenseFreeFlow(
+        rest,
+        0,
+        0,
+        packBoxW,
+        grid,
+        gapCells,
+        orderOpts,
+      )
+      leaves.push({
+        places: local.out,
+        w: local.width,
+        h: local.height,
+        cw: Math.max(1, Math.ceil(local.width / grid)),
+        ch: Math.max(1, Math.ceil(local.height / grid)),
+      })
+    }
+    if (leaves.length > 0) {
       const pageCols = Math.max(1, Math.floor(contentW / grid))
       const tight = packClusterTight(
         leaves.map((L, i) => ({
@@ -462,52 +557,27 @@ export function relayoutPanelContents(
           })
         }
       }
-      const height =
-        abs.reduce((b, p) => Math.max(b, p.y + p.h), contentY) - contentY
-      return { out: abs, height }
+      places = abs
     }
-    let scale = 1
-    let best = packAllLeaves(1)
-    while (best.height > contentH + 2 && scale > 0.55) {
-      scale *= 0.9
-      best = packAllLeaves(scale)
-    }
-    places = best.out
-    void leafTitleCells
   } else if (dense) {
-    // Flat dense free-flow (no nested children)
-    const packOnce = (scale: number) => {
-      const packed = packCardsDenseFreeFlow(
-        members,
-        contentX,
-        contentY,
-        contentW,
-        scale,
-        grid,
-        gapCells,
-      )
-      return { out: packed.out, height: packed.height }
-    }
-    let scale = 1
-    let best = packOnce(1)
-    while (best.height > contentH + 2 && scale > 0.55) {
-      scale *= 0.9
-      best = packOnce(scale)
-    }
-    places = best.out
-  } else {
-    // Simple shelf (keep sizes) — contentSort path
-    places = packShelfInBox(
+    // Flat dense free-flow at full size + seed order
+    const packed = packCardsDenseFreeFlow(
       members,
       contentX,
       contentY,
-      contentW,
-      1,
-      true,
-    ).out
+      packBoxW,
+      grid,
+      gapCells,
+      orderOpts,
+    )
+    places = packed.out
+  } else {
+    // Simple shelf (keep sizes) — contentSort path
+    places = packShelfInBox(members, contentX, contentY, contentW).out
   }
 
   const byPlace = new Map(places.map((p) => [p.id, p]))
+  // Dense: move only — never rewrite card width/height (avoids shrink spiral)
   const nextItems = items.map((it) => {
     const p = byPlace.get(it.id)
     if (!p) return it
@@ -515,8 +585,6 @@ export function relayoutPanelContents(
       ...it,
       x: p.x,
       y: p.y,
-      width: dense ? p.w : it.width,
-      height: dense ? p.h : it.height,
     }
   })
 

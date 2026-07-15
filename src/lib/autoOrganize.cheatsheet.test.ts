@@ -27,6 +27,7 @@ import {
   formatAutoLayoutFileTag,
   buildExportFileNameStem,
   relayoutPanelContents,
+  resetPanelPackSeed,
   resolveMultipageStraddles,
   insertPageGutters,
   densifyPlacedGroups,
@@ -1409,7 +1410,7 @@ describe('packCheatsheetLayout', () => {
     expect(nextP.contentSort ?? 'name-asc').toBe('name-asc')
   })
 
-  it('relayoutPanelContents dense mode packs, may resize, rebuilds n-gon chrome', () => {
+  it('relayoutPanelContents dense mode packs, keeps card sizes, rebuilds n-gon chrome', () => {
     const items: CanvasItem[] = [
       card('a', {
         title: 'A',
@@ -1437,7 +1438,7 @@ describe('packCheatsheetLayout', () => {
       }),
     ]
     const panel: import('@/types').LayoutPanel = {
-      id: 'p1',
+      id: 'p1-dense-keep-size',
       title: 'Topic',
       x: 80,
       y: 80,
@@ -1453,10 +1454,14 @@ describe('packCheatsheetLayout', () => {
       gapPx: 6,
       panelPad: 6,
       grid: 24,
+      packSeed: 0,
     })
-    // Cards move into the panel budget
+    // Cards keep original sizes (no shrink spiral)
     for (const id of ['a', 'b', 'c']) {
+      const before = items.find((i) => i.id === id)!
       const c = next.find((i) => i.id === id)!
+      expect(c.width).toBe(before.width)
+      expect(c.height).toBe(before.height)
       expect(c.x).toBeGreaterThanOrEqual(nextP.x - 1)
       expect(c.y).toBeGreaterThanOrEqual(nextP.y - 1)
       expect(c.x + c.width).toBeLessThanOrEqual(nextP.x + nextP.width + 1)
@@ -1465,6 +1470,44 @@ describe('packCheatsheetLayout', () => {
     // Chrome rebuilt
     expect(nextP.shape).toBe('polygon')
     expect(nextP.outlinePath || nextP.runs?.length).toBeTruthy()
+  })
+
+  it('relayoutPanelContents dense does not shrink cards on repeated clicks', () => {
+    resetPanelPackSeed('p-repeat')
+    let items: CanvasItem[] = [
+      card('a', { title: 'A', x: 100, y: 100, width: 120, height: 80 }),
+      card('b', { title: 'B', x: 240, y: 100, width: 120, height: 80 }),
+      card('c', { title: 'C', x: 100, y: 200, width: 100, height: 60 }),
+    ]
+    let panel: import('@/types').LayoutPanel = {
+      id: 'p-repeat',
+      title: 'T',
+      x: 80,
+      y: 80,
+      width: 320,
+      height: 240,
+      memberIds: ['a', 'b', 'c'],
+      shape: 'rect',
+      showTitle: true,
+      contentSort: 'name-asc',
+    }
+    const sizes0 = items.map((i) => ({ id: i.id, w: i.width, h: i.height }))
+    for (let i = 0; i < 5; i++) {
+      const r = relayoutPanelContents(items, panel, {
+        mode: 'dense',
+        gapPx: 4,
+        panelPad: 4,
+        grid: 24,
+        // omit packSeed → advances; sizes must stay fixed
+      })
+      items = r.items
+      panel = r.panel
+    }
+    for (const s of sizes0) {
+      const c = items.find((i) => i.id === s.id)!
+      expect(c.width).toBe(s.w)
+      expect(c.height).toBe(s.h)
+    }
   })
 
   it('relayoutPanelContents on L1 rebuilds nested L2 chrome to follow cards', () => {
@@ -1521,6 +1564,7 @@ describe('packCheatsheetLayout', () => {
       gapPx: 4,
       panelPad: 4,
       grid: 24,
+      packSeed: 0,
       allPanels: [l1, l2a, l2b],
     })
     expect(nextAll).toBeDefined()

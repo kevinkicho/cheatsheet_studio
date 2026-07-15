@@ -20,6 +20,9 @@ export { mergeAdjacentOutermostPanels } from './merge'
 export {
   translateLayoutPanelCluster,
   relayoutPanelContents,
+  takePanelPackSeed,
+  peekPanelPackSeed,
+  resetPanelPackSeed,
 } from './relayout'
 export {
   isPanelChildOf,
