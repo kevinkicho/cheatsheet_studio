@@ -3,6 +3,13 @@ import { ORGANIZE_GRID } from '../constants'
 import { chromeFromMembers } from '../polyomino'
 import { rectPerimeterPathD } from '../geometry'
 import { enforcePanelLayoutInvariants } from '../densify'
+import { placeTopicRegionsDense, packClusterTight } from '../shelf'
+import {
+  exclusiveTitleBandPx,
+  NESTED_TITLE_BAND_PX,
+  L1_TITLE_BAND_PX,
+  L1_NESTED_TITLE_BAND_PX,
+} from './hierarchy'
 
 /**
  * Move a layout panel and its member cards by (dx, dy). Nested child panels
@@ -27,7 +34,6 @@ export function translateLayoutPanelCluster(
   if (!panel?.memberIds?.length) return { items, panels }
 
   const rootIds = new Set(panel.memberIds)
-  // Nested panels fully contained in this panel's membership also move
   const related = panels.filter(
     (p) =>
       p.id === panelId ||
@@ -62,23 +68,11 @@ export function translateLayoutPanelCluster(
         y: Math.round(p.y + dy),
       }
     }
-    const level = p.hierarchyLevel ?? 1
-    const titleBand =
-      p.showTitle === false
-        ? 0
-        : 16 + (level <= 1 && (p.showStroke !== false) ? 12 : 0)
-    const chrome = chromeFromMembers(members, {
-      pad: level <= 1 ? pad + 4 : pad,
-      titleBand,
-      shape: p.shape === 'polygon' ? 'polygon' : 'rect',
+    return rebuildPanelChromeFromMembers(p, byId, {
       grid,
+      panelPad: pad,
+      allPanels: panels,
     })
-    return {
-      ...p,
-      ...chrome,
-      shape: p.shape,
-      showStroke: p.showStroke,
-    }
   })
 
   return { items: nextItems, panels: nextPanels }
@@ -86,24 +80,24 @@ export function translateLayoutPanelCluster(
 
 /**
  * Rebuild panel chrome from current member card geometry.
- * Shared by translate + in-panel relayout so nested L2/L3 stay in sync.
+ * Title band matches exclusiveTitleBandPx / LayoutPanelsLayer.
  */
 function rebuildPanelChromeFromMembers(
   p: LayoutPanel,
   byId: Map<string, CanvasItem>,
-  opts: { grid: number; panelPad: number },
+  opts: {
+    grid: number
+    panelPad: number
+    allPanels?: LayoutPanel[]
+  },
 ): LayoutPanel {
   const members = (p.memberIds ?? [])
     .map((id) => byId.get(id))
     .filter((m): m is CanvasItem => m != null && !m.hidden)
   if (members.length === 0) return p
-  const level = p.hierarchyLevel ?? 1
-  const titleBand =
-    p.showTitle === false
-      ? 0
-      : 16 + (level <= 1 && p.showStroke !== false ? 12 : 0)
-  const pad =
-    level <= 1 ? Math.max(2, opts.panelPad) + 2 : Math.max(2, opts.panelPad)
+  const all = opts.allPanels ?? [p]
+  const titleBand = exclusiveTitleBandPx(p, all)
+  const pad = Math.max(2, opts.panelPad)
   const useNgon = p.shape === 'polygon'
   const chrome = chromeFromMembers(members, {
     pad,
@@ -129,13 +123,97 @@ function rebuildPanelChromeFromMembers(
   }
 }
 
+function cardSortKey(c: CanvasItem): string {
+  return (c.title ?? c.latex ?? c.id).toLocaleLowerCase()
+}
+
+function sortCards(
+  cards: CanvasItem[],
+  sort: 'none' | 'name-asc' | 'name-desc',
+  memberOrder?: string[],
+): CanvasItem[] {
+  if (sort === 'name-asc' || sort === 'name-desc') {
+    const dir = sort === 'name-desc' ? -1 : 1
+    return [...cards].sort((a, b) => {
+      const ta = cardSortKey(a)
+      const tb = cardSortKey(b)
+      if (ta < tb) return -1 * dir
+      if (ta > tb) return 1 * dir
+      return a.id.localeCompare(b.id)
+    })
+  }
+  // none: preserve panel memberIds order
+  if (memberOrder?.length) {
+    const rank = new Map(memberOrder.map((id, i) => [id, i]))
+    return [...cards].sort(
+      (a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0),
+    )
+  }
+  return cards
+}
+
+/**
+ * Free-flow (skyline) pack of cards into a content box on the organize grid.
+ * Much denser than simple L→R shelf for mixed-size diagram cards.
+ */
+function packCardsDenseFreeFlow(
+  cards: CanvasItem[],
+  ox: number,
+  oy: number,
+  boxW: number,
+  scale: number,
+  grid: number,
+  gapCells: number,
+): { out: Array<{ id: string; x: number; y: number; w: number; h: number }>; width: number; height: number } {
+  if (cards.length === 0) {
+    return { out: [], width: 0, height: 0 }
+  }
+  const g = Math.max(4, grid)
+  const pageCols = Math.max(1, Math.floor(boxW / g))
+  const regions = cards.map((m, i) => {
+    const w = Math.max(24, Math.round(m.width * scale))
+    const h = Math.max(20, Math.round(m.height * scale))
+    return {
+      index: i,
+      cw: Math.min(pageCols, Math.max(1, Math.ceil(w / g))),
+      ch: Math.max(1, Math.ceil(h / g)),
+      w,
+      h,
+      id: m.id,
+    }
+  })
+  const pos = placeTopicRegionsDense(
+    regions.map((r) => ({ index: r.index, cw: r.cw, ch: r.ch })),
+    pageCols,
+    Math.max(0, gapCells),
+    { sortByHeight: true, readingFlow: false },
+  )
+  const out: Array<{ id: string; x: number; y: number; w: number; h: number }> =
+    []
+  let maxX = ox
+  let maxY = oy
+  for (const r of regions) {
+    const p = pos.get(r.index) ?? { c: 0, r: 0 }
+    const x = Math.round(ox + p.c * g)
+    const y = Math.round(oy + p.r * g)
+    const ww = Math.min(r.w, boxW)
+    out.push({ id: r.id, x, y, w: ww, h: r.h })
+    maxX = Math.max(maxX, x + ww)
+    maxY = Math.max(maxY, y + r.h)
+  }
+  return {
+    out,
+    width: Math.max(8, maxX - ox),
+    height: Math.max(8, maxY - oy),
+  }
+}
+
 /**
  * Re-pack cards inside one panel (shelf within panel content box).
  * Used when user sets contentSort or after showTitle changes title band.
  *
- * When `allPanels` is provided, every nested child panel whose members are a
- * subset of this panel also has its chrome rebuilt so L2 frames follow the
- * cards (Auto-layout inside L1 was leaving L2 panels stranded).
+ * Default sort is Name A→Z. Dense mode free-flows cards (and nested L2 leaf
+ * clusters) so mixed diagram sizes fill voids instead of row-shelf gaps.
  */
 export function relayoutPanelContents(
   items: CanvasItem[],
@@ -154,30 +232,34 @@ export function relayoutPanelContents(
   if (ids.size === 0) return { items, panel }
 
   const gap = Math.max(2, opts?.gapPx ?? 6)
-  const showTitle = panel.showTitle !== false
-  const titleBand = showTitle ? 16 : 0
   const pad = Math.max(2, opts?.panelPad ?? 4)
   const grid = opts?.grid ?? ORGANIZE_GRID
   const dense = opts?.mode === 'dense'
+  // Default: Name A→Z (user preference for Auto-layout inside panel)
+  const sort = panel.contentSort ?? 'name-asc'
+
+  const allPanels = opts?.allPanels ?? []
+  const hasNestedStroke = allPanels.some(
+    (c) =>
+      c.id !== panel.id &&
+      c.showStroke !== false &&
+      (c.hierarchyLevel ?? 1) > (panel.hierarchyLevel ?? 1) &&
+      c.memberIds?.length &&
+      panel.memberIds?.length &&
+      c.memberIds.every((id) => panel.memberIds!.includes(id)),
+  )
+  const level = panel.hierarchyLevel ?? 1
+  const titleBand =
+    panel.showTitle === false
+      ? 0
+      : level <= 1
+        ? hasNestedStroke
+          ? L1_NESTED_TITLE_BAND_PX
+          : L1_TITLE_BAND_PX
+        : NESTED_TITLE_BAND_PX
 
   let members = items.filter((i) => ids.has(i.id) && !i.hidden)
-  if ((panel.contentSort ?? 'none') === 'none' && panel.memberIds?.length) {
-    const rank = new Map(panel.memberIds.map((id, i) => [id, i]))
-    members = [...members].sort(
-      (a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0),
-    )
-  }
-  const sort = panel.contentSort ?? 'none'
-  if (sort === 'name-asc' || sort === 'name-desc') {
-    const dir = sort === 'name-desc' ? -1 : 1
-    members = [...members].sort((a, b) => {
-      const ta = (a.title ?? a.latex ?? a.id).toLocaleLowerCase()
-      const tb = (b.title ?? b.latex ?? b.id).toLocaleLowerCase()
-      if (ta < tb) return -1 * dir
-      if (ta > tb) return 1 * dir
-      return a.id.localeCompare(b.id)
-    })
-  }
+  members = sortCards(members, sort, panel.memberIds)
   if (members.length === 0) return { items, panel }
 
   // Target content box from current panel (dense: use panel as budget)
@@ -194,8 +276,7 @@ export function relayoutPanelContents(
   let places: Place[] = []
 
   // Nested L2/L3 under this panel — pack by group so children stay clustered
-  // (flat shelf mixed L2s and left L2 frames stranded / broken).
-  const nestedChildren = (opts?.allPanels ?? [])
+  const nestedChildren = allPanels
     .filter(
       (p) =>
         p.id !== panel.id &&
@@ -203,11 +284,9 @@ export function relayoutPanelContents(
         p.memberIds.every((id) => ids.has(id)) &&
         (p.hierarchyLevel ?? 1) > (panel.hierarchyLevel ?? 1),
     )
-    .sort(
-      (a, b) => (b.hierarchyLevel ?? 1) - (a.hierarchyLevel ?? 1),
-    )
+    .sort((a, b) => (b.hierarchyLevel ?? 1) - (a.hierarchyLevel ?? 1))
 
-  // Deepest nested panels only (leaves) — avoid packing both L2 and L3 for same cards
+  // Deepest nested panels only (leaves)
   const leafNested = nestedChildren.filter((p) => {
     const deeper = nestedChildren.some(
       (o) =>
@@ -216,6 +295,26 @@ export function relayoutPanelContents(
         o.memberIds?.every((id) => p.memberIds?.includes(id)),
     )
     return !deeper
+  })
+
+  // Order leaf groups for packing: name-asc/desc by panel title, else by
+  // current top-left of members (reading order).
+  const orderedLeaves = [...leafNested].sort((a, b) => {
+    if (sort === 'name-asc' || sort === 'name-desc') {
+      const dir = sort === 'name-desc' ? -1 : 1
+      const ta = (a.title ?? a.id).toLocaleLowerCase()
+      const tb = (b.title ?? b.id).toLocaleLowerCase()
+      if (ta < tb) return -1 * dir
+      if (ta > tb) return 1 * dir
+      return a.id.localeCompare(b.id)
+    }
+    const aCards = members.filter((m) => a.memberIds?.includes(m.id))
+    const bCards = members.filter((m) => b.memberIds?.includes(m.id))
+    const ay = aCards.length ? Math.min(...aCards.map((c) => c.y)) : 0
+    const by = bCards.length ? Math.min(...bCards.map((c) => c.y)) : 0
+    const ax = aCards.length ? Math.min(...aCards.map((c) => c.x)) : 0
+    const bx = bCards.length ? Math.min(...bCards.map((c) => c.x)) : 0
+    return ay - by || ax - bx
   })
 
   const packShelfInBox = (
@@ -257,77 +356,142 @@ export function relayoutPanelContents(
     }
   }
 
-  if (dense && leafNested.length >= 1) {
-    // 1) Dense-pack cards inside each leaf L2/L3 group
-    // 2) Stack those groups inside the parent content box (keep clusters intact)
-    type LeafPack = { places: Place[]; w: number; h: number }
-    let scale = 1
+  const gapCells = Math.max(0, Math.floor(gap / grid))
+  // Between leaf L2 slabs: pad + nested title so chrome doesn't collide
+  const leafGapCells = Math.max(
+    gapCells,
+    Math.ceil((pad * 2 + NESTED_TITLE_BAND_PX) / grid),
+  )
+  // Extra cells reserved above each leaf's cards for L2 title chip
+  const leafTitleCells = Math.max(1, Math.ceil(NESTED_TITLE_BAND_PX / grid))
+
+  if (dense && orderedLeaves.length >= 1) {
+    // 1) Free-flow pack cards inside each leaf L2/L3
+    // 2) packClusterTight those leaf boxes inside the parent content band
     const packAllLeaves = (s: number): { out: Place[]; height: number } => {
+      type LeafPack = {
+        places: Place[]
+        cw: number
+        ch: number
+        w: number
+        h: number
+      }
       const leaves: LeafPack[] = []
       const claimed = new Set<string>()
-      for (const child of leafNested) {
-        const group = members.filter((m) => child.memberIds?.includes(m.id))
+      for (const child of orderedLeaves) {
+        const group = sortCards(
+          members.filter((m) => child.memberIds?.includes(m.id)),
+          sort,
+          child.memberIds,
+        )
         if (group.length === 0) continue
         for (const m of group) claimed.add(m.id)
-        const local = packShelfInBox(group, 0, 0, contentW, s, false)
-        leaves.push({ places: local.out, w: local.width, h: local.height })
+        const local = packCardsDenseFreeFlow(
+          group,
+          0,
+          0,
+          contentW,
+          s,
+          grid,
+          gapCells,
+        )
+        // Reserve title band above cards (chrome will draw chip here)
+        const titlePx = NESTED_TITLE_BAND_PX
+        const w = local.width
+        const h = local.height + titlePx
+        leaves.push({
+          places: local.out.map((p) => ({
+            ...p,
+            y: p.y + titlePx,
+          })),
+          w,
+          h,
+          cw: Math.max(1, Math.ceil(w / grid)),
+          ch: Math.max(1, Math.ceil(h / grid)),
+        })
       }
-      const rest = members.filter((m) => !claimed.has(m.id))
+      const rest = sortCards(
+        members.filter((m) => !claimed.has(m.id)),
+        sort,
+        panel.memberIds,
+      )
       if (rest.length > 0) {
-        const local = packShelfInBox(rest, 0, 0, contentW, s, false)
-        leaves.push({ places: local.out, w: local.width, h: local.height })
+        const local = packCardsDenseFreeFlow(
+          rest,
+          0,
+          0,
+          contentW,
+          s,
+          grid,
+          gapCells,
+        )
+        leaves.push({
+          places: local.out,
+          w: local.width,
+          h: local.height,
+          cw: Math.max(1, Math.ceil(local.width / grid)),
+          ch: Math.max(1, Math.ceil(local.height / grid)),
+        })
       }
-      // Place leaf blocks: free-flow left→right, wrap (tetris of L2 slabs)
-      let x = contentX
-      let y = contentY
-      let rowH = 0
+      if (leaves.length === 0) return { out: [], height: 0 }
+
+      const pageCols = Math.max(1, Math.floor(contentW / grid))
+      const tight = packClusterTight(
+        leaves.map((L, i) => ({
+          index: i,
+          cw: Math.min(pageCols, L.cw),
+          ch: L.ch,
+        })),
+        pageCols,
+        leafGapCells,
+      )
       const abs: Place[] = []
-      for (const leaf of leaves) {
-        if (x > contentX && x + leaf.w > contentX + contentW + 0.5) {
-          x = contentX
-          y += rowH + gap
-          rowH = 0
-        }
-        for (const p of leaf.places) {
+      for (let i = 0; i < leaves.length; i++) {
+        const leaf = leaves[i]!
+        const p = tight.pos.get(i) ?? { c: 0, r: 0 }
+        const baseX = contentX + p.c * grid
+        const baseY = contentY + p.r * grid
+        for (const pl of leaf.places) {
           abs.push({
-            id: p.id,
-            x: Math.round(x + p.x),
-            y: Math.round(y + p.y),
-            w: p.w,
-            h: p.h,
+            id: pl.id,
+            x: Math.round(baseX + pl.x),
+            y: Math.round(baseY + pl.y),
+            w: pl.w,
+            h: pl.h,
           })
         }
-        x += leaf.w + gap
-        rowH = Math.max(rowH, leaf.h)
       }
       const height =
         abs.reduce((b, p) => Math.max(b, p.y + p.h), contentY) - contentY
       return { out: abs, height }
     }
+    let scale = 1
     let best = packAllLeaves(1)
     while (best.height > contentH + 2 && scale > 0.55) {
       scale *= 0.9
       best = packAllLeaves(scale)
     }
     places = best.out
+    void leafTitleCells
   } else if (dense) {
-    // Flat dense shelf (no nested children)
-    const packShelf = (scale: number) => {
-      const packed = packShelfInBox(
+    // Flat dense free-flow (no nested children)
+    const packOnce = (scale: number) => {
+      const packed = packCardsDenseFreeFlow(
         members,
         contentX,
         contentY,
         contentW,
         scale,
-        false,
+        grid,
+        gapCells,
       )
       return { out: packed.out, height: packed.height }
     }
     let scale = 1
-    let best = packShelf(1)
+    let best = packOnce(1)
     while (best.height > contentH + 2 && scale > 0.55) {
       scale *= 0.9
-      best = packShelf(scale)
+      best = packOnce(scale)
     }
     places = best.out
   } else {
@@ -359,14 +523,21 @@ export function relayoutPanelContents(
   if (moved.length === 0) return { items: nextItems, panel }
 
   const byId = new Map(nextItems.map((i) => [i.id, i]))
-  const chromeOpts = { grid, panelPad: pad }
+  const chromeOpts = { grid, panelPad: pad, allPanels }
 
-  // Rebuild this panel from reflowed cards
-  const nextPanel = rebuildPanelChromeFromMembers(panel, byId, chromeOpts)
+  // Ensure default contentSort is persisted on the panel when missing
+  const panelWithSort: LayoutPanel = {
+    ...panel,
+    contentSort: panel.contentSort ?? 'name-asc',
+  }
 
-  // Nested L2/L3 panels (member subset of this panel) must follow the cards
-  const allPanels = opts?.allPanels
-  if (!allPanels?.length) {
+  const nextPanel = rebuildPanelChromeFromMembers(
+    panelWithSort,
+    byId,
+    chromeOpts,
+  )
+
+  if (!allPanels.length) {
     return { items: nextItems, panel: nextPanel }
   }
 
@@ -377,29 +548,31 @@ export function relayoutPanelContents(
     if (p.memberIds.every((id) => ids.has(id))) nestedIds.add(p.id)
   }
 
-  // Rebuild deepest children first so parents hug updated child frames
   const nestedSorted = allPanels
     .filter((p) => nestedIds.has(p.id))
-    .sort(
-      (a, b) => (b.hierarchyLevel ?? 1) - (a.hierarchyLevel ?? 1),
-    )
+    .sort((a, b) => (b.hierarchyLevel ?? 1) - (a.hierarchyLevel ?? 1))
 
   const rebuilt = new Map<string, LayoutPanel>()
   rebuilt.set(panel.id, nextPanel)
   for (const child of nestedSorted) {
     rebuilt.set(
       child.id,
-      rebuildPanelChromeFromMembers(child, byId, chromeOpts),
+      rebuildPanelChromeFromMembers(child, byId, {
+        ...chromeOpts,
+        allPanels: allPanels.map((p) => rebuilt.get(p.id) ?? p),
+      }),
     )
   }
 
-  // Expand parent again so it covers nested L2 frames after they moved
+  // Expand parent so it covers nested L2 frames after they moved
   const afterChildren = rebuildPanelChromeFromMembers(
     nextPanel,
     byId,
-    chromeOpts,
+    {
+      ...chromeOpts,
+      allPanels: allPanels.map((p) => rebuilt.get(p.id) ?? p),
+    },
   )
-  // Prefer covering child panel AABBs when nested frames exist
   if (nestedSorted.length > 0) {
     const childBoxes = nestedSorted
       .map((c) => rebuilt.get(c.id)!)
@@ -442,7 +615,6 @@ export function relayoutPanelContents(
   }
 
   let panelsOut = allPanels.map((p) => rebuilt.get(p.id) ?? p)
-  // Enforce no same-level overlap + clear title bands after in-panel reflow
   const fixed = enforcePanelLayoutInvariants(nextItems, panelsOut, {
     grid,
     panelPad: pad,
@@ -455,4 +627,3 @@ export function relayoutPanelContents(
     panels: panelsOut,
   }
 }
-

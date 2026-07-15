@@ -1104,9 +1104,14 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       const panels = s.canvas.layoutPanels ?? []
       const panel = panels.find((p) => p.id === id)
       if (!panel) return s
+      // Default sort for in-panel auto-layout: Name A→Z
+      const panelForLayout = {
+        ...panel,
+        contentSort: panel.contentSort ?? 'name-asc',
+      }
       const { items, panel: nextPanel, panels: nextAll } = relayoutPanelContents(
         s.items,
-        panel,
+        panelForLayout,
         {
           grid: s.canvas.gridSpacing ?? 24,
           gapPx: s.lastAutoLayout?.gap ?? 6,

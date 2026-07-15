@@ -281,6 +281,9 @@ export function densifyPlacedGroups(
         }
       }
       if (selfOl) continue
+      // Allow a little extra height if the bounding area shrinks a lot
+      // (fills side voids that pure “same height” densify left empty — 015429).
+      if (usedCh > spanCh + 3 && area >= oldArea * 0.92) continue
       if (
         !best ||
         area < best.area ||
@@ -290,7 +293,12 @@ export function densifyPlacedGroups(
       }
     }
 
-    if (best && (best.area < oldArea * 0.995 || best.ch < spanCh)) {
+    if (
+      best &&
+      (best.area < oldArea * 0.995 ||
+        best.ch < spanCh ||
+        best.area < oldArea * 0.9)
+    ) {
       for (const n of best.next) moved.set(n.id, n)
     }
   }

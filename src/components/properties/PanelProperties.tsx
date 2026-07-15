@@ -13,7 +13,8 @@ export function PanelProperties({ panel }: { panel: LayoutPanel }) {
   const selectPanel = useCanvasStore((s) => s.selectPanel)
   const memberCount = panel.memberIds?.length ?? 0
   const showTitle = panel.showTitle !== false
-  const contentSort = panel.contentSort ?? 'none'
+  // Default: Name A→Z (top option, on by default for Auto-layout inside panel)
+  const contentSort = panel.contentSort ?? 'name-asc'
   const level = panel.hierarchyLevel
   const shape = panel.shape ?? 'rect'
 
@@ -82,9 +83,9 @@ export function PanelProperties({ panel }: { panel: LayoutPanel }) {
         <div className="flex flex-col gap-1">
           {(
             [
-              ['none', 'No sorting (keep order)'],
               ['name-asc', 'Name A→Z'],
               ['name-desc', 'Name Z→A'],
+              ['none', 'No sorting (keep order)'],
             ] as const
           ).map(([id, label]) => {
             const active = contentSort === id

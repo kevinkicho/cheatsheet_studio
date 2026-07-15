@@ -369,7 +369,8 @@ export interface LayoutPanel {
   memberIds?: string[]
   /**
    * Sort cards inside this panel only.
-   * none = pack order; name-asc / name-desc by card title.
+   * Default (undefined): name-asc (A→Z). none = pack/member order;
+   * name-asc / name-desc by card title.
    */
   contentSort?: 'none' | 'name-asc' | 'name-desc'
   /** Accent for border/fill (css color). */
