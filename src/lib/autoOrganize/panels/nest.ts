@@ -340,12 +340,6 @@ export function clipNestedPanelRunsToParents(
 ): LayoutPanel[] {
   if (panels.length <= 1) return panels
   const next = panels.map((p) => ({ ...p }))
-  const isChildOf = (parent: LayoutPanel, child: LayoutPanel) => {
-    if (!parent.memberIds?.length || !child.memberIds?.length) return false
-    if ((child.hierarchyLevel ?? 1) <= (parent.hierarchyLevel ?? 1)) return false
-    const set = new Set(parent.memberIds)
-    return child.memberIds.every((id) => set.has(id))
-  }
   for (let i = 0; i < next.length; i++) {
     const child = next[i]!
     if (child.showStroke === false) continue
