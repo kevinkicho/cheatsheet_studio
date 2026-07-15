@@ -112,8 +112,12 @@ export async function runSheetExport(
 ): Promise<void> {
   const format = options.format
   const meta = exportFormatMeta(format)
-  const scale = options.scale ?? 2
-  const jpegQuality = options.jpegQuality ?? 0.92
+  // Raster: default 1.5× (was 2×). Full multipage Everything at 2× was often
+  // multi‑GB and silently OOM'd the tab. SVG stays vector (no scale cost).
+  const scale =
+    options.scale ??
+    (format === 'png' || format === 'jpeg' || format === 'pdf' ? 1.5 : 2)
+  const jpegQuality = options.jpegQuality ?? 0.88
   const colorMode = options.colorMode ?? 'color'
   const showGrid = options.showGrid === true
   const backgroundMode = options.backgroundMode ?? 'transparent'
@@ -207,7 +211,10 @@ export async function runSheetExport(
         }),
       )
     })
-    await waitForExportReady(host)
+    // Raster exports: shorter ready wait — 14s × many pages felt hung / OOM.
+    const readyMs =
+      format === 'png' || format === 'jpeg' ? 8000 : 14000
+    await waitForExportReady(host, readyMs)
     // Brief settle for Mermaid paintStudioSvg layout effect + FO metrics
     if (format === 'svg') {
       await new Promise((r) => setTimeout(r, 180))
@@ -561,8 +568,67 @@ async function writeImages(
       ? '#0f1115'
       : backgroundColor
 
-  const captured: HTMLCanvasElement[] = []
+  // Capture → encode → free each page so multipage exports don't hold every
+  // full-res canvas in memory (main cause of silent tab death on PNG/JPEG).
+  const releaseCanvas = (c: HTMLCanvasElement | null | undefined) => {
+    if (!c) return
+    try {
+      c.width = 0
+      c.height = 0
+    } catch {
+      /* ignore */
+    }
+  }
+
+  if (packageMode === 'combined' && jobs.length > 1) {
+    // Stitch needs all pages — capture at slightly lower scale if huge
+    const stitchScale =
+      jobs.length >= 6 ? Math.min(scale, 1.25) : scale
+    const captured: HTMLCanvasElement[] = []
+    try {
+      for (let i = 0; i < jobs.length; i++) {
+        onProgress?.({
+          phase: 'capture',
+          page: i + 1,
+          totalPages: jobs.length,
+          itemCount,
+          format,
+          message: `Capturing page ${i + 1} of ${jobs.length}…`,
+        })
+        captured.push(
+          await captureJob(jobs[i]!, i, stitchScale, colorMode, bg),
+        )
+      }
+      onProgress?.({
+        phase: 'write',
+        totalPages: jobs.length,
+        itemCount,
+        format,
+        message: 'Stitching pages…',
+      })
+      const stitched = stitchCanvases(captured, jobs, pageArrangement, bg)
+      for (const c of captured) releaseCanvas(c)
+      const blob = await canvasToBlob(stitched, mime, jpegQuality)
+      releaseCanvas(stitched)
+      const filename = sanitizeExportFilename(title, format)
+      triggerBlobDownload(blob, filename)
+      onProgress?.({
+        phase: 'done',
+        totalPages: jobs.length,
+        itemCount,
+        format,
+        message: doneMessage(filename, itemCount, jobs.length),
+      })
+    } catch (err) {
+      for (const c of captured) releaseCanvas(c)
+      throw err
+    }
+    return
+  }
+
+  const saved: string[] = []
   for (let i = 0; i < jobs.length; i++) {
+    const { label } = jobs[i]!
     onProgress?.({
       phase: 'capture',
       page: i + 1,
@@ -571,51 +637,36 @@ async function writeImages(
       format,
       message: `Capturing page ${i + 1} of ${jobs.length}…`,
     })
-    captured.push(await captureJob(jobs[i]!, i, scale, colorMode, bg))
-  }
-
-  if (packageMode === 'combined' && jobs.length > 1) {
-    onProgress?.({
-      phase: 'write',
-      totalPages: jobs.length,
-      itemCount,
-      format,
-      message: 'Stitching pages…',
-    })
-    const stitched = stitchCanvases(captured, jobs, pageArrangement, bg)
-    const blob = await canvasToBlob(stitched, mime, jpegQuality)
-    const filename = sanitizeExportFilename(title, format)
-    triggerBlobDownload(blob, filename)
-    onProgress?.({
-      phase: 'done',
-      totalPages: jobs.length,
-      itemCount,
-      format,
-      message: doneMessage(filename, itemCount, jobs.length),
-    })
-    return
-  }
-
-  const saved: string[] = []
-  for (let i = 0; i < captured.length; i++) {
-    const { label } = jobs[i]!
-    onProgress?.({
-      phase: 'write',
-      page: i + 1,
-      totalPages: jobs.length,
-      itemCount,
-      format,
-      message: `Saving page ${i + 1}…`,
-    })
-    const blob = await canvasToBlob(captured[i]!, mime, jpegQuality)
-    const filename =
-      jobs.length > 1
-        ? sanitizeExportFilename(title, format, label)
-        : sanitizeExportFilename(title, format)
-    triggerBlobDownload(blob, filename)
-    saved.push(filename)
-    if (i < captured.length - 1) {
-      await new Promise((r) => setTimeout(r, 150))
+    let canvasEl: HTMLCanvasElement | null = null
+    try {
+      canvasEl = await captureJob(jobs[i]!, i, scale, colorMode, bg)
+      onProgress?.({
+        phase: 'write',
+        page: i + 1,
+        totalPages: jobs.length,
+        itemCount,
+        format,
+        message: `Saving page ${i + 1}…`,
+      })
+      const blob = await canvasToBlob(canvasEl, mime, jpegQuality)
+      releaseCanvas(canvasEl)
+      canvasEl = null
+      const filename =
+        jobs.length > 1
+          ? sanitizeExportFilename(title, format, label)
+          : sanitizeExportFilename(title, format)
+      triggerBlobDownload(blob, filename)
+      saved.push(filename)
+    } catch (err) {
+      releaseCanvas(canvasEl)
+      const msg = err instanceof Error ? err.message : String(err)
+      throw new Error(
+        `PNG/JPEG export failed on page ${i + 1}/${jobs.length}: ${msg}. ` +
+          `Try fewer pages, SVG format, or close other tabs (large multipage rasters need a lot of memory).`,
+      )
+    }
+    if (i < jobs.length - 1) {
+      await new Promise((r) => setTimeout(r, 80))
     }
   }
 

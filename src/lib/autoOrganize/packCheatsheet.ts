@@ -41,6 +41,7 @@ import {
   densifyPlacedGroups,
   ensureLeafTitleClearance,
   resolveLeafGroupCollisions,
+  gravityCompactGroups,
   separateFolderClusters,
   resolveCardOverlaps,
   resolveSameLevelPanelCollisions,
@@ -689,6 +690,19 @@ export function packCheatsheetLayout(
     )
   }
 
+  // Tetris gravity: after leaves are non-overlapping, slide them up/left into
+  // free holes so n-gon blocks stack toward the top of each L1 / the page.
+  if (usePanels && (options.folders?.length ?? 0) > 0) {
+    result = gravityCompactGroups(result, options.folders ?? [], deepLevel, {
+      grid,
+      gapPx: Math.max(0, gapPx),
+      parentLevel: multiLevelHierarchy ? shallowLevel : undefined,
+      contentLeft: box.left,
+      contentTop: box.top,
+      contentRight: box.left + box.width,
+    })
+  }
+
   // Critical: leaf pushes can expand an L1 band into the next topic. Separate
   // outer clusters so parent AABBs (and thus rect/n-gon frames) never interleave.
   if (usePanels && multiLevelHierarchy && (options.folders?.length ?? 0) > 0) {
@@ -706,6 +720,15 @@ export function packCheatsheetLayout(
         minGapPx: Math.max(gapPx, outerChromeClearPx),
       },
     )
+    // Second gravity pass after parent separation (tops of each L1)
+    result = gravityCompactGroups(result, options.folders ?? [], deepLevel, {
+      grid,
+      gapPx: Math.max(0, gapPx),
+      parentLevel: shallowLevel,
+      contentLeft: box.left,
+      contentTop: box.top,
+      contentRight: box.left + box.width,
+    })
   }
 
   // Multipage seams:
@@ -840,10 +863,10 @@ export function packCheatsheetLayout(
       multiLevel: multiLevelHierarchy,
       outerLevel: shallowLevel,
     })
-    // Nested L2 must stay inside L1 (pad collision can shrink outer only)
+    // Nested L2 must stay inside L1 with a clear nest gutter (not collinear edges)
     if (multiLevelHierarchy) {
       layoutPanels = nestContainPanels(layoutPanels, {
-        insetPx: Math.max(4, panelPad),
+        insetPx: Math.max(8, panelPad + 6),
         contentLeft: box.left,
         contentRight: box.left + box.width,
       })

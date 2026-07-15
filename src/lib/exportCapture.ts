@@ -98,8 +98,8 @@ export async function capturePageElement(
       y: 0,
       scrollX: 0,
       scrollY: 0,
-      // Prefer image decoding for figures
-      imageTimeout: 15000,
+      // Prefer image decoding for figures (8s — long hangs felt like a crash)
+      imageTimeout: 8000,
     })
   } catch (first) {
     // Retry with allowTaint for blob:/local figures
@@ -118,7 +118,7 @@ export async function capturePageElement(
         y: 0,
         scrollX: 0,
         scrollY: 0,
-        imageTimeout: 15000,
+        imageTimeout: 8000,
       })
       // Probe taint
       canvas.toDataURL('image/png')

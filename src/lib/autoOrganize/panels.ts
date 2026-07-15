@@ -200,11 +200,18 @@ export function buildNestedHierarchyPanels(args: {
   }
   const effectiveMinL = effectiveLevels[0] ?? minL
 
+  // Inner levels that stroke — outer needs extra pad so L2 never collinear with L1
+  const nestedStrokeDepths = [...borderSet].filter((L) => L > effectiveMinL)
+
   for (const level of effectiveLevels) {
     const isOutermost = level === effectiveMinL
     const showStroke = borderSet.has(level)
-    // Chrome pad = user pad only
-    const pad = showStroke ? Math.max(0, panelPad) : 0
+    // Chrome pad = user pad; outer multi-level gets nest margin so L2 sits inside
+    const nestMargin =
+      isOutermost && multi && nestedStrokeDepths.length > 0
+        ? Math.max(8, panelPad + 6)
+        : 0
+    const pad = showStroke ? Math.max(0, panelPad) + nestMargin : 0
     /**
      * Exclusive title stack (multi-level):
      *   L1 frame: L1 chip + gap + L2 chip band above cards
@@ -390,10 +397,10 @@ export function buildNestedHierarchyPanels(args: {
 }
 
 /**
- * Ensure nested L2/L3 stroked frames sit strictly inside their L1 parent.
- * Collision-resolve can shrink outer pad while inner keeps full pad → escape.
- * Strategy: expand parent AABB (and rect chrome) to cover children + inset;
- * clamp any residual child overflow into the parent interior.
+ * Ensure nested L2/L3 frames sit strictly inside their L1 parent with a clear
+ * nest gutter (not collinear double borders). Prefer **insetting children**
+ * over expanding parents (expanding L1s made sibling L1 AABBs collide).
+ * Only grow the parent when a child still escapes after inset (escape fix).
  */
 export function nestContainPanels(
   panels: LayoutPanel[],
@@ -412,63 +419,96 @@ export function nestContainPanels(
     return child.memberIds.every((id) => set.has(id))
   }
 
-  // Outer → inner levels: expand parents first so children clamp into roomy box
-  const levels = [
-    ...new Set(next.map((p) => p.hierarchyLevel ?? 1)),
-  ].sort((a, b) => a - b)
-
-  for (const level of levels) {
-    for (let i = 0; i < next.length; i++) {
-      const parent = next[i]!
-      if ((parent.hierarchyLevel ?? 1) !== level) continue
-      if (parent.showStroke === false) continue
-      const children = next.filter(
-        (c) => c.showStroke !== false && isChildOf(parent, c),
-      )
-      if (children.length === 0) continue
-
-      let minX = parent.x
-      let minY = parent.y
-      let maxX = parent.x + parent.width
-      let maxY = parent.y + parent.height
-      for (const c of children) {
-        minX = Math.min(minX, c.x - inset)
-        minY = Math.min(minY, c.y - inset)
-        maxX = Math.max(maxX, c.x + c.width + inset)
-        maxY = Math.max(maxY, c.y + c.height + inset)
+  const clampChildInto = (
+    child: LayoutPanel,
+    parent: LayoutPanel,
+  ): LayoutPanel => {
+    const px0 = parent.x + inset
+    const py0 = parent.y + inset
+    const px1 = parent.x + parent.width - inset
+    const py1 = parent.y + parent.height - inset
+    // Parent too tight for inset — use half-space
+    const ix0 = px1 > px0 + 8 ? px0 : parent.x + 1
+    const iy0 = py1 > py0 + 8 ? py0 : parent.y + 1
+    const ix1 = px1 > px0 + 8 ? px1 : parent.x + parent.width - 1
+    const iy1 = py1 > py0 + 8 ? py1 : parent.y + parent.height - 1
+    let x = child.x
+    let y = child.y
+    let w = child.width
+    let h = child.height
+    if (x < ix0) {
+      w -= ix0 - x
+      x = ix0
+    }
+    if (y < iy0) {
+      h -= iy0 - y
+      y = iy0
+    }
+    if (x + w > ix1) w = Math.max(8, ix1 - x)
+    if (y + h > iy1) h = Math.max(8, iy1 - y)
+    if (
+      x === child.x &&
+      y === child.y &&
+      w === child.width &&
+      h === child.height
+    ) {
+      return child
+    }
+    const runsSrc =
+      child.runs && child.runs.length > 0
+        ? child.runs
+        : [
+            {
+              x: child.x,
+              y: child.y,
+              width: child.width,
+              height: child.height,
+            },
+          ]
+    const runs = runsSrc.map((r) => {
+      let rx = r.x
+      let ry = r.y
+      let rw = r.width
+      let rh = r.height
+      if (rx < ix0) {
+        rw -= ix0 - rx
+        rx = ix0
       }
-      if (left != null) minX = Math.max(left, minX)
-      if (right != null) maxX = Math.min(right, maxX)
-
-      const x = Math.round(minX)
-      const y = Math.round(minY)
-      const width = Math.max(8, Math.round(maxX - x))
-      const height = Math.max(8, Math.round(maxY - y))
-      if (
-        x !== parent.x ||
-        y !== parent.y ||
-        width !== parent.width ||
-        height !== parent.height
-      ) {
-        // Outer frames are solid AABB (L1 n-gon rare); keep one clean rect run.
-        next[i] = {
-          ...parent,
-          x,
-          y,
-          width,
-          height,
-          runs: [{ x, y, width, height }],
-          outlinePath: rectPerimeterPathD(x, y, width, height),
-          shape: parent.shape === 'polygon' ? 'polygon' : 'rect',
-        }
+      if (ry < iy0) {
+        rh -= iy0 - ry
+        ry = iy0
       }
+      if (rx + rw > ix1) rw = Math.max(8, ix1 - rx)
+      if (ry + rh > iy1) rh = Math.max(8, iy1 - ry)
+      return {
+        x: Math.round(rx),
+        y: Math.round(ry),
+        width: Math.max(8, Math.round(rw)),
+        height: Math.max(8, Math.round(rh)),
+      }
+    })
+    return {
+      ...child,
+      x: Math.round(x),
+      y: Math.round(y),
+      width: Math.max(8, Math.round(w)),
+      height: Math.max(8, Math.round(h)),
+      runs: child.showStroke === false ? undefined : runs,
+      outlinePath:
+        child.showStroke === false
+          ? undefined
+          : child.shape === 'polygon' &&
+              child.outlinePath &&
+              x === child.x &&
+              y === child.y
+            ? child.outlinePath
+            : rectPerimeterPathD(x, y, Math.max(8, w), Math.max(8, h)),
     }
   }
 
-  // Clamp children into parent interior (after expand)
+  // 1) Inset every child into its parent (primary nest fix)
   for (let i = 0; i < next.length; i++) {
     const child = next[i]!
-    if (child.showStroke === false) continue
     const parent = next.find(
       (p) =>
         p.id !== child.id &&
@@ -477,68 +517,79 @@ export function nestContainPanels(
         isChildOf(p, child),
     )
     if (!parent) continue
-    const px0 = parent.x + inset
-    const py0 = parent.y + inset
-    const px1 = parent.x + parent.width - inset
-    const py1 = parent.y + parent.height - inset
-    let x = child.x
-    let y = child.y
-    let w = child.width
-    let h = child.height
-    if (x < px0) {
-      w -= px0 - x
-      x = px0
-    }
-    if (y < py0) {
-      h -= py0 - y
-      y = py0
-    }
-    if (x + w > px1) w = Math.max(8, px1 - x)
-    if (y + h > py1) h = Math.max(8, py1 - y)
-    if (
-      x === child.x &&
-      y === child.y &&
-      w === child.width &&
-      h === child.height
-    ) {
-      continue
-    }
-    const runs = (child.runs ?? [{ x: child.x, y: child.y, width: child.width, height: child.height }]).map(
-      (r) => {
-        let rx = r.x
-        let ry = r.y
-        let rw = r.width
-        let rh = r.height
-        if (rx < px0) {
-          rw -= px0 - rx
-          rx = px0
-        }
-        if (ry < py0) {
-          rh -= py0 - ry
-          ry = py0
-        }
-        if (rx + rw > px1) rw = Math.max(8, px1 - rx)
-        if (ry + rh > py1) rh = Math.max(8, py1 - ry)
-        return {
-          x: Math.round(rx),
-          y: Math.round(ry),
-          width: Math.max(8, Math.round(rw)),
-          height: Math.max(8, Math.round(rh)),
-        }
-      },
+    next[i] = clampChildInto(child, parent)
+  }
+
+  // 2) If a stroked child still escapes, grow parent just enough (escape only)
+  for (let i = 0; i < next.length; i++) {
+    const parent = next[i]!
+    if (parent.showStroke === false) continue
+    const children = next.filter(
+      (c) => c.showStroke !== false && isChildOf(parent, c),
     )
-    next[i] = {
-      ...child,
-      x: Math.round(x),
-      y: Math.round(y),
-      width: Math.max(8, Math.round(w)),
-      height: Math.max(8, Math.round(h)),
-      runs,
-      outlinePath:
-        child.shape === 'polygon' && child.outlinePath
-          ? child.outlinePath
-          : rectPerimeterPathD(x, y, w, h),
+    if (children.length === 0) continue
+    let minX = parent.x
+    let minY = parent.y
+    let maxX = parent.x + parent.width
+    let maxY = parent.y + parent.height
+    let need = false
+    for (const c of children) {
+      if (
+        c.x < parent.x + 0.5 ||
+        c.y < parent.y + 0.5 ||
+        c.x + c.width > parent.x + parent.width - 0.5 ||
+        c.y + c.height > parent.y + parent.height - 0.5
+      ) {
+        need = true
+        minX = Math.min(minX, c.x - inset)
+        minY = Math.min(minY, c.y - inset)
+        maxX = Math.max(maxX, c.x + c.width + inset)
+        maxY = Math.max(maxY, c.y + c.height + inset)
+      }
     }
+    if (!need) continue
+    if (left != null) minX = Math.max(left, minX)
+    if (right != null) maxX = Math.min(right, maxX)
+    // Do not grow into a same-level sibling AABB
+    for (const sib of next) {
+      if (sib.id === parent.id) continue
+      if ((sib.hierarchyLevel ?? 1) !== (parent.hierarchyLevel ?? 1)) continue
+      if (sib.showStroke === false) continue
+      // If sibling is to the right, don't expand past sib.x
+      if (sib.x >= parent.x + parent.width - 1 && maxX > sib.x - 2) {
+        maxX = Math.min(maxX, sib.x - 2)
+      }
+      if (sib.y >= parent.y + parent.height - 1 && maxY > sib.y - 2) {
+        maxY = Math.min(maxY, sib.y - 2)
+      }
+    }
+    const x = Math.round(minX)
+    const y = Math.round(minY)
+    const width = Math.max(8, Math.round(maxX - x))
+    const height = Math.max(8, Math.round(maxY - y))
+    next[i] = {
+      ...parent,
+      x,
+      y,
+      width,
+      height,
+      runs: [{ x, y, width, height }],
+      outlinePath: rectPerimeterPathD(x, y, width, height),
+    }
+  }
+
+  // 3) Final child clamp after any parent growth
+  for (let i = 0; i < next.length; i++) {
+    const child = next[i]!
+    const parent = next.find(
+      (p) =>
+        p.id !== child.id &&
+        p.showStroke !== false &&
+        (p.hierarchyLevel ?? 1) < (child.hierarchyLevel ?? 1) &&
+        isChildOf(p, child),
+    )
+    if (!parent) continue
+    next[i] = clampChildInto(child, parent)
   }
 
   return next

@@ -246,15 +246,16 @@ export function PdfExportPages({
               />
             )}
 
-            {/* Group panels under cards (board → page local coords) */}
+            {/* Group panels under cards (board → page local coords).
+                Only paint a panel when it has member cards on THIS page —
+                otherwise a tall L1 AABB from the previous topic can fill over
+                the next folder on the same multipage strip (export ≠ preview). */}
             {(c.layoutPanels ?? [])
-              .filter((p) => panelIntersectsPage(p, page))
+              .filter((p) => panelHasMembersOnPage(p, items))
               .map((p) => (
                 <ExportLayoutPanel
                   key={p.id}
-                  panel={p}
-                  x={p.x - page.x}
-                  y={p.y - page.y}
+                  panel={clipPanelToPage(p, page)}
                   pageOrigin={{ x: page.x, y: page.y }}
                 />
               ))}
@@ -270,7 +271,7 @@ export function PdfExportPages({
 
             {/* Titles after cards; deeper hierarchy levels paint last (on top) */}
             {(c.layoutPanels ?? [])
-              .filter((p) => panelIntersectsPage(p, page))
+              .filter((p) => panelHasMembersOnPage(p, items))
               .slice()
               .sort(
                 (a, b) => (a.hierarchyLevel ?? 1) - (b.hierarchyLevel ?? 1),
@@ -278,8 +279,10 @@ export function PdfExportPages({
               .map((p) => (
                 <ExportLayoutPanelTitle
                   key={`${p.id}-title`}
-                  panel={p}
-                  allPanels={c.layoutPanels ?? []}
+                  panel={clipPanelToPage(p, page)}
+                  allPanels={(c.layoutPanels ?? [])
+                    .filter((q) => panelHasMembersOnPage(q, items))
+                    .map((q) => clipPanelToPage(q, page))}
                   pageOrigin={{ x: page.x, y: page.y }}
                 />
               ))}
@@ -302,13 +305,69 @@ function panelIntersectsPage(
   )
 }
 
+/** True when the panel owns at least one card rendered on this export page. */
+function panelHasMembersOnPage(
+  p: LayoutPanel,
+  pageItems: Array<{ id: string }>,
+): boolean {
+  if (!p.memberIds?.length) return false
+  const onPage = new Set(pageItems.map((i) => i.id))
+  return p.memberIds.some((id) => onPage.has(id))
+}
+
+/**
+ * Clip panel chrome to the page rectangle so multipage capture never paints
+ * a straddling L1 fill past the page edge into the next topic's band.
+ */
+function clipPanelToPage(p: LayoutPanel, page: PageRect): LayoutPanel {
+  if (!panelIntersectsPage(p, page)) return p
+  const x0 = Math.max(p.x, page.x)
+  const y0 = Math.max(p.y, page.y)
+  const x1 = Math.min(p.x + p.width, page.x + page.width)
+  const y1 = Math.min(p.y + p.height, page.y + page.height)
+  const width = Math.max(1, x1 - x0)
+  const height = Math.max(1, y1 - y0)
+  const runs = (p.runs ?? [{ x: p.x, y: p.y, width: p.width, height: p.height }])
+    .map((r) => {
+      const rx0 = Math.max(r.x, page.x)
+      const ry0 = Math.max(r.y, page.y)
+      const rx1 = Math.min(r.x + r.width, page.x + page.width)
+      const ry1 = Math.min(r.y + r.height, page.y + page.height)
+      if (rx1 <= rx0 || ry1 <= ry0) return null
+      return {
+        x: rx0,
+        y: ry0,
+        width: rx1 - rx0,
+        height: ry1 - ry0,
+      }
+    })
+    .filter((r): r is NonNullable<typeof r> => Boolean(r))
+  // When clipped, prefer rect perimeter (outline path is in absolute coords and
+  // would still draw full n-gon past the page).
+  const clippedHard =
+    x0 > p.x + 0.5 ||
+    y0 > p.y + 0.5 ||
+    x1 < p.x + p.width - 0.5 ||
+    y1 < p.y + p.height - 0.5
+  return {
+    ...p,
+    x: x0,
+    y: y0,
+    width,
+    height,
+    runs: runs.length > 0 ? runs : [{ x: x0, y: y0, width, height }],
+    outlinePath: clippedHard
+      ? undefined
+      : p.outlinePath,
+    shape: clippedHard ? 'rect' : p.shape,
+  }
+}
+
 function ExportLayoutPanel({
   panel,
   pageOrigin,
 }: {
   panel: LayoutPanel
-  x: number
-  y: number
   pageOrigin: { x: number; y: number }
 }) {
   const accent = panel.accent ?? 'rgba(99, 102, 241, 0.55)'
