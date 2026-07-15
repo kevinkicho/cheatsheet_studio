@@ -504,11 +504,13 @@ describe('packCheatsheetLayout', () => {
     const L2r = rect.layoutPanels.filter((p) => p.hierarchyLevel === 2)
     const L1n = ngonL2.layoutPanels.filter((p) => p.hierarchyLevel === 1)
     const L2n = ngonL2.layoutPanels.filter((p) => p.hierarchyLevel === 2)
-    expect(L1r.every((p) => p.shape === 'rect')).toBe(true)
+    // Leaf L2: rect mode → solid rect; n-gon mode → polygon
     expect(L2r.every((p) => p.shape === 'rect')).toBe(true)
-    expect(L1n.every((p) => p.shape === 'rect')).toBe(true) // outer stays rect
     expect(L2n.every((p) => p.shape === 'polygon')).toBe(true)
-    // N-gon L2 has outline path with more structure than a bare 4-edge rect
+    // Multi-child L1 always uses stepped outer (union of L2 blocks) so free-flow
+    // L2s don't leave empty AABB corners inside the parent frame
+    expect(L1r.every((p) => (p.runs?.length ?? 0) >= 1)).toBe(true)
+    expect(L1n.every((p) => p.shape === 'polygon')).toBe(true)
     for (const p of L2n) {
       expect(p.outlinePath).toBeTruthy()
     }

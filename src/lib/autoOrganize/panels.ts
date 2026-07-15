@@ -277,13 +277,14 @@ export function buildNestedHierarchyPanels(args: {
         continue
       }
 
-      // Chrome policy:
-      // - n-gon levels → hard tetris blocks (stepped silhouette)
-      // - multi-level outer (L1) → solid blocks from child-folder AABBs so the
-      //   outer frame doesn't paint empty AABB corners around sparse L2s
-      // - leaf rect → solid AABB (rectangular tetris piece)
+      /**
+       * Chrome policy (fixes empty right/bottom inside outer frames):
+       * - Leaf / single-child: rect → solid AABB; n-gon → card tetris blocks
+       * - Multi-child outer (L1 wrapping free-flow L2s): ALWAYS union of child
+       *   AABBs as stepped chrome — never solid AABB (that left huge empty
+       *   corners inside “1. BIOLOGY” while L2s only filled part of the rect)
+       */
       const useNgon = ngonSet.has(level)
-      const chromeShape: PanelShape = useNgon ? 'polygon' : 'rect'
       const nextLevel = effectiveLevels.find((L) => L > level)
       let childBlocks:
         | Array<{ x: number; y: number; width: number; height: number }>
@@ -299,33 +300,37 @@ export function buildNestedHierarchyPanels(args: {
           byChild.get(ck)!.push(m)
         }
         if (byChild.size >= 2) {
+          // Inflate each child by leaf pad so outer hugs L2 frames, not cards only
+          const childPad = Math.max(0, panelPad)
           childBlocks = [...byChild.values()].map((ms) => {
             const x0 = Math.min(...ms.map((c) => c.x))
             const y0 = Math.min(...ms.map((c) => c.y))
             const x1 = Math.max(...ms.map((c) => c.x + c.width))
             const y1 = Math.max(...ms.map((c) => c.y + c.height))
             return {
-              x: x0,
-              y: y0,
-              width: Math.max(8, x1 - x0),
-              height: Math.max(8, y1 - y0),
+              x: x0 - childPad,
+              y: y0 - childPad,
+              width: Math.max(8, x1 - x0 + childPad * 2),
+              height: Math.max(8, y1 - y0 + childPad * 2),
             }
           })
         }
       }
-      // n-gon: hard tetris blocks (and multi-child outer uses child AABBs).
-      // rect: solid AABB rectangular pieces (classic rectangular tetris).
-      const solidMode: 'solid-aabb' | 'close' | 'silhouette' | 'blocks' = useNgon
-        ? 'blocks'
-        : 'solid-aabb'
+      const multiChildOuter = Boolean(childBlocks && childBlocks.length >= 2)
+      // Stepped outer silhouette when wrapping free-flow children; else leaf style
+      const useBlocks = useNgon || multiChildOuter
+      const chromeShape: PanelShape = useBlocks ? 'polygon' : 'rect'
+      const solidMode: 'solid-aabb' | 'close' | 'silhouette' | 'blocks' =
+        useBlocks ? 'blocks' : 'solid-aabb'
+      // Outer already inflated child blocks — only title band extra on outer
+      const chromePad = multiChildOuter ? 0 : effPad
       const chrome = chromeFromMembers(members, {
-        pad: effPad, // user pad only (no nest bloat); clamped to content box
+        pad: chromePad,
         titleBand,
         shape: chromeShape,
         grid,
         solidMode,
-        // n-gon multi-child outer: silhouette from L2 AABBs (not card swiss-cheese)
-        blocks: useNgon ? childBlocks : undefined,
+        blocks: multiChildOuter ? childBlocks : undefined,
       })
       // Final clamp to print content box (pad may still nudge past edge)
       let { x, y, width, height } = chrome
@@ -344,6 +349,8 @@ export function buildNestedHierarchyPanels(args: {
       const runs = (chrome.runs ?? [{ x, y, width, height }]).map((r) => {
         let rx = r.x
         let rw = r.width
+        let ry = r.y
+        let rh = r.height
         if (contentLeft != null && rx < contentLeft) {
           rw -= contentLeft - rx
           rx = contentLeft
@@ -353,9 +360,9 @@ export function buildNestedHierarchyPanels(args: {
         }
         return {
           x: Math.round(rx),
-          y: Math.round(r.y),
+          y: Math.round(ry),
           width: Math.max(8, Math.round(rw)),
-          height: Math.max(8, Math.round(r.height)),
+          height: Math.max(8, Math.round(rh)),
         }
       })
       panels.push({
@@ -371,7 +378,8 @@ export function buildNestedHierarchyPanels(args: {
         width: Math.max(8, Math.round(width)),
         height: Math.max(8, Math.round(height)),
         runs,
-        shape: chromeShape === 'polygon' ? 'polygon' : 'rect',
+        // Multi-child outer uses polygon outline so empty AABB corners are not filled
+        shape: useBlocks ? 'polygon' : 'rect',
         outlinePath: outline,
         accent,
         zIndex: level - 1,
@@ -553,10 +561,13 @@ export function nestContainPanels(
     next[i] = clampChildInto(child, parent)
   }
 
-  // 2) If a stroked child still escapes, grow parent just enough (escape only)
+  // 2) If a stroked child still escapes a *solid* parent, grow it just enough.
+  // Never solidify multi-run / stepped parents into one AABB (that recreated
+  // the empty right/bottom corners inside “1. BIOLOGY”).
   for (let i = 0; i < next.length; i++) {
     const parent = next[i]!
     if (parent.showStroke === false) continue
+    if ((parent.runs?.length ?? 0) > 1 || parent.shape === 'polygon') continue
     const children = next.filter(
       (c) => c.showStroke !== false && isChildOf(parent, c),
     )
@@ -583,12 +594,10 @@ export function nestContainPanels(
     if (!need) continue
     if (left != null) minX = Math.max(left, minX)
     if (right != null) maxX = Math.min(right, maxX)
-    // Do not grow into a same-level sibling AABB
     for (const sib of next) {
       if (sib.id === parent.id) continue
       if ((sib.hierarchyLevel ?? 1) !== (parent.hierarchyLevel ?? 1)) continue
       if (sib.showStroke === false) continue
-      // If sibling is to the right, don't expand past sib.x
       if (sib.x >= parent.x + parent.width - 1 && maxX > sib.x - 2) {
         maxX = Math.min(maxX, sib.x - 2)
       }
