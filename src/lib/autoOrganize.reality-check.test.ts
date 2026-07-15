@@ -193,8 +193,9 @@ describe('reality check user complaints', () => {
     expect(escape).toBe(0)
     expect(fatR).toBe(0)
     expect(fatB).toBe(0)
-    // Inter-L1 card gap ≤ ~2 cells (48) + pad — not the old 72–150 voids
-    expect(maxL1Gap).toBeLessThanOrEqual(48)
+    // Inter-L1 card gap = parent air + L1 title reserve (≤2 grid cells).
+    // With grid 24 + pad/gap that is ~60px — not the old 100–200 voids.
+    expect(maxL1Gap).toBeLessThanOrEqual(72)
     // With nL2-3, L1 must stay rect (not snaking polygon)
     expect(L1.every((p) => p.shape === 'rect')).toBe(true)
   })

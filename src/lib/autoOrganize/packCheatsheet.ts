@@ -42,6 +42,7 @@ import {
   ensureLeafTitleClearance,
   resolveLeafGroupCollisions,
   gravityCompactGroups,
+  repackGroupsInParents,
   separateFolderClusters,
   resolveCardOverlaps,
   resolveSameLevelPanelCollisions,
@@ -437,11 +438,19 @@ export function packCheatsheetLayout(
         usePanels && outerLevelsStroke && panelPad > 0 ? 1 : 0,
       )
 
-  // L1 chip row only (1 cell). L2 chips are on L2 frames — not a second
-  // exclusive row (that inflated every outer and inter-topic gap).
-  const outerTitleCells = useHierarchicalPlace ? 1 : 0
+  // L1 chip row only. Match ~26–30px title band (L1_CHIP+4 + pad) so gravity
+  // + nestContain never have to expand chrome into the top print margin.
+  // (1 cell was only 16px → panels y=18 when box.top=48, screenshot 214641.)
+  const outerTitleCells = useHierarchicalPlace
+    ? Math.max(1, Math.ceil((28 + panelPad) / grid))
+    : 0
   const nestInsetCells =
     nestInsetPx > 0 ? Math.min(1, Math.ceil(nestInsetPx / grid)) : 0
+  // Gravity floor: keep card tops below reserved L1 title chrome.
+  const gravityContentTop =
+    multiLevelHierarchy && outerLevelsStroke
+      ? box.top + Math.max(0, outerTitleCells * grid)
+      : box.top
 
   const placeOpts = {
     sortByHeight: !nameOrdered,
@@ -660,6 +669,7 @@ export function packCheatsheetLayout(
         grid,
         contentLeft: box.left,
         contentTop: box.top,
+        contentRight: box.left + box.width,
         pageCols,
         gapCells: 0,
       })
@@ -697,39 +707,93 @@ export function packCheatsheetLayout(
     )
   }
 
-  // Tetris gravity *inside each L1 only* (never across topics).
-  if (usePanels && (options.folders?.length ?? 0) > 0) {
+  // Authoritative hierarchical tetris: re-pack every L2/L3 block inside its
+  // L1 into a tight rectangle, then stack L1 topics. This is what kills the
+  // empty corners / snaking corridors / huge inter-topic voids users kept
+  // reporting (screenshots 202039, 214119, 214206, 214641, 214716).
+  //
+  // parentGap is ONLY inter-frame air + pad — L1 title is already reserved
+  // via titleCells *inside* each parent (do not double-count title here).
+  if (usePanels && multiLevelHierarchy && (options.folders?.length ?? 0) > 0) {
+    const interParentGapPx = Math.max(
+      gapPx,
+      outerLevelsStroke ? panelPad * 2 + Math.max(0, gapPx) : gapPx,
+    )
+    const innerLeafGapCells = hardTetris
+      ? chromeClearCells
+      : Math.max(0, leafLevelsStroke && panelPad > 0 ? 1 : 0)
+    result = repackGroupsInParents(
+      result,
+      options.folders ?? [],
+      deepLevel,
+      shallowLevel,
+      {
+        grid,
+        contentLeft: box.left,
+        contentTop: box.top,
+        contentRight: box.left + box.width,
+        gapCells: innerLeafGapCells,
+        parentGapPx: interParentGapPx,
+        titleCells: outerTitleCells,
+      },
+    )
+  } else if (usePanels && (options.folders?.length ?? 0) > 0) {
+    // Single-level panels: gravity only
     result = gravityCompactGroups(result, options.folders ?? [], deepLevel, {
       grid,
       gapPx: hardTetris
         ? Math.max(0, panelPad * 2)
         : Math.max(0, gapPx + (panelPad > 0 ? panelPad * 2 : 0)),
-      // Always scope to shallow parent when multi-level so L2s don't climb
-      // into another topic's holes.
-      parentLevel: multiLevelHierarchy ? shallowLevel : undefined,
       contentLeft: box.left,
       contentTop: box.top,
       contentRight: box.left + box.width,
     })
   }
 
-  // LAST placement pass: stack L1 topics so card AABBs never interleave.
-  // Need: bottom pad + L1 title band of next topic + top pad + user gap.
-  // L1 title is ~26px now (not 44) so inter-topic voids stay modest.
+  // Safety stack if anything still interleaves (repack already stacks parents).
+  // minGap = pad+user gap only — title lives inside each parent band.
   if (usePanels && multiLevelHierarchy && (options.folders?.length ?? 0) > 0) {
-    const l1TitleClear = outerLevelsStroke ? 28 : 0
-    const outerChromeClearPx = outerLevelsStroke
-      ? panelPad * 2 + l1TitleClear + Math.max(0, gapPx)
-      : Math.max(0, gapPx)
     result = separateFolderClusters(
       result,
       options.folders ?? [],
       shallowLevel,
       {
         grid,
-        minGapPx: Math.max(gapPx, outerChromeClearPx),
+        minGapPx: Math.max(
+          gapPx,
+          outerLevelsStroke ? panelPad * 2 + Math.max(0, gapPx) : gapPx,
+        ),
       },
     )
+  }
+
+  // Final hard clamp of cards into the printable content box (post densify /
+  // gravity / separate — those passes can otherwise nudge past margins).
+  {
+    const cRight = box.left + box.width
+    result = result.map((it) => {
+      if (it.hidden) return it
+      let x = it.x
+      let y = it.y
+      let w = it.width
+      let h = it.height
+      if (x < box.left) {
+        w -= box.left - x
+        x = box.left
+      }
+      if (x + w > cRight) {
+        x = Math.max(box.left, cRight - w)
+        if (x + w > cRight) w = Math.max(grid, cRight - x)
+      }
+      if (y < box.top) y = box.top
+      return {
+        ...it,
+        x: Math.round(x),
+        y: Math.round(y),
+        width: Math.max(grid, Math.round(w)),
+        height: Math.max(grid, Math.round(h)),
+      }
+    })
   }
 
   // Multipage seams:
@@ -832,6 +896,7 @@ export function packCheatsheetLayout(
       grid,
       contentLeft: box.left,
       contentRight: box.left + box.width,
+      contentTop: box.top,
     })
     // Fallback when no folderIds on cards (heading-only splits)
     if (layoutPanels.length === 0) {
@@ -869,21 +934,9 @@ export function packCheatsheetLayout(
       insetPx: multiLevelHierarchy ? Math.max(2, panelPad) : 0,
       contentLeft: box.left,
       contentRight: box.left + box.width,
+      contentTop: box.top,
       placed: result,
       panelPad,
-    })
-    // Final hard clamp to print content box (margins excluded)
-    layoutPanels = clampPanelsToContentBox(layoutPanels, {
-      left: box.left,
-      right: box.left + box.width,
-    })
-    // Restore member coverage if clamp shaved edges
-    layoutPanels = nestContainPanels(layoutPanels, {
-      insetPx: 0,
-      contentLeft: box.left,
-      contentRight: box.left + box.width,
-      placed: result,
-      panelPad: 0,
     })
     // Only rebuild multi-child outers as stepped chrome when L1 itself is n-gon.
     // Forcing stepped L1 for all multi-child produced snaking “weird boxes”
@@ -901,9 +954,17 @@ export function packCheatsheetLayout(
         titleBandPx: PANEL_TITLE_BAND_PX,
         contentLeft: box.left,
         contentRight: box.left + box.width,
+        contentTop: box.top,
         grid,
       })
     }
+    // Final hard clamp LAST — nestContain / rebuild must not leave chrome
+    // in the top or side print margins (screenshot 214641).
+    layoutPanels = clampPanelsToContentBox(layoutPanels, {
+      left: box.left,
+      right: box.left + box.width,
+      top: box.top,
+    })
   }
 
   const bottom2 = merged.reduce(

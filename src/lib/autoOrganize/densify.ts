@@ -5,7 +5,7 @@ import {
   type FolderRef,
   isHeadingCard,
 } from './folders'
-import { placeTopicRegionsDense } from './shelf'
+import { packClusterTight, placeTopicRegionsDense } from './shelf'
 import { panelRunsOverlap, rectsOverlap, rectPerimeterPathD } from './geometry'
 import { chromeFromMembers } from './polyomino'
 
@@ -108,12 +108,15 @@ export function densifyPlacedGroups(
     grid?: number
     contentLeft: number
     contentTop: number
+    /** Printable right edge — densify must not place past this. */
+    contentRight?: number
     pageCols: number
     gapCells?: number
   },
 ): CanvasItem[] {
   const grid = Math.max(4, opts.grid ?? ORGANIZE_GRID)
   const gap = Math.max(0, opts.gapCells ?? 0)
+  const contentRight = opts.contentRight
   const cards = items.filter((i) => !i.hidden && !isHeadingCard(i) && i.folderId)
   if (cards.length < 2) return items
 
@@ -161,15 +164,26 @@ export function densifyPlacedGroups(
       ...members.map((m) => Math.ceil(m.width / grid)),
     )
 
+    // Remaining printable columns from this group's left edge (not full page).
+    // Using pageCols from a minX past contentLeft was packing past the right margin.
+    const maxColsHere =
+      contentRight != null && Number.isFinite(contentRight)
+        ? Math.max(
+            1,
+            Math.floor((contentRight - minX + 0.5) / grid),
+          )
+        : opts.pageCols
+    const colBudget = Math.max(1, Math.min(opts.pageCols, maxColsHere))
+
     // Try several widths: tight, current span, slightly wider (fill residual)
     const candidates = Array.from(
       new Set(
         [
-          spanCw,
-          Math.min(opts.pageCols, Math.max(maxCardW, Math.ceil(spanCw * 0.85))),
-          Math.min(opts.pageCols, spanCw + 2),
+          Math.min(colBudget, spanCw),
+          Math.min(colBudget, Math.max(maxCardW, Math.ceil(spanCw * 0.85))),
+          Math.min(colBudget, spanCw + 2),
           Math.min(
-            opts.pageCols,
+            colBudget,
             Math.max(
               maxCardW,
               Math.ceil(
@@ -185,7 +199,7 @@ export function densifyPlacedGroups(
               ),
             ),
           ),
-        ].map((w) => Math.max(maxCardW, Math.min(opts.pageCols, w))),
+        ].map((w) => Math.max(maxCardW, Math.min(colBudget, w))),
       ),
     )
 
@@ -231,6 +245,16 @@ export function densifyPlacedGroups(
       const area = usedCw * usedCh
       // Reject taller than original unless area much smaller
       if (usedCh > spanCh + 1) continue
+      // Never leave the printable content box
+      if (
+        contentRight != null &&
+        next.some((n) => n.x + n.w > contentRight + 0.5)
+      ) {
+        continue
+      }
+      if (next.some((n) => n.y < opts.contentTop - 0.5)) {
+        continue
+      }
       // Peer collision check
       let hitsPeer = false
       for (const n of next) {
@@ -551,6 +575,177 @@ export function gravityCompactGroups(
     const d = idDelta.get(it.id)
     return d
       ? { ...it, x: Math.round(it.x + d.dx), y: Math.round(it.y + d.dy) }
+      : it
+  })
+}
+
+/**
+ * Re-pack every leaf (L2/L3) group *inside* its parent (L1) into a tight
+ * rectangular free-flow, then stack parents with no interleave.
+ *
+ * Free-flow of uneven L2s left solid L1 AABBs full of empty corners
+ * (screenshots 202039 / 214119 / 214206). Treating each leaf AABB as a
+ * rigid block and maxrects-packing them per parent kills interior voids
+ * without snaking n-gon L1 chrome.
+ */
+export function repackGroupsInParents(
+  items: CanvasItem[],
+  folders: FolderRef[],
+  leafLevel: PanelGroupLevel,
+  parentLevel: PanelGroupLevel,
+  opts: {
+    grid?: number
+    contentLeft: number
+    contentTop: number
+    contentRight: number
+    /** Gap between leaf blocks inside a parent (cells). */
+    gapCells?: number
+    /** Gap between parent clusters (px). */
+    parentGapPx?: number
+    /** Cells reserved at top of each parent for L1 title chip. */
+    titleCells?: number
+  },
+): CanvasItem[] {
+  const grid = Math.max(4, opts.grid ?? ORGANIZE_GRID)
+  const gapCells = Math.max(0, opts.gapCells ?? 0)
+  const parentGap = Math.max(0, opts.parentGapPx ?? 0)
+  const titleCells = Math.max(0, opts.titleCells ?? 0)
+  const contentLeft = opts.contentLeft
+  const contentTop = opts.contentTop
+  const contentRight = opts.contentRight
+  const pageCols = Math.max(
+    1,
+    Math.floor((contentRight - contentLeft) / grid),
+  )
+
+  const cards = items.filter(
+    (i) => !i.hidden && !isHeadingCard(i) && i.folderId,
+  )
+  if (cards.length < 2) return items
+
+  type Leaf = {
+    key: string
+    ids: string[]
+    cw: number
+    ch: number
+    // relative offsets of each card from leaf AABB origin
+    locals: Array<{ id: string; dx: number; dy: number; w: number; h: number }>
+  }
+
+  // parentKey → leaves
+  const parents = new Map<string, Leaf[]>()
+  const parentOrder: string[] = []
+  const leafMap = new Map<string, CanvasItem[]>()
+
+  for (const c of cards) {
+    const leafKey =
+      folderAtGroupLevel(c.folderId, folders, leafLevel) ??
+      c.folderId ??
+      c.id
+    if (!leafMap.has(leafKey)) leafMap.set(leafKey, [])
+    leafMap.get(leafKey)!.push(c)
+  }
+
+  // Stable parent order by current minY (document flow)
+  const parentMinY = new Map<string, number>()
+  for (const [leafKey, members] of leafMap) {
+    const parentKey =
+      folderAtGroupLevel(leafKey, folders, parentLevel) ??
+      folderAtGroupLevel(members[0]?.folderId, folders, parentLevel) ??
+      leafKey
+    const minY = Math.min(...members.map((m) => m.y))
+    if (!parents.has(parentKey)) {
+      parents.set(parentKey, [])
+      parentOrder.push(parentKey)
+      parentMinY.set(parentKey, minY)
+    } else {
+      parentMinY.set(
+        parentKey,
+        Math.min(parentMinY.get(parentKey) ?? minY, minY),
+      )
+    }
+    const minX = Math.min(...members.map((m) => m.x))
+    const minYy = Math.min(...members.map((m) => m.y))
+    const maxX = Math.max(...members.map((m) => m.x + m.width))
+    const maxY = Math.max(...members.map((m) => m.y + m.height))
+    const cw = Math.max(1, Math.ceil((maxX - minX) / grid))
+    const ch = Math.max(1, Math.ceil((maxY - minYy) / grid))
+    parents.get(parentKey)!.push({
+      key: leafKey,
+      ids: members.map((m) => m.id),
+      cw: Math.min(pageCols, cw),
+      ch,
+      locals: members.map((m) => ({
+        id: m.id,
+        dx: m.x - minX,
+        dy: m.y - minYy,
+        w: m.width,
+        h: m.height,
+      })),
+    })
+  }
+  parentOrder.sort(
+    (a, b) => (parentMinY.get(a) ?? 0) - (parentMinY.get(b) ?? 0),
+  )
+
+  const idPos = new Map<string, { x: number; y: number; w: number; h: number }>()
+  let cursorY = contentTop
+
+  for (const parentKey of parentOrder) {
+    const leaves = parents.get(parentKey) ?? []
+    if (leaves.length === 0) continue
+
+    // Pack leaf AABBs tightly into the printable width
+    const regions = leaves.map((L, i) => ({
+      index: i,
+      cw: Math.min(pageCols, Math.max(1, L.cw)),
+      ch: Math.max(1, L.ch),
+    }))
+    const tight = packClusterTight(regions, pageCols, gapCells)
+    // Prefer the tight pack’s used width; place from contentLeft
+    const originX = contentLeft
+    const originY = Math.max(contentTop, cursorY) + titleCells * grid
+
+    let maxBottom = originY
+    for (let i = 0; i < leaves.length; i++) {
+      const L = leaves[i]!
+      const p = tight.pos.get(i) ?? { c: 0, r: 0 }
+      const baseX = originX + p.c * grid
+      const baseY = originY + p.r * grid
+      for (const loc of L.locals) {
+        // Keep internal card layout; clamp width if leaf was capped to pageCols
+        let w = loc.w
+        let h = loc.h
+        const maxW = Math.max(grid, L.cw * grid - loc.dx)
+        if (w > maxW) w = maxW
+        let x = baseX + loc.dx
+        let y = baseY + loc.dy
+        if (x + w > contentRight) {
+          w = Math.max(grid, contentRight - x)
+        }
+        if (x < contentLeft) {
+          w -= contentLeft - x
+          x = contentLeft
+        }
+        const nx = Math.round(x)
+        const ny = Math.round(y)
+        const nw = Math.max(grid, Math.round(w))
+        const nh = Math.max(grid, Math.round(h))
+        idPos.set(loc.id, { x: nx, y: ny, w: nw, h: nh })
+        maxBottom = Math.max(maxBottom, ny + nh)
+      }
+    }
+
+    // Advance from *actual* card bottoms (not ceil'd usedCh) so inter-L1
+    // voids stay = parentGap only.
+    cursorY = maxBottom + parentGap
+  }
+
+  if (idPos.size === 0) return items
+  return items.map((it) => {
+    const n = idPos.get(it.id)
+    return n
+      ? { ...it, x: n.x, y: n.y, width: n.w, height: n.h }
       : it
   })
 }

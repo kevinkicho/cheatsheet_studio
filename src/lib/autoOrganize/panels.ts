@@ -142,6 +142,8 @@ export function buildNestedHierarchyPanels(args: {
   contentLeft?: number
   /** Printable content right edge (clamp chrome). */
   contentRight?: number
+  /** Printable content top edge (clamp chrome — never into top margin). */
+  contentTop?: number
 }): LayoutPanel[] {
   const {
     placed,
@@ -154,6 +156,7 @@ export function buildNestedHierarchyPanels(args: {
     grid = ORGANIZE_GRID,
     contentLeft,
     contentRight,
+    contentTop,
   } = args
   const sorted = normalizePanelGroupLevels(levels)
   if (sorted.length === 0) return []
@@ -257,7 +260,8 @@ export function buildNestedHierarchyPanels(args: {
         // Title chip only — under L1 exclusive band when multi
         const minY = Math.min(...members.map((m) => m.y))
         const maxY = Math.max(...members.map((m) => m.y + m.height))
-        const chipY = Math.round(minY - titleBand)
+        let chipY = Math.round(minY - titleBand)
+        if (contentTop != null && chipY < contentTop) chipY = contentTop
         panels.push({
           id: `panel-L${level}-${folderId}`,
           folderId,
@@ -269,7 +273,7 @@ export function buildNestedHierarchyPanels(args: {
           x: Math.round(minX),
           y: chipY,
           width: Math.max(8, Math.round(maxX - minX)),
-          height: Math.max(8, Math.round(maxY - minY + titleBand)),
+          height: Math.max(8, Math.round(maxY - chipY)),
           shape: 'rect',
           runs: undefined,
           outlinePath: undefined,
@@ -300,7 +304,7 @@ export function buildNestedHierarchyPanels(args: {
         grid,
         solidMode,
       })
-      // Final clamp to print content box (pad may still nudge past edge)
+      // Final clamp to print content box (pad/title may still nudge past edge)
       let { x, y, width, height } = chrome
       if (contentLeft != null && x < contentLeft) {
         width -= contentLeft - x
@@ -309,8 +313,12 @@ export function buildNestedHierarchyPanels(args: {
       if (contentRight != null && x + width > contentRight) {
         width = Math.max(8, contentRight - x)
       }
+      if (contentTop != null && y < contentTop) {
+        height -= contentTop - y
+        y = contentTop
+      }
       const outline =
-        chrome.outlinePath && width >= chrome.width - 1
+        chrome.outlinePath && width >= chrome.width - 1 && y >= (chrome.y ?? y)
           ? chrome.outlinePath
           : rectPerimeterPathD(x, y, width, height)
       // Re-clamp runs into content box
@@ -325,6 +333,10 @@ export function buildNestedHierarchyPanels(args: {
         }
         if (contentRight != null && rx + rw > contentRight) {
           rw = Math.max(8, contentRight - rx)
+        }
+        if (contentTop != null && ry < contentTop) {
+          rh -= contentTop - ry
+          ry = contentTop
         }
         return {
           x: Math.round(rx),
@@ -419,6 +431,8 @@ export function nestContainPanels(
     insetPx?: number
     contentLeft?: number
     contentRight?: number
+    /** Printable top — never grow title chrome into the top margin. */
+    contentTop?: number
     /** Card geometry after pack — required so we never cut under members. */
     placed?: CanvasItem[]
     panelPad?: number
@@ -429,6 +443,7 @@ export function nestContainPanels(
   const pad = Math.max(0, opts?.panelPad ?? 4)
   const left = opts?.contentLeft
   const right = opts?.contentRight
+  const top = opts?.contentTop
   const byId = new Map((opts?.placed ?? []).map((c) => [c.id, c]))
   let next = panels.map((p) => ({ ...p }))
 
@@ -469,6 +484,7 @@ export function nestContainPanels(
     let y1 = Math.max(p.y + p.height, env.maxY + pad)
     if (left != null) x = Math.max(left, x)
     if (right != null) x1 = Math.min(right, x1)
+    if (top != null) y = Math.max(top, y)
     const width = Math.max(8, x1 - x)
     const height = Math.max(8, y1 - y)
     if (
@@ -477,28 +493,49 @@ export function nestContainPanels(
       width > p.width + 0.5 ||
       height > p.height + 0.5
     ) {
-      // Expand runs that are near the old edges; keep stepped shape when possible
+      // Expand runs that are near the old edges; keep stepped shape when possible.
+      // Always clamp runs into the printable content box.
+      const clampRun = (rx: number, ry: number, rw: number, rh: number) => {
+        let x0 = rx
+        let y0 = ry
+        let w0 = rw
+        let h0 = rh
+        if (left != null && x0 < left) {
+          w0 -= left - x0
+          x0 = left
+        }
+        if (right != null && x0 + w0 > right) {
+          w0 = Math.max(8, right - x0)
+        }
+        if (top != null && y0 < top) {
+          h0 -= top - y0
+          y0 = top
+        }
+        return {
+          x: Math.round(x0),
+          y: Math.round(y0),
+          width: Math.max(8, Math.round(w0)),
+          height: Math.max(8, Math.round(h0)),
+        }
+      }
       const runs =
         p.runs && p.runs.length > 1
-          ? p.runs.map((r) => ({
-              x: Math.min(r.x, env.minX - pad),
-              y: r.y,
-              width: Math.max(r.width, env.maxX + pad - Math.min(r.x, env.minX - pad)),
-              height: r.height,
-            }))
-          : [{ x, y, width, height }]
+          ? p.runs.map((r) => {
+              const nx = Math.min(r.x, env.minX - pad)
+              const nw = Math.max(
+                r.width,
+                env.maxX + pad - Math.min(r.x, env.minX - pad),
+              )
+              return clampRun(nx, r.y, nw, r.height)
+            })
+          : [clampRun(x, y, width, height)]
       next[i] = {
         ...p,
         x: Math.round(x),
         y: Math.round(y),
         width: Math.round(width),
         height: Math.round(height),
-        runs: runs.map((r) => ({
-          x: Math.round(r.x),
-          y: Math.round(r.y),
-          width: Math.max(8, Math.round(r.width)),
-          height: Math.max(8, Math.round(r.height)),
-        })),
+        runs,
         outlinePath:
           p.shape === 'polygon' && p.outlinePath
             ? p.outlinePath
@@ -536,6 +573,7 @@ export function nestContainPanels(
     if (!need) continue
     if (left != null) minX = Math.max(left, minX)
     if (right != null) maxX = Math.min(right, maxX)
+    if (top != null) minY = Math.max(top, minY)
     for (const sib of next) {
       if (sib.id === parent.id) continue
       if ((sib.hierarchyLevel ?? 1) !== (parent.hierarchyLevel ?? 1)) continue
@@ -588,6 +626,7 @@ export function rebuildMultiChildOuters(
     titleBandPx?: number
     contentLeft?: number
     contentRight?: number
+    contentTop?: number
     grid?: number
   },
 ): LayoutPanel[] {
@@ -596,6 +635,7 @@ export function rebuildMultiChildOuters(
   const grid = Math.max(4, opts?.grid ?? ORGANIZE_GRID)
   const left = opts?.contentLeft
   const right = opts?.contentRight
+  const top = opts?.contentTop
   const next = panels.map((p) => ({ ...p }))
 
   const isChildOf = (parent: LayoutPanel, child: LayoutPanel) => {
@@ -656,6 +696,10 @@ export function rebuildMultiChildOuters(
     if (right != null && x + width > right) {
       width = Math.max(8, right - x)
     }
+    if (top != null && y < top) {
+      height -= top - y
+      y = top
+    }
     next[i] = {
       ...parent,
       x: Math.round(x),
@@ -676,17 +720,20 @@ export function rebuildMultiChildOuters(
   return next
 }
 
-/** Hard clamp panel chrome into the printable content box (left/right). */
+/** Hard clamp panel chrome into the printable content box (left/right/top). */
 export function clampPanelsToContentBox(
   panels: LayoutPanel[],
-  box: { left: number; right: number },
+  box: { left: number; right: number; top?: number },
 ): LayoutPanel[] {
   const left = box.left
   const right = box.right
+  const top = box.top
   if (!(right > left)) return panels
   return panels.map((p) => {
     let x = p.x
+    let y = p.y
     let width = p.width
+    let height = p.height
     if (x < left) {
       width -= left - x
       x = left
@@ -694,9 +741,15 @@ export function clampPanelsToContentBox(
     if (x + width > right) {
       width = Math.max(8, right - x)
     }
+    if (top != null && y < top) {
+      height -= top - y
+      y = top
+    }
     const runs = p.runs?.map((r) => {
       let rx = r.x
+      let ry = r.y
       let rw = r.width
+      let rh = r.height
       if (rx < left) {
         rw -= left - rx
         rx = left
@@ -704,20 +757,32 @@ export function clampPanelsToContentBox(
       if (rx + rw > right) {
         rw = Math.max(8, right - rx)
       }
+      if (top != null && ry < top) {
+        rh -= top - ry
+        ry = top
+      }
       return {
         ...r,
         x: Math.round(rx),
+        y: Math.round(ry),
         width: Math.max(8, Math.round(rw)),
+        height: Math.max(8, Math.round(rh)),
       }
     })
+    const shaved =
+      width < p.width - 0.5 ||
+      (top != null && y > p.y + 0.5) ||
+      height < p.height - 0.5
     const outlinePath =
-      p.shape === 'rect' || !p.outlinePath || width < p.width - 0.5
-        ? rectPerimeterPathD(x, p.y, Math.max(8, width), p.height)
+      p.shape === 'rect' || !p.outlinePath || shaved
+        ? rectPerimeterPathD(x, y, Math.max(8, width), Math.max(8, height))
         : p.outlinePath
     return {
       ...p,
       x: Math.round(x),
+      y: Math.round(y),
       width: Math.max(8, Math.round(width)),
+      height: Math.max(8, Math.round(height)),
       runs,
       outlinePath,
     }
