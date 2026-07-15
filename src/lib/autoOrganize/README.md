@@ -22,7 +22,8 @@ The parent file `src/lib/autoOrganize.ts` re-exports this barrel for compatibili
 | `shelf.ts` | Dense free-flow region placement, hierarchical place |
 | `freeGrid.ts` | Orthogonal cell runs for n-gon chrome |
 | `polyomino.ts` | N-gon cells, exterior paths, `chromeFromMembers` |
-| `panels.ts` | Nested layout panels, merge, drag, relayout |
+| `panels/` | Nested layout panels (build, nest, clamp, merge, relayout) |
+| `panels.ts` | Thin re-export of `panels/` for stable imports |
 | `multipage.ts` | Page straddle resolve + gutter insert |
 | `densify.ts` | Leaf densify + collision separation |
 | `exportTags.ts` | Export filename auto-layout tags |
