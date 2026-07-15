@@ -204,15 +204,15 @@ export function rowBlocksFromMembers(
 }
 
 /**
- * Tetris chrome: solid blocks from free-flow card footprints.
+ * Tetris / n-gon chrome from free-flow card footprints.
  *
- * Strategy:
- * 1. Pad each **card** (not the full row AABB) so empty corners stay outside.
- * 2. Merge only rects that **overlap or share an edge** (true tetris union).
- * 3. Fallback to row-strips only when cards already form clean shelf rows with
- *    unequal widths (classic L / stepped silhouette).
- *
- * Unlike a full AABB, incomplete last rows and side-by-side packs keep steps.
+ * Strategy (screenshot 235248 — snaking L, swiss-cheese, empty notches):
+ * 1. **Dense pack → solid rect**: if cards already fill ≥78% of their AABB,
+ *    use a clean rectangle (best default; avoids fake steps).
+ * 2. **Else row strips**: one solid band per horizontal shelf (never per-card
+ *    blocks — unequal card heights refused to merge and drew broken L-shapes).
+ * 3. **Title**: grow the top strip upward (no separate title stem that snakes).
+ * 4. **Merge** abutting strips; exterior path from the union.
  */
 export function steppedLChromeFromMembers(
   members: Array<{ x: number; y: number; width: number; height: number }>,
@@ -226,7 +226,7 @@ export function steppedLChromeFromMembers(
   outlinePath: string
 } {
   const pad = Math.max(0, opts.pad)
-  const edge = Math.max(0, pad) // honor pad=0 (no forced 1px bloat)
+  const edge = Math.max(0, pad)
   const titleBand = Math.max(0, opts.titleBand)
   const grid = Math.max(4, opts.grid ?? ORGANIZE_GRID)
 
@@ -241,58 +241,93 @@ export function steppedLChromeFromMembers(
     }
   }
 
-  // Per-card solid blocks (true free-flow silhouette)
-  let runs = members.map((m) => ({
-    x: Math.round(m.x - edge),
-    y: Math.round(m.y - edge),
-    width: Math.max(8, Math.round(m.width + edge * 2)),
-    height: Math.max(8, Math.round(m.height + edge * 2)),
-  }))
+  const minX = Math.min(...members.map((m) => m.x))
+  const minY = Math.min(...members.map((m) => m.y))
+  const maxX = Math.max(...members.map((m) => m.x + m.width))
+  const maxY = Math.max(...members.map((m) => m.y + m.height))
+  const aabbW = Math.max(1, maxX - minX)
+  const aabbH = Math.max(1, maxY - minY)
+  const cardArea = members.reduce((s, m) => s + m.width * m.height, 0)
+  const fill = cardArea / (aabbW * aabbH)
 
-  // When cards form clean multi-row shelves with unequal row widths, prefer
-  // solid row strips (cleaner L). Equal-width multi-row → keep card blocks
-  // so per-card steps remain (row strips would collapse to a single rect).
-  const rows = rowBlocksFromMembers(members)
-  if (rows.length >= 2) {
-    const widths = rows.map((r) => Math.round(r.width))
-    const minW = Math.min(...widths)
-    const maxW = Math.max(...widths)
-    if (maxW - minW >= grid) {
-      // Stepped rows — solid strips read better than card swiss-cheese
-      runs = rows.map((r) => ({
-        x: Math.round(r.x - edge),
-        y: Math.round(r.y - edge),
-        width: Math.max(8, Math.round(r.width + edge * 2)),
-        height: Math.max(8, Math.round(r.height + edge * 2)),
-      }))
+  const solidAabb = () => {
+    const x = Math.round(minX - edge)
+    const y = Math.round(minY - edge - titleBand)
+    const width = Math.max(8, Math.round(maxX - minX + edge * 2))
+    const height = Math.max(8, Math.round(maxY - minY + edge * 2 + titleBand))
+    return {
+      x,
+      y,
+      width,
+      height,
+      runs: [{ x, y, width, height }],
+      outlinePath: rectPerimeterPathD(x, y, width, height),
     }
   }
 
-  // Title band: only as wide as the topmost block (not the full AABB)
-  if (titleBand > 0 && runs.length > 0) {
-    const top = [...runs].sort((a, b) => a.y - b.y || a.x - b.x)[0]!
-    runs = [
-      {
-        x: top.x,
-        y: Math.round(top.y - titleBand),
-        width: top.width,
-        height: titleBand,
-      },
-      ...runs,
-    ]
+  // Single card, or cards already pack into a near-rectangle → clean frame
+  if (members.length === 1 || fill >= 0.78) {
+    return solidAabb()
   }
 
-  // Merge overlapping / edge-adjacent rects (union without filling distant gaps)
-  runs = mergeAbuttingRuns(runs)
+  // Multi-card free-flow: solid horizontal shelf strips (not per-card blocks).
+  // Per-card blocks + unequal heights left unmerged L-notches (Molecular Biology
+  // yellow empty L, Biochemistry stepped void in 235248).
+  let runs = rowBlocksFromMembers(members).map((r) => ({
+    x: Math.round(r.x - edge),
+    y: Math.round(r.y - edge),
+    width: Math.max(8, Math.round(r.width + edge * 2)),
+    height: Math.max(8, Math.round(r.height + edge * 2)),
+  }))
+
+  // One shelf after clustering → solid rect (side-by-side pack)
+  if (runs.length <= 1) {
+    return solidAabb()
+  }
+
+  // Bridge small gaps between strips (≤ pad+grid/2) so near-touching rows fuse
+  runs = mergeAbuttingRuns(runs, Math.max(2, edge + Math.floor(grid / 2)))
+
+  // After merge, if we collapsed to one run or high strip-fill → solid
+  if (runs.length <= 1) {
+    return solidAabb()
+  }
+  {
+    const rx0 = Math.min(...runs.map((r) => r.x))
+    const ry0 = Math.min(...runs.map((r) => r.y))
+    const rx1 = Math.max(...runs.map((r) => r.x + r.width))
+    const ry1 = Math.max(...runs.map((r) => r.y + r.height))
+    const stripArea = runs.reduce((s, r) => s + r.width * r.height, 0)
+    const boxArea = Math.max(1, (rx1 - rx0) * (ry1 - ry0))
+    if (stripArea / boxArea >= 0.9) {
+      return solidAabb()
+    }
+  }
+
+  // Title band: grow the topmost strip upward (same width) — never a separate
+  // narrow stem that snakes into empty space.
+  if (titleBand > 0 && runs.length > 0) {
+    const topIdx = runs.reduce(
+      (bi, r, i, arr) =>
+        r.y < arr[bi]!.y || (r.y === arr[bi]!.y && r.x < arr[bi]!.x) ? i : bi,
+      0,
+    )
+    const top = runs[topIdx]!
+    runs[topIdx] = {
+      ...top,
+      y: Math.round(top.y - titleBand),
+      height: Math.max(8, top.height + titleBand),
+    }
+  }
+
+  runs = mergeAbuttingRuns(runs, Math.max(2, edge))
 
   const x0 = Math.min(...runs.map((r) => r.x))
   const y0 = Math.min(...runs.map((r) => r.y))
   const x1 = Math.max(...runs.map((r) => r.x + r.width))
   const y1 = Math.max(...runs.map((r) => r.y + r.height))
 
-  // Rasterize blocks → unit cells → exterior outline (true polyomino perimeter).
-  // Use floor on the exclusive max edge so ceil cannot expand the outline one
-  // full grid cell past the member+pad bounds (print overflow x=772 > 768).
+  // Rasterize strips → exterior outline (no hole-fill: keep true step silhouette)
   const originX = x0
   const originY = y0
   const unit = new Set<string>()
@@ -313,8 +348,6 @@ export function steppedLChromeFromMembers(
       }
     }
   }
-  // Do NOT fill holes — that turns L/C/U silhouettes into solid AABBs
-  // (the classic “no tetris” look). Exterior path follows the stepped outline.
   const outlinePath =
     polyominoExteriorPathD(unit, grid, originX, originY, 0) ||
     rectPerimeterPathD(x0, y0, x1 - x0, y1 - y0)
@@ -329,11 +362,16 @@ export function steppedLChromeFromMembers(
   }
 }
 
-/** Merge runs that overlap or share a full edge (axis-aligned union steps). */
+/**
+ * Merge runs that overlap or nearly share an edge.
+ * @param gapTol max gap (px) still treated as abutting (bridges small free-flow air)
+ */
 function mergeAbuttingRuns(
   input: Array<{ x: number; y: number; width: number; height: number }>,
+  gapTol = 1,
 ): Array<{ x: number; y: number; width: number; height: number }> {
   if (input.length <= 1) return input.map((r) => ({ ...r }))
+  const tol = Math.max(1, gapTol)
   let runs = input.map((r) => ({ ...r }))
   let changed = true
   while (changed) {
@@ -346,30 +384,38 @@ function mergeAbuttingRuns(
       for (let j = i + 1; j < runs.length; j++) {
         if (used.has(j)) continue
         const o = runs[j]!
-        // Horizontal merge: same y/height, x ranges touch or overlap
+        // Horizontal merge: same y-band (within tol), x ranges touch/overlap
+        const yClose =
+          Math.abs(cur.y - o.y) <= tol &&
+          Math.abs(cur.height - o.height) <= tol * 2
         if (
-          cur.y === o.y &&
-          cur.height === o.height &&
-          cur.x <= o.x + o.width + 1 &&
-          o.x <= cur.x + cur.width + 1
+          yClose &&
+          cur.x <= o.x + o.width + tol &&
+          o.x <= cur.x + cur.width + tol
         ) {
           const x0 = Math.min(cur.x, o.x)
           const x1 = Math.max(cur.x + cur.width, o.x + o.width)
-          cur = { x: x0, y: cur.y, width: x1 - x0, height: cur.height }
+          const y0 = Math.min(cur.y, o.y)
+          const y1 = Math.max(cur.y + cur.height, o.y + o.height)
+          cur = { x: x0, y: y0, width: x1 - x0, height: y1 - y0 }
           used.add(j)
           changed = true
           continue
         }
-        // Vertical merge: same x/width, y ranges touch or overlap
+        // Vertical merge: same x-band, y ranges touch/overlap
+        const xClose =
+          Math.abs(cur.x - o.x) <= tol &&
+          Math.abs(cur.width - o.width) <= tol * 2
         if (
-          cur.x === o.x &&
-          cur.width === o.width &&
-          cur.y <= o.y + o.height + 1 &&
-          o.y <= cur.y + cur.height + 1
+          xClose &&
+          cur.y <= o.y + o.height + tol &&
+          o.y <= cur.y + cur.height + tol
         ) {
+          const x0 = Math.min(cur.x, o.x)
+          const x1 = Math.max(cur.x + cur.width, o.x + o.width)
           const y0 = Math.min(cur.y, o.y)
           const y1 = Math.max(cur.y + cur.height, o.y + o.height)
-          cur = { x: cur.x, y: y0, width: cur.width, height: y1 - y0 }
+          cur = { x: x0, y: y0, width: x1 - x0, height: y1 - y0 }
           used.add(j)
           changed = true
         }

@@ -1442,6 +1442,100 @@ describe('packCheatsheetLayout', () => {
     expect(nextP.outlinePath || nextP.runs?.length).toBeTruthy()
   })
 
+  it('relayoutPanelContents on L1 rebuilds nested L2 chrome to follow cards', () => {
+    const items: CanvasItem[] = [
+      card('a1', { title: 'A1', x: 100, y: 100, width: 100, height: 60 }),
+      card('a2', { title: 'A2', x: 220, y: 100, width: 100, height: 60 }),
+      card('b1', { title: 'B1', x: 100, y: 220, width: 100, height: 60 }),
+      card('b2', { title: 'B2', x: 220, y: 220, width: 100, height: 60 }),
+    ]
+    const l2a: import('@/types').LayoutPanel = {
+      id: 'l2a',
+      title: '1.1 Sub A',
+      x: 90,
+      y: 90,
+      width: 240,
+      height: 90,
+      memberIds: ['a1', 'a2'],
+      hierarchyLevel: 2,
+      shape: 'rect',
+      showStroke: true,
+      showTitle: true,
+    }
+    const l2b: import('@/types').LayoutPanel = {
+      id: 'l2b',
+      title: '1.2 Sub B',
+      x: 90,
+      y: 210,
+      width: 240,
+      height: 90,
+      memberIds: ['b1', 'b2'],
+      hierarchyLevel: 2,
+      shape: 'rect',
+      showStroke: true,
+      showTitle: true,
+    }
+    const l1: import('@/types').LayoutPanel = {
+      id: 'l1',
+      title: '1. Topic',
+      x: 80,
+      y: 80,
+      width: 280,
+      height: 240,
+      memberIds: ['a1', 'a2', 'b1', 'b2'],
+      hierarchyLevel: 1,
+      shape: 'rect',
+      showStroke: true,
+      showTitle: true,
+      contentSort: 'none',
+    }
+    // Old L2 positions (will be wrong after dense reflow if not rebuilt)
+    const oldL2a = { x: l2a.x, y: l2a.y }
+    const { items: next, panels: nextAll } = relayoutPanelContents(items, l1, {
+      mode: 'dense',
+      gapPx: 4,
+      panelPad: 4,
+      grid: 24,
+      allPanels: [l1, l2a, l2b],
+    })
+    expect(nextAll).toBeDefined()
+    const nextL2a = nextAll!.find((p) => p.id === 'l2a')!
+    const nextL2b = nextAll!.find((p) => p.id === 'l2b')!
+    const nextL1 = nextAll!.find((p) => p.id === 'l1')!
+    // L2 chrome must track its cards
+    for (const id of ['a1', 'a2']) {
+      const c = next.find((i) => i.id === id)!
+      expect(c.x).toBeGreaterThanOrEqual(nextL2a.x - 2)
+      expect(c.y).toBeGreaterThanOrEqual(nextL2a.y - 2)
+      expect(c.x + c.width).toBeLessThanOrEqual(nextL2a.x + nextL2a.width + 2)
+      expect(c.y + c.height).toBeLessThanOrEqual(nextL2a.y + nextL2a.height + 2)
+    }
+    for (const id of ['b1', 'b2']) {
+      const c = next.find((i) => i.id === id)!
+      expect(c.x).toBeGreaterThanOrEqual(nextL2b.x - 2)
+      expect(c.y).toBeGreaterThanOrEqual(nextL2b.y - 2)
+      expect(c.x + c.width).toBeLessThanOrEqual(nextL2b.x + nextL2b.width + 2)
+      expect(c.y + c.height).toBeLessThanOrEqual(nextL2b.y + nextL2b.height + 2)
+    }
+    // Nested L2s sit inside L1
+    for (const child of [nextL2a, nextL2b]) {
+      expect(child.x).toBeGreaterThanOrEqual(nextL1.x - 2)
+      expect(child.y).toBeGreaterThanOrEqual(nextL1.y - 2)
+      expect(child.x + child.width).toBeLessThanOrEqual(
+        nextL1.x + nextL1.width + 2,
+      )
+      expect(child.y + child.height).toBeLessThanOrEqual(
+        nextL1.y + nextL1.height + 2,
+      )
+    }
+    // L2A should have moved from its pre-reflow geometry (cards packed in L1)
+    const moved =
+      Math.abs(nextL2a.x - oldL2a.x) > 0.5 ||
+      Math.abs(nextL2a.y - oldL2a.y) > 0.5 ||
+      next.find((i) => i.id === 'a1')!.x !== 100
+    expect(moved).toBe(true)
+  })
+
   it('area-proportional: small topics can sit side-by-side (not always full-width bands)', () => {
     // Two tiny topics with headings — half-width regions should share a row
     const items: CanvasItem[] = [

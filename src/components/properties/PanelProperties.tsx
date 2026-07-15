@@ -47,8 +47,8 @@ export function PanelProperties({ panel }: { panel: LayoutPanel }) {
       </button>
       <p className="text-[9px] leading-snug text-zinc-600">
         Densely repositions and resizes this panel’s cards to fill the frame,
-        then rebuilds chrome (including n-gon outline) so the panel fully wraps
-        its content.
+        then rebuilds this panel and any nested L2/L3 frames so they follow the
+        cards (including n-gon outlines).
       </p>
 
       <label className="flex flex-col gap-1">

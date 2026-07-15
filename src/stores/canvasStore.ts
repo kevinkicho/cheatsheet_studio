@@ -1040,15 +1040,21 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       const needsRelayout =
         partial.contentSort !== undefined || partial.showTitle !== undefined
       if (needsRelayout) {
-        const { items, panel } = relayoutPanelContents(s.items, merged, {
-          grid: s.canvas.gridSpacing ?? 24,
-        })
+        const { items, panel, panels: nextAll } = relayoutPanelContents(
+          s.items,
+          merged,
+          {
+            grid: s.canvas.gridSpacing ?? 24,
+            panelPad: s.lastAutoLayout?.panelPadding ?? 4,
+            allPanels: panels,
+          },
+        )
         return {
           dirty: true,
           items,
           canvas: {
             ...s.canvas,
-            layoutPanels: panels.map((p) => (p.id === id ? panel : p)),
+            layoutPanels: nextAll ?? panels.map((p) => (p.id === id ? panel : p)),
           },
         }
       }
@@ -1065,22 +1071,28 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     set((s) => {
       const id = s.selectedPanelId
       if (!id) return s
-      const panel = (s.canvas.layoutPanels ?? []).find((p) => p.id === id)
+      const panels = s.canvas.layoutPanels ?? []
+      const panel = panels.find((p) => p.id === id)
       if (!panel) return s
-      const { items, panel: nextPanel } = relayoutPanelContents(s.items, panel, {
-        grid: s.canvas.gridSpacing ?? 24,
-        gapPx: s.lastAutoLayout?.gap ?? 6,
-        panelPad: s.lastAutoLayout?.panelPadding ?? 4,
-        mode: 'shelf',
-      })
+      const { items, panel: nextPanel, panels: nextAll } = relayoutPanelContents(
+        s.items,
+        panel,
+        {
+          grid: s.canvas.gridSpacing ?? 24,
+          gapPx: s.lastAutoLayout?.gap ?? 6,
+          panelPad: s.lastAutoLayout?.panelPadding ?? 4,
+          mode: 'shelf',
+          allPanels: panels,
+        },
+      )
       return {
         items,
         dirty: true,
         canvas: {
           ...s.canvas,
-          layoutPanels: (s.canvas.layoutPanels ?? []).map((p) =>
-            p.id === id ? nextPanel : p,
-          ),
+          layoutPanels:
+            nextAll ??
+            panels.map((p) => (p.id === id ? nextPanel : p)),
         },
       }
     }),
@@ -1089,22 +1101,28 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     set((s) => {
       const id = s.selectedPanelId
       if (!id) return s
-      const panel = (s.canvas.layoutPanels ?? []).find((p) => p.id === id)
+      const panels = s.canvas.layoutPanels ?? []
+      const panel = panels.find((p) => p.id === id)
       if (!panel) return s
-      const { items, panel: nextPanel } = relayoutPanelContents(s.items, panel, {
-        grid: s.canvas.gridSpacing ?? 24,
-        gapPx: s.lastAutoLayout?.gap ?? 6,
-        panelPad: s.lastAutoLayout?.panelPadding ?? 4,
-        mode: 'dense',
-      })
+      const { items, panel: nextPanel, panels: nextAll } = relayoutPanelContents(
+        s.items,
+        panel,
+        {
+          grid: s.canvas.gridSpacing ?? 24,
+          gapPx: s.lastAutoLayout?.gap ?? 6,
+          panelPad: s.lastAutoLayout?.panelPadding ?? 4,
+          mode: 'dense',
+          allPanels: panels,
+        },
+      )
       return {
         items,
         dirty: true,
         canvas: {
           ...s.canvas,
-          layoutPanels: (s.canvas.layoutPanels ?? []).map((p) =>
-            p.id === id ? nextPanel : p,
-          ),
+          layoutPanels:
+            nextAll ??
+            panels.map((p) => (p.id === id ? nextPanel : p)),
         },
       }
     }),

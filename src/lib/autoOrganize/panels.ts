@@ -1299,8 +1299,57 @@ export function translateLayoutPanelCluster(
 }
 
 /**
+ * Rebuild panel chrome from current member card geometry.
+ * Shared by translate + in-panel relayout so nested L2/L3 stay in sync.
+ */
+function rebuildPanelChromeFromMembers(
+  p: LayoutPanel,
+  byId: Map<string, CanvasItem>,
+  opts: { grid: number; panelPad: number },
+): LayoutPanel {
+  const members = (p.memberIds ?? [])
+    .map((id) => byId.get(id))
+    .filter((m): m is CanvasItem => m != null && !m.hidden)
+  if (members.length === 0) return p
+  const level = p.hierarchyLevel ?? 1
+  const titleBand =
+    p.showTitle === false
+      ? 0
+      : 16 + (level <= 1 && p.showStroke !== false ? 12 : 0)
+  const pad =
+    level <= 1 ? Math.max(2, opts.panelPad) + 2 : Math.max(2, opts.panelPad)
+  const useNgon = p.shape === 'polygon'
+  const chrome = chromeFromMembers(members, {
+    pad,
+    titleBand,
+    shape: useNgon ? 'polygon' : 'rect',
+    grid: opts.grid,
+    solidMode: useNgon ? 'blocks' : 'solid-aabb',
+  })
+  return {
+    ...p,
+    ...chrome,
+    shape: p.shape,
+    showStroke: p.showStroke,
+    id: p.id,
+    folderId: p.folderId,
+    title: p.title,
+    showTitle: p.showTitle,
+    contentSort: p.contentSort,
+    memberIds: p.memberIds,
+    accent: p.accent,
+    zIndex: p.zIndex,
+    hierarchyLevel: p.hierarchyLevel,
+  }
+}
+
+/**
  * Re-pack cards inside one panel (shelf within panel content box).
  * Used when user sets contentSort or after showTitle changes title band.
+ *
+ * When `allPanels` is provided, every nested child panel whose members are a
+ * subset of this panel also has its chrome rebuilt so L2 frames follow the
+ * cards (Auto-layout inside L1 was leaving L2 panels stranded).
  */
 export function relayoutPanelContents(
   items: CanvasItem[],
@@ -1311,8 +1360,10 @@ export function relayoutPanelContents(
     panelPad?: number
     /** shelf = keep sizes; dense = pack + optional scale-to-fit + rebuild chrome */
     mode?: 'shelf' | 'dense'
+    /** Full layout panel list — nested children are rebuilt in place. */
+    allPanels?: LayoutPanel[]
   },
-): { items: CanvasItem[]; panel: LayoutPanel } {
+): { items: CanvasItem[]; panel: LayoutPanel; panels?: LayoutPanel[] } {
   const ids = new Set(panel.memberIds ?? [])
   if (ids.size === 0) return { items, panel }
 
@@ -1430,28 +1481,93 @@ export function relayoutPanelContents(
   const moved = nextItems.filter((i) => ids.has(i.id) && !i.hidden)
   if (moved.length === 0) return { items: nextItems, panel }
 
-  // Rebuild chrome so n-gon outline fully wraps reflowed cards
-  const shape: PanelShape = panel.shape === 'polygon' ? 'polygon' : 'rect'
-  const chrome = chromeFromMembers(moved, {
-    pad,
-    titleBand,
-    shape,
-    grid,
-  })
-  const nextPanel: LayoutPanel = {
-    ...panel,
-    ...chrome,
-    shape,
-    // Preserve identity / hierarchy
-    id: panel.id,
-    folderId: panel.folderId,
-    title: panel.title,
-    showTitle: panel.showTitle,
-    contentSort: panel.contentSort,
-    memberIds: panel.memberIds,
-    accent: panel.accent,
-    zIndex: panel.zIndex,
-    hierarchyLevel: panel.hierarchyLevel,
+  const byId = new Map(nextItems.map((i) => [i.id, i]))
+  const chromeOpts = { grid, panelPad: pad }
+
+  // Rebuild this panel from reflowed cards
+  const nextPanel = rebuildPanelChromeFromMembers(panel, byId, chromeOpts)
+
+  // Nested L2/L3 panels (member subset of this panel) must follow the cards
+  const allPanels = opts?.allPanels
+  if (!allPanels?.length) {
+    return { items: nextItems, panel: nextPanel }
   }
-  return { items: nextItems, panel: nextPanel }
+
+  const nestedIds = new Set<string>()
+  for (const p of allPanels) {
+    if (p.id === panel.id) continue
+    if (!p.memberIds?.length) continue
+    if (p.memberIds.every((id) => ids.has(id))) nestedIds.add(p.id)
+  }
+
+  // Rebuild deepest children first so parents hug updated child frames
+  const nestedSorted = allPanels
+    .filter((p) => nestedIds.has(p.id))
+    .sort(
+      (a, b) => (b.hierarchyLevel ?? 1) - (a.hierarchyLevel ?? 1),
+    )
+
+  const rebuilt = new Map<string, LayoutPanel>()
+  rebuilt.set(panel.id, nextPanel)
+  for (const child of nestedSorted) {
+    rebuilt.set(
+      child.id,
+      rebuildPanelChromeFromMembers(child, byId, chromeOpts),
+    )
+  }
+
+  // Expand parent again so it covers nested L2 frames after they moved
+  const afterChildren = rebuildPanelChromeFromMembers(
+    nextPanel,
+    byId,
+    chromeOpts,
+  )
+  // Prefer covering child panel AABBs when nested frames exist
+  if (nestedSorted.length > 0) {
+    const childBoxes = nestedSorted
+      .map((c) => rebuilt.get(c.id)!)
+      .filter((c) => c.showStroke !== false)
+    if (childBoxes.length > 0) {
+      const inset = Math.max(2, pad)
+      const minX = Math.min(
+        afterChildren.x,
+        ...childBoxes.map((c) => c.x - inset),
+      )
+      const minY = Math.min(
+        afterChildren.y,
+        ...childBoxes.map((c) => c.y - inset),
+      )
+      const maxX = Math.max(
+        afterChildren.x + afterChildren.width,
+        ...childBoxes.map((c) => c.x + c.width + inset),
+      )
+      const maxY = Math.max(
+        afterChildren.y + afterChildren.height,
+        ...childBoxes.map((c) => c.y + c.height + inset),
+      )
+      const x = Math.round(minX)
+      const y = Math.round(minY)
+      const width = Math.max(8, Math.round(maxX - x))
+      const height = Math.max(8, Math.round(maxY - y))
+      rebuilt.set(panel.id, {
+        ...afterChildren,
+        x,
+        y,
+        width,
+        height,
+        runs: [{ x, y, width, height }],
+        outlinePath: rectPerimeterPathD(x, y, width, height),
+        shape: afterChildren.shape === 'polygon' ? 'polygon' : 'rect',
+      })
+    } else {
+      rebuilt.set(panel.id, afterChildren)
+    }
+  }
+
+  const panels = allPanels.map((p) => rebuilt.get(p.id) ?? p)
+  return {
+    items: nextItems,
+    panel: rebuilt.get(panel.id) ?? nextPanel,
+    panels,
+  }
 }
