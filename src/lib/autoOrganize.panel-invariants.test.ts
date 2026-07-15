@@ -148,7 +148,8 @@ describe('panel layout invariants', () => {
       // Nested L2 must not start above its L1
       expect(nestTitleHits).toBe(0)
       // Cards must sit below each panel's local title chip (titleBand reserved).
-      expect(titleHits).toBeLessThanOrEqual(shape === 'polygon' ? 8 : 4)
+      // Hard zero — soft caps previously hid residual header collisions.
+      expect(titleHits).toBe(0)
     })
   }
 })

@@ -1383,6 +1383,32 @@ describe('packCheatsheetLayout', () => {
     expect(xs[1]!).toBeLessThan(xs[2]!)
   })
 
+  it('relayoutPanelContents defaults contentSort to name-asc when unset', () => {
+    const items: CanvasItem[] = [
+      card('c', { title: 'Charlie', x: 100, y: 50, width: 80, height: 40 }),
+      card('a', { title: 'Alpha', x: 200, y: 50, width: 80, height: 40 }),
+      card('b', { title: 'Bravo', x: 300, y: 50, width: 80, height: 40 }),
+    ]
+    const panel = {
+      id: 'p1',
+      title: 'T',
+      x: 90,
+      y: 40,
+      width: 320,
+      height: 80,
+      memberIds: ['c', 'a', 'b'],
+      // contentSort intentionally omitted — default A→Z
+      showTitle: true,
+    }
+    const { items: next, panel: nextP } = relayoutPanelContents(items, panel)
+    const xs = ['a', 'b', 'c'].map(
+      (id) => next.find((i) => i.id === id)!.x,
+    )
+    expect(xs[0]!).toBeLessThan(xs[1]!)
+    expect(xs[1]!).toBeLessThan(xs[2]!)
+    expect(nextP.contentSort ?? 'name-asc').toBe('name-asc')
+  })
+
   it('relayoutPanelContents dense mode packs, may resize, rebuilds n-gon chrome', () => {
     const items: CanvasItem[] = [
       card('a', {
@@ -1593,6 +1619,8 @@ describe('grid area budget helpers', () => {
   })
 
   it('placeTopicRegionsDense packs two blocks without overlap', () => {
+    // Explicit single-order input: multiOrder defaults ON and would ignore
+    // sortByHeight alone — pin multiOrder false so this tests input order.
     const pos = placeTopicRegionsDense(
       [
         { index: 0, cw: 10, ch: 4 },
@@ -1600,7 +1628,7 @@ describe('grid area budget helpers', () => {
       ],
       30,
       1,
-      { sortByHeight: false },
+      { multiOrder: false, sortByHeight: false },
     )
     expect(pos.get(0)).toEqual({ c: 0, r: 0 })
     // gapCells=1 → second block beside first (c >= 11)
@@ -1609,7 +1637,7 @@ describe('grid area budget helpers', () => {
   })
 
   it('placeTopicRegionsDense fills holes (does not leave bottom voids)', () => {
-    // Tall + short + medium: densest pack should nest medium into residual space
+    // Tall + short + medium: densest pack should nest into residual space
     // rather than stacking everything to ~17 rows.
     const regions = [
       { index: 0, cw: 12, ch: 10 },
@@ -1638,15 +1666,54 @@ describe('grid area budget helpers', () => {
         return p.r + r.ch
       }),
     )
-    // Side-by-side with nest: bottom ≤ 10 (tall alone) … ≤ 12 with gap slack
+    // Side-by-side with nest: bottom ≤ tall height (+ small slack)
     expect(bottom).toBeLessThanOrEqual(12)
     // Not a pure vertical stack of 10+3+4
     expect(bottom).toBeLessThan(10 + 3 + 4)
   })
 
-  it('placeTopicRegionsDense multi-order picks denser bbox than single height-first', () => {
-    // Adversarial sizes: input/height-first can leave a tall stack; another
-    // insertion order packs into a shorter bounding box.
+  function packBBox(
+    pos: Map<number, { c: number; r: number }>,
+    regions: Array<{ index: number; cw: number; ch: number }>,
+  ) {
+    let cw = 0
+    let ch = 0
+    for (const r of regions) {
+      const p = pos.get(r.index)!
+      cw = Math.max(cw, p.c + r.cw)
+      ch = Math.max(ch, p.r + r.ch)
+    }
+    return { cw, ch, area: cw * ch }
+  }
+
+  function assertNoOverlap(
+    pos: Map<number, { c: number; r: number }>,
+    regions: Array<{ index: number; cw: number; ch: number }>,
+    pageCols: number,
+  ) {
+    for (const r of regions) {
+      const p = pos.get(r.index)!
+      expect(p.c).toBeGreaterThanOrEqual(0)
+      expect(p.r).toBeGreaterThanOrEqual(0)
+      expect(p.c + r.cw).toBeLessThanOrEqual(pageCols)
+    }
+    for (let i = 0; i < regions.length; i++) {
+      for (let j = i + 1; j < regions.length; j++) {
+        const a = regions[i]!
+        const b = regions[j]!
+        const pa = pos.get(a.index)!
+        const pb = pos.get(b.index)!
+        const ol =
+          pa.c < pb.c + b.cw &&
+          pa.c + a.cw > pb.c &&
+          pa.r < pb.r + b.ch &&
+          pa.r + a.ch > pb.r
+        expect(ol).toBe(false)
+      }
+    }
+  }
+
+  it('placeTopicRegionsDense multi-order is never worse than height-first or input', () => {
     const regions = [
       { index: 0, cw: 8, ch: 2 },
       { index: 1, cw: 8, ch: 2 },
@@ -1655,41 +1722,88 @@ describe('grid area budget helpers', () => {
       { index: 4, cw: 4, ch: 6 },
       { index: 5, cw: 12, ch: 3 },
     ]
-    const heightOnly = placeTopicRegionsDense(regions, 16, 0, {
+    const cols = 16
+    const heightOnly = placeTopicRegionsDense(regions, cols, 0, {
       multiOrder: false,
       sortByHeight: true,
     })
-    const best = placeTopicRegionsDense(regions, 16, 0, {
+    const inputOnly = placeTopicRegionsDense(regions, cols, 0, {
+      multiOrder: false,
+      sortByHeight: false,
+    })
+    const best = placeTopicRegionsDense(regions, cols, 0, {
       multiOrder: true,
     })
-    const bboxH = (
-      pos: Map<number, { c: number; r: number }>,
-    ) =>
-      Math.max(
-        ...regions.map((r) => {
-          const p = pos.get(r.index)!
-          return p.r + r.ch
-        }),
-      )
-    const bboxArea = (pos: Map<number, { c: number; r: number }>) => {
-      let cw = 0
-      let ch = 0
-      for (const r of regions) {
-        const p = pos.get(r.index)!
-        cw = Math.max(cw, p.c + r.cw)
-        ch = Math.max(ch, p.r + r.ch)
-      }
-      return cw * ch
-    }
-    // Best-of is never worse than a single order
-    expect(bboxH(best)).toBeLessThanOrEqual(bboxH(heightOnly))
-    expect(bboxArea(best)).toBeLessThanOrEqual(bboxArea(heightOnly))
-    // Sanity: everything fits without overlap and within 16 cols
-    for (const r of regions) {
-      const p = best.get(r.index)!
-      expect(p.c + r.cw).toBeLessThanOrEqual(16)
-      expect(p.r).toBeGreaterThanOrEqual(0)
-    }
+    const h = packBBox(heightOnly, regions)
+    const i = packBBox(inputOnly, regions)
+    const b = packBBox(best, regions)
+    // Best-of includes height-desc → never worse than height-first
+    expect(b.ch).toBeLessThanOrEqual(h.ch)
+    expect(b.area).toBeLessThanOrEqual(h.area)
+    // And should beat naïve input order on this mixed set
+    expect(b.area).toBeLessThanOrEqual(i.area)
+    expect(b.ch).toBeLessThanOrEqual(i.ch)
+    assertNoOverlap(best, regions, cols)
+  })
+
+  it('placeTopicRegionsDense multi-order strictly beats height-first on adversarial set', () => {
+    // Seeded case where height-first leaves a larger bbox than another order
+    // (area 240 → 208, height 15 → 13). Guards against “always ≤” tautology.
+    const regions = [
+      { index: 0, cw: 4, ch: 6 },
+      { index: 1, cw: 4, ch: 4 },
+      { index: 2, cw: 4, ch: 8 },
+      { index: 3, cw: 4, ch: 8 },
+      { index: 4, cw: 6, ch: 5 },
+      { index: 5, cw: 4, ch: 4 },
+      { index: 6, cw: 4, ch: 5 },
+      { index: 7, cw: 2, ch: 8 },
+    ]
+    const cols = 17
+    const heightOnly = placeTopicRegionsDense(regions, cols, 0, {
+      multiOrder: false,
+      sortByHeight: true,
+    })
+    const best = placeTopicRegionsDense(regions, cols, 0, {
+      multiOrder: true,
+    })
+    const h = packBBox(heightOnly, regions)
+    const b = packBBox(best, regions)
+    expect(b.area).toBeLessThan(h.area)
+    expect(b.ch).toBeLessThanOrEqual(h.ch)
+    assertNoOverlap(best, regions, cols)
+    // Absolute bar: known best-of is ≤ 208× cells at height ≤ 13
+    expect(b.area).toBeLessThanOrEqual(208)
+    expect(b.ch).toBeLessThanOrEqual(13)
+  })
+
+  it('placeTopicRegionsDense default is multi-order (not single height-first)', () => {
+    // Omitting multiOrder should densify like multiOrder: true
+    const regions = [
+      { index: 0, cw: 2, ch: 2 },
+      { index: 1, cw: 6, ch: 2 },
+      { index: 2, cw: 4, ch: 8 },
+      { index: 3, cw: 6, ch: 5 },
+      { index: 4, cw: 6, ch: 7 },
+      { index: 5, cw: 6, ch: 6 },
+    ]
+    const cols = 15
+    const implicit = placeTopicRegionsDense(regions, cols, 0)
+    const explicit = placeTopicRegionsDense(regions, cols, 0, {
+      multiOrder: true,
+    })
+    const heightOnly = placeTopicRegionsDense(regions, cols, 0, {
+      multiOrder: false,
+      sortByHeight: true,
+    })
+    expect(packBBox(implicit, regions)).toEqual(packBBox(explicit, regions))
+    // This set is one where multi-order shrinks height vs height-first
+    expect(packBBox(implicit, regions).ch).toBeLessThanOrEqual(
+      packBBox(heightOnly, regions).ch,
+    )
+    expect(packBBox(implicit, regions).area).toBeLessThanOrEqual(
+      packBBox(heightOnly, regions).area,
+    )
   })
 
   it('density xs makes significantly smaller cards than lg', () => {

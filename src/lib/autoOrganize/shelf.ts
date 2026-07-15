@@ -288,8 +288,9 @@ export function placeTopicRegionsDense(
     readingFlow?: boolean
     /**
      * Try multiple insertion orders and keep the densest bbox.
-     * Default true when not readingFlow; false preserves a single order
-     * (height-first if sortByHeight, else input).
+     * Default: true when not readingFlow.
+     * When false: single order — height-desc if sortByHeight≠false, else input.
+     * Note: sortByHeight is ignored when multiOrder is true (all orders tried).
      */
     multiOrder?: boolean
     /** Limit which strategies to try (default: full density set). */
@@ -305,7 +306,7 @@ export function placeTopicRegionsDense(
       ? opts.multiOrder
       : !readingFlow
 
-  // Reading-flow: single pass in input order (name sort applied by caller)
+  // Single-order modes: reading-flow (input) or explicit multiOrder: false
   if (readingFlow || !multiOrder) {
     let order: number[]
     if (readingFlow) {
