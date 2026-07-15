@@ -1514,6 +1514,48 @@ describe('packCheatsheetLayout', () => {
     }
   })
 
+  it('relayoutPanelContents dense does not drift right or overflow panel', () => {
+    resetPanelPackSeed('p-nodrift')
+    const items: CanvasItem[] = [
+      card('a', { title: 'A', x: 100, y: 100, width: 140, height: 80 }),
+      card('b', { title: 'B', x: 260, y: 100, width: 140, height: 80 }),
+      card('c', { title: 'C', x: 100, y: 200, width: 200, height: 100 }),
+    ]
+    let panel: import('@/types').LayoutPanel = {
+      id: 'p-nodrift',
+      title: 'T',
+      x: 80,
+      y: 80,
+      width: 360,
+      height: 280,
+      memberIds: ['a', 'b', 'c'],
+      shape: 'rect',
+      showTitle: true,
+      contentSort: 'name-asc',
+    }
+    const originX = panel.x
+    let cur = items
+    for (let i = 0; i < 4; i++) {
+      const r = relayoutPanelContents(cur, panel, {
+        mode: 'dense',
+        gapPx: 4,
+        panelPad: 4,
+        grid: 24,
+        panelShape: i % 2 === 0 ? 'polygon' : 'rect',
+      })
+      cur = r.items
+      panel = r.panel
+      // Origin must stay put (no walk to the right)
+      expect(Math.abs(panel.x - originX)).toBeLessThanOrEqual(1)
+      // Cards stay inside panel (+ pad slack)
+      for (const id of ['a', 'b', 'c']) {
+        const c = cur.find((x) => x.id === id)!
+        expect(c.x).toBeGreaterThanOrEqual(panel.x - 1)
+        expect(c.x + c.width).toBeLessThanOrEqual(panel.x + panel.width + 1)
+      }
+    }
+  })
+
   it('relayoutPanelContents n-gon uses hard tetris + polygon chrome', () => {
     const items: CanvasItem[] = [
       card('a', { title: 'A', x: 100, y: 100, width: 100, height: 72 }),

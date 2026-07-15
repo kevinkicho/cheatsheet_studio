@@ -1,7 +1,6 @@
 import type { CanvasItem, LayoutPanel } from '@/types'
 import { ORGANIZE_GRID } from '../constants'
 import { chromeFromMembers } from '../polyomino'
-import { rectPerimeterPathD } from '../geometry'
 import { enforcePanelLayoutInvariants } from '../densify'
 import {
   placeTopicRegionsDense,
@@ -239,9 +238,12 @@ function packCardsDenseFreeFlow(
     return { out: [], width: 0, height: 0 }
   }
   const g = Math.max(4, grid)
+  const boxRight = ox + boxW
+  // Pixel budget for columns — never place past boxRight
   const pageCols = Math.max(1, Math.floor(boxW / g))
   const regions = cards.map((m, i) => {
-    const w = Math.max(24, Math.round(m.width))
+    // Clamp card width to box so cw never implies a right edge past boxW
+    const w = Math.max(24, Math.min(boxW, Math.round(m.width)))
     const h = Math.max(20, Math.round(m.height))
     return {
       index: i,
@@ -268,16 +270,20 @@ function packCardsDenseFreeFlow(
   let maxY = oy
   for (const r of regions) {
     const p = pos.get(r.index) ?? { c: 0, r: 0 }
-    const x = Math.round(ox + p.c * g)
+    let x = Math.round(ox + p.c * g)
     const y = Math.round(oy + p.r * g)
-    const ww = Math.min(r.w, boxW)
+    const ww = r.w
+    // Hard clamp into [ox, boxRight] — cell snap + full pixel width used to
+    // spill past the panel (right overflow on each Auto-layout click).
+    if (x + ww > boxRight) x = Math.round(boxRight - ww)
+    if (x < ox) x = ox
     out.push({ id: r.id, x, y, w: ww, h: r.h })
     maxX = Math.max(maxX, x + ww)
     maxY = Math.max(maxY, y + r.h)
   }
   return {
     out,
-    width: Math.max(8, maxX - ox),
+    width: Math.max(8, Math.min(boxW, maxX - ox)),
     height: Math.max(8, maxY - oy),
   }
 }
@@ -684,168 +690,180 @@ export function relayoutPanelContents(
     )
   }
 
-  // Expand parent so it covers nested L2 frames after they moved
-  const afterChildren = rebuildPanelChromeFromMembers(
-    nextPanel,
-    byId,
-    {
-      ...chromeOpts,
-      allPanels: allPanels.map((p) => rebuilt.get(p.id) ?? p),
-    },
-  )
-  if (nestedSorted.length > 0) {
-    const childBoxes = nestedSorted
-      .map((c) => rebuilt.get(c.id)!)
-      .filter((c) => c.showStroke !== false)
-    if (childBoxes.length > 0) {
-      const inset = Math.max(2, pad)
-      const minX = Math.min(
-        afterChildren.x,
-        ...childBoxes.map((c) => c.x - inset),
-      )
-      const minY = Math.min(
-        afterChildren.y,
-        ...childBoxes.map((c) => c.y - inset),
-      )
-      const maxX = Math.max(
-        afterChildren.x + afterChildren.width,
-        ...childBoxes.map((c) => c.x + c.width + inset),
-      )
-      const maxY = Math.max(
-        afterChildren.y + afterChildren.height,
-        ...childBoxes.map((c) => c.y + c.height + inset),
-      )
-      const x = Math.round(minX)
-      const y = Math.round(minY)
-      const width = Math.max(8, Math.round(maxX - x))
-      const height = Math.max(8, Math.round(maxY - y))
-      rebuilt.set(panel.id, {
-        ...afterChildren,
-        x,
-        y,
-        width,
-        height,
-        runs: [{ x, y, width, height }],
-        outlinePath: rectPerimeterPathD(x, y, width, height),
-        shape: afterChildren.shape === 'polygon' ? 'polygon' : 'rect',
+  /**
+   * Rebuild parent chrome from children.
+   * N-gon: union of child frames as blocks (stepped L) — not a solid AABB
+   * (that wiped n-gon and looked like rectangle packing).
+   * Rect: solid AABB hug of children.
+   */
+  const rebuildParentFromChildren = (
+    itemsNow: CanvasItem[],
+    childPanels: LayoutPanel[],
+  ): LayoutPanel => {
+    const byIdNow = new Map(itemsNow.map((i) => [i.id, i]))
+    const members = (panel.memberIds ?? [])
+      .map((id) => byIdNow.get(id))
+      .filter((m): m is CanvasItem => m != null && !m.hidden)
+    if (members.length === 0) return panelWithSort
+    const titleBand = exclusiveTitleBandPx(panelWithSort, [
+      panelWithSort,
+      ...childPanels,
+    ])
+    const strokedKids = childPanels.filter((c) => c.showStroke !== false)
+    if (forceShape === 'polygon' && strokedKids.length > 0) {
+      const chrome = chromeFromMembers(members, {
+        pad,
+        titleBand,
+        shape: 'polygon',
+        grid,
+        solidMode: 'blocks',
+        blocks: strokedKids.map((c) => ({
+          x: c.x,
+          y: c.y,
+          width: c.width,
+          height: c.height,
+        })),
       })
-    } else {
-      rebuilt.set(panel.id, afterChildren)
+      return {
+        ...panelWithSort,
+        ...chrome,
+        shape: 'polygon',
+        showStroke: panelWithSort.showStroke,
+        id: panelWithSort.id,
+        folderId: panelWithSort.folderId,
+        title: panelWithSort.title,
+        showTitle: panelWithSort.showTitle,
+        contentSort: panelWithSort.contentSort,
+        memberIds: panelWithSort.memberIds,
+        accent: panelWithSort.accent,
+        zIndex: panelWithSort.zIndex,
+        hierarchyLevel: panelWithSort.hierarchyLevel,
+      }
     }
+    // Rect (or no stroked kids): solid AABB around members + pad/title
+    return rebuildPanelChromeFromMembers(panelWithSort, byIdNow, {
+      ...chromeOpts,
+      allPanels: [panelWithSort, ...childPanels],
+    })
   }
 
-  let panelsOut = allPanels.map((p) => rebuilt.get(p.id) ?? p)
+  if (nestedSorted.length > 0) {
+    const kids = nestedSorted
+      .map((c) => rebuilt.get(c.id)!)
+      .filter(Boolean)
+    rebuilt.set(panel.id, rebuildParentFromChildren(nextItems, kids))
+  }
 
-  // Pin the edited panel's top edge so packing doesn't walk the cluster down
-  // the page (title-clearance + rebuild used to nudge y every click).
-  const pinY = panel.y
+  // ── Clamp members into original panel content box (no right overflow) ──
+  // Pack band is [pinX+pad, pinX+origW-pad]. Grow height only, never width.
   const pinX = panel.x
-  const rootAfter = rebuilt.get(panel.id) ?? nextPanel
-  const dyPin = Math.round(rootAfter.y - pinY)
-  const dxPin = Math.round(rootAfter.x - pinX)
-  if (dyPin !== 0 || dxPin !== 0) {
-    const moveIds = new Set(panel.memberIds ?? [])
-    nextItems = nextItems.map((it) => {
-      if (!moveIds.has(it.id)) return it
-      return {
-        ...it,
-        x: Math.round(it.x - dxPin),
-        y: Math.round(it.y - dyPin),
-      }
-    })
-    const byIdPin = new Map(nextItems.map((i) => [i.id, i]))
-    for (const id of [panel.id, ...nestedIds]) {
+  const pinY = panel.y
+  const pinW = panel.width
+  const contentLeft = pinX + pad
+  const contentRight = pinX + pinW - pad
+  const memberSet = new Set(panel.memberIds ?? [])
+  nextItems = nextItems.map((it) => {
+    if (!memberSet.has(it.id) || it.hidden) return it
+    let x = it.x
+    let y = it.y
+    const w = it.width
+    if (x + w > contentRight) x = contentRight - w
+    if (x < contentLeft) x = contentLeft
+    return { ...it, x: Math.round(x), y: Math.round(y) }
+  })
+  {
+    const byIdClamp = new Map(nextItems.map((i) => [i.id, i]))
+    for (const id of nestedIds) {
       const prev = rebuilt.get(id)
       if (!prev) continue
       rebuilt.set(
         id,
-        rebuildPanelChromeFromMembers(prev, byIdPin, {
+        rebuildPanelChromeFromMembers(prev, byIdClamp, {
           ...chromeOpts,
           allPanels: allPanels.map((p) => rebuilt.get(p.id) ?? p),
         }),
       )
     }
-    // Re-expand parent after pin
     if (nestedSorted.length > 0) {
-      const childBoxes = nestedSorted
+      const kids = nestedSorted
         .map((c) => rebuilt.get(c.id)!)
-        .filter((c) => c && c.showStroke !== false)
-      const parent = rebuildPanelChromeFromMembers(
-        panelWithSort,
-        byIdPin,
-        chromeOpts,
+        .filter(Boolean)
+      rebuilt.set(panel.id, rebuildParentFromChildren(nextItems, kids))
+    } else {
+      rebuilt.set(
+        panel.id,
+        rebuildPanelChromeFromMembers(panelWithSort, byIdClamp, chromeOpts),
       )
-      if (childBoxes.length > 0) {
-        const inset = Math.max(2, pad)
-        const minX = Math.min(parent.x, ...childBoxes.map((c) => c.x - inset))
-        const minY = Math.min(parent.y, ...childBoxes.map((c) => c.y - inset))
-        const maxX = Math.max(
-          parent.x + parent.width,
-          ...childBoxes.map((c) => c.x + c.width + inset),
-        )
-        const maxY = Math.max(
-          parent.y + parent.height,
-          ...childBoxes.map((c) => c.y + c.height + inset),
-        )
-        const x = Math.round(minX)
-        const y = Math.round(minY)
-        const width = Math.max(8, Math.round(maxX - x))
-        const height = Math.max(8, Math.round(maxY - y))
-        rebuilt.set(panel.id, {
-          ...parent,
-          x,
-          y,
-          width,
-          height,
-          runs: [{ x, y, width, height }],
-          outlinePath: rectPerimeterPathD(x, y, width, height),
-          shape: parent.shape === 'polygon' ? 'polygon' : 'rect',
-        })
-      } else {
-        rebuilt.set(panel.id, parent)
-      }
     }
-    panelsOut = allPanels.map((p) => rebuilt.get(p.id) ?? p)
   }
 
-  // Enforce only inside the edited cluster — full-sheet sibling separation
-  // was pushing neighboring panels downward after every in-panel pack.
+  let panelsOut = allPanels.map((p) => rebuilt.get(p.id) ?? p)
+
+  // ── Pin origin once: shift cluster so root top-left stays at (pinX, pinY)
+  const pinCluster = (
+    itemsIn: CanvasItem[],
+    panelsIn: LayoutPanel[],
+  ): { items: CanvasItem[]; panels: LayoutPanel[] } => {
+    const root = panelsIn.find((p) => p.id === panel.id)
+    if (!root) return { items: itemsIn, panels: panelsIn }
+    const dx = Math.round(pinX - root.x)
+    const dy = Math.round(pinY - root.y)
+    if (dx === 0 && dy === 0) return { items: itemsIn, panels: panelsIn }
+    const moved = itemsIn.map((it) => {
+      if (!memberSet.has(it.id)) return it
+      return { ...it, x: Math.round(it.x + dx), y: Math.round(it.y + dy) }
+    })
+    // Also clamp after pin so we don't slide past right when correcting left
+    const clamped = moved.map((it) => {
+      if (!memberSet.has(it.id) || it.hidden) return it
+      let x = it.x
+      if (x + it.width > contentRight) x = contentRight - it.width
+      if (x < contentLeft) x = contentLeft
+      return { ...it, x: Math.round(x) }
+    })
+    const byIdP = new Map(clamped.map((i) => [i.id, i]))
+    const nextP = panelsIn.map((p) => {
+      if (p.id !== panel.id && !nestedIds.has(p.id)) return p
+      return rebuildPanelChromeFromMembers(p, byIdP, {
+        ...chromeOpts,
+        allPanels: panelsIn,
+      })
+    })
+    // Parent from children again after pin
+    if (nestedIds.size > 0) {
+      const kids = nextP.filter((p) => nestedIds.has(p.id))
+      const parent = rebuildParentFromChildren(clamped, kids)
+      return {
+        items: clamped,
+        panels: nextP.map((p) => (p.id === panel.id ? parent : p)),
+      }
+    }
+    return { items: clamped, panels: nextP }
+  }
+
+  {
+    const pinned = pinCluster(nextItems, panelsOut)
+    nextItems = pinned.items
+    panelsOut = pinned.panels
+  }
+
+  // Enforce only inside the edited cluster
   const scopePanelIds = new Set<string>([panel.id, ...nestedIds])
   const fixed = enforcePanelLayoutInvariants(nextItems, panelsOut, {
     grid,
     panelPad: pad,
     minGapPx: 2,
+    contentLeft,
+    contentRight,
     scopePanelIds,
     rootPanelId: panel.id,
   })
-  panelsOut = fixed.panels
 
-  // Re-pin top after enforce (title clearance may have nudged y again)
-  const rootFinal = panelsOut.find((p) => p.id === panel.id)
-  if (rootFinal && Math.abs(rootFinal.y - pinY) > 0.5) {
-    const dy2 = Math.round(rootFinal.y - pinY)
-    const memberSet = new Set(panel.memberIds ?? [])
-    const pinnedItems = fixed.items.map((it) =>
-      memberSet.has(it.id) ? { ...it, y: Math.round(it.y - dy2) } : it,
-    )
-    const byId2 = new Map(pinnedItems.map((i) => [i.id, i]))
-    const pinnedPanels = panelsOut.map((p) => {
-      if (!scopePanelIds.has(p.id)) return p
-      return rebuildPanelChromeFromMembers(p, byId2, {
-        ...chromeOpts,
-        allPanels: panelsOut,
-      })
-    })
-    return {
-      items: pinnedItems,
-      panel: pinnedPanels.find((p) => p.id === panel.id) ?? rootFinal,
-      panels: pinnedPanels,
-    }
-  }
-
+  // Final pin + clamp (enforce title-clear may shift y; never walk right)
+  const after = pinCluster(fixed.items, fixed.panels)
   return {
-    items: fixed.items,
-    panel: panelsOut.find((p) => p.id === panel.id) ?? nextPanel,
-    panels: panelsOut,
+    items: after.items,
+    panel: after.panels.find((p) => p.id === panel.id) ?? nextPanel,
+    panels: after.panels,
   }
 }
