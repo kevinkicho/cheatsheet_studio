@@ -147,10 +147,12 @@ interface CanvasState {
   /** Multi-select: ordered list (last = primary for focus tools). */
   selectedIds: string[]
   /**
-   * Selected layout panel id (mutually exclusive with card selection).
+   * Selected layout panel id (primary — last multi-selected panel).
    * Fine-tune title / content sort in left sidebar.
    */
   selectedPanelId: string | null
+  /** Multi-select layout panels (marquee). Primary = last entry. */
+  selectedPanelIds: string[]
   /**
    * Last successful Auto-layout options — used to tag export filenames so
    * shared files encode density / chrome / n-gon / levels / sort / gap.
@@ -245,6 +247,11 @@ interface CanvasState {
   toggleSelect: (id: string) => void
   /** Replace selection with explicit ids (marquee). */
   setSelectedIds: (ids: string[]) => void
+  /**
+   * Marquee / multi-select: cards and panels together (panels like objects).
+   * Empty arrays clear that side of the selection.
+   */
+  setMarqueeSelection: (cardIds: string[], panelIds: string[]) => void
   addFromLibrary: (
     lib: LibraryItem,
     x: number,
@@ -407,6 +414,7 @@ const empty = () => ({
   folders: [] as OutlinerFolder[],
   selectedIds: [] as string[],
   selectedPanelId: null as string | null,
+  selectedPanelIds: [] as string[],
   lastAutoLayout: null as AutoLayoutExportSnapshot | null,
   dirty: false,
   maxZ: 1,
@@ -488,6 +496,8 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       items: Array.isArray(items) ? normalizeCanvasItems(items) : [],
       folders: Array.isArray(folders) ? [...folders] : [],
       selectedIds: [],
+      selectedPanelId: null,
+      selectedPanelIds: [],
       dirty: false,
       maxZ,
       past: [],
@@ -875,6 +885,10 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         groupSort: opts?.groupSort ?? 'none',
         panelGroupLevel: opts?.panelGroupLevel ?? 1,
         panelGroupLevels: opts?.panelGroupLevels,
+        // Per-level border + n-gon (UI multi-select) — must pass through or
+        // pack always uses outermost-only stroke / default n-gon mapping.
+        panelBorderLevels: opts?.panelBorderLevels,
+        panelNgonLevels: opts?.panelNgonLevels,
         fitPrint: opts?.fitPrint !== false,
         // Default multipage so large imports do not keep empty frames
         multiPage: opts?.multiPage !== false,
@@ -919,6 +933,11 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
             'cards',
             packOpts.density,
             packOpts.groupChrome,
+            packOpts.panelShape ?? '—',
+            'borders',
+            packOpts.panelBorderLevels ?? 'default',
+            'ngon',
+            packOpts.panelNgonLevels ?? 'default',
             packed.layoutPanels.length,
             'panels',
           )
@@ -998,13 +1017,15 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   select: (id) =>
     set({
       selectedIds: id ? [id] : [],
-      // Selecting a card clears panel; clearing cards also clears panel
+      // Selecting a card clears panels; clearing cards also clears panels
       selectedPanelId: null,
+      selectedPanelIds: [],
     }),
 
   selectPanel: (id) =>
     set({
       selectedPanelId: id,
+      selectedPanelIds: id ? [id] : [],
       selectedIds: [],
     }),
 
@@ -1013,7 +1034,6 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       const panels = s.canvas.layoutPanels ?? []
       const prev = panels.find((p) => p.id === id)
       if (!prev) return s
-      pushHistory(s)
       const merged = { ...prev, ...partial }
       // contentSort / showTitle → reflow cards in the same gesture so the
       // user sees an immediate effect (no separate setTimeout relayout).
@@ -1047,7 +1067,6 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       if (!id) return s
       const panel = (s.canvas.layoutPanels ?? []).find((p) => p.id === id)
       if (!panel) return s
-      pushHistory(s)
       const { items, panel: nextPanel } = relayoutPanelContents(s.items, panel, {
         grid: s.canvas.gridSpacing ?? 24,
         gapPx: s.lastAutoLayout?.gap ?? 6,
@@ -1072,7 +1091,6 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       if (!id) return s
       const panel = (s.canvas.layoutPanels ?? []).find((p) => p.id === id)
       if (!panel) return s
-      pushHistory(s)
       const { items, panel: nextPanel } = relayoutPanelContents(s.items, panel, {
         grid: s.canvas.gridSpacing ?? 24,
         gapPx: s.lastAutoLayout?.gap ?? 6,
@@ -1122,15 +1140,34 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         return {
           selectedIds: s.selectedIds.filter((x) => x !== id),
           selectedPanelId: null,
+          selectedPanelIds: [],
         }
       }
-      return { selectedIds: [...s.selectedIds, id], selectedPanelId: null }
+      return {
+        selectedIds: [...s.selectedIds, id],
+        selectedPanelId: null,
+        selectedPanelIds: [],
+      }
     }),
 
   setSelectedIds: (ids) =>
     set({
       selectedIds: [...new Set(ids)],
-      selectedPanelId: ids.length > 0 ? null : get().selectedPanelId,
+      // Pure card selection clears panels (legacy callers)
+      selectedPanelId: null,
+      selectedPanelIds: [],
+    }),
+
+  setMarqueeSelection: (cardIds, panelIds) =>
+    set(() => {
+      const cards = [...new Set(cardIds)]
+      const panels = [...new Set(panelIds)]
+      return {
+        selectedIds: cards,
+        selectedPanelIds: panels,
+        selectedPanelId:
+          panels.length > 0 ? panels[panels.length - 1]! : null,
+      }
     }),
 
   addFromLibrary: (lib, x, y, opts) => {

@@ -38,6 +38,7 @@ export function LayoutPanelsLayer({
   interactive?: boolean
 }) {
   const selectedPanelId = useCanvasStore((s) => s.selectedPanelId)
+  const selectedPanelIds = useCanvasStore((s) => s.selectedPanelIds)
   const selectPanel = useCanvasStore((s) => s.selectPanel)
   const moveLayoutPanelBy = useCanvasStore((s) => s.moveLayoutPanelBy)
   const zoom = useUiStore((s) => s.canvasZoom)
@@ -166,8 +167,10 @@ export function LayoutPanelsLayer({
 
   return (
     <>
+      {/* Parent stays pointer-events-none so empty board remains marquee-able;
+          interactive children (title chips / selected frames) opt in. */}
       <div
-        className={`absolute inset-0 z-[1] ${interactive ? '' : 'pointer-events-none'}`}
+        className="pointer-events-none absolute inset-0 z-[1]"
         data-testid="layout-panels-layer"
       >
         {[...panels]
@@ -179,7 +182,9 @@ export function LayoutPanelsLayer({
             const fill = isPoly
               ? accentFill(accent, level <= 1 ? 0.04 : 0.06)
               : accentFill(accent, level <= 1 ? 0.05 : 0.07)
-            const selected = selectedPanelId === p.id
+            const selected =
+              selectedPanelId === p.id ||
+              (selectedPanelIds?.includes(p.id) ?? false)
             // Inner/merged-sibling panels: title chip only — never paint frame fill/border
             const wantsFrame = p.showStroke !== false
             const drawStroke = wantsFrame || selected
@@ -252,6 +257,7 @@ export function LayoutPanelsLayer({
                         zIndex: (p.zIndex ?? 0) + 0.5,
                         cursor: dragCursor,
                         background: 'transparent',
+                        pointerEvents: 'auto',
                       }}
                     />
                   ) : null}
@@ -309,15 +315,29 @@ export function LayoutPanelsLayer({
                           height: p.height + borderW * 2,
                           overflow: 'visible',
                           zIndex: (p.zIndex ?? 0) + 0.5,
-                          pointerEvents: interactive ? 'auto' : 'none',
+                          // Stroke-only hit target so marquee can start on
+                          // empty panel interior; full box when selected (drag).
+                          pointerEvents: interactive
+                            ? selected
+                              ? 'auto'
+                              : 'none'
+                            : 'none',
                           cursor: dragCursor,
                         }}
                         onPointerDown={
-                          interactive ? onPanelPointerDown(p) : undefined
+                          interactive && selected
+                            ? onPanelPointerDown(p)
+                            : undefined
                         }
-                        onPointerMove={interactive ? onPanelPointerMove : undefined}
-                        onPointerUp={interactive ? endDrag : undefined}
-                        onPointerCancel={interactive ? endDrag : undefined}
+                        onPointerMove={
+                          interactive && selected ? onPanelPointerMove : undefined
+                        }
+                        onPointerUp={
+                          interactive && selected ? endDrag : undefined
+                        }
+                        onPointerCancel={
+                          interactive && selected ? endDrag : undefined
+                        }
                       >
                         <path
                           d={p.outlinePath}
@@ -327,6 +347,19 @@ export function LayoutPanelsLayer({
                           strokeLinejoin="miter"
                           strokeLinecap="square"
                           vectorEffect="non-scaling-stroke"
+                          // Border remains clickable to select when unselected
+                          style={{
+                            pointerEvents: interactive ? 'stroke' : 'none',
+                            cursor: dragCursor,
+                          }}
+                          onPointerDown={
+                            interactive ? onPanelPointerDown(p) : undefined
+                          }
+                          onPointerMove={
+                            interactive ? onPanelPointerMove : undefined
+                          }
+                          onPointerUp={interactive ? endDrag : undefined}
+                          onPointerCancel={interactive ? endDrag : undefined}
                         />
                         {selected ? (
                           <path
@@ -336,6 +369,7 @@ export function LayoutPanelsLayer({
                             strokeWidth={borderW + 2}
                             strokeLinejoin="miter"
                             opacity={0.5}
+                            style={{ pointerEvents: 'none' }}
                           />
                         ) : null}
                       </svg>
@@ -371,24 +405,6 @@ export function LayoutPanelsLayer({
                   runs.map((r, i) => (
                     <div
                       key={`${p.id}-run-${i}`}
-                      role={interactive ? 'button' : undefined}
-                      tabIndex={interactive ? 0 : undefined}
-                      onPointerDown={
-                        interactive ? onPanelPointerDown(p) : undefined
-                      }
-                      onPointerMove={interactive ? onPanelPointerMove : undefined}
-                      onPointerUp={interactive ? endDrag : undefined}
-                      onPointerCancel={interactive ? endDrag : undefined}
-                      onKeyDown={
-                        interactive
-                          ? (e) => {
-                              if (e.key === 'Enter' || e.key === ' ') {
-                                e.preventDefault()
-                                selectPanel(p.id)
-                              }
-                            }
-                          : undefined
-                      }
                       style={{
                         position: 'absolute',
                         left: r.x,
@@ -402,12 +418,29 @@ export function LayoutPanelsLayer({
                         borderRadius: level <= 1 ? 8 : 5,
                         background: fill,
                         zIndex: p.zIndex ?? 0,
-                        cursor: dragCursor,
                         boxShadow: selected
                           ? `0 0 0 1px ${accentFill(accent, 0.4)}`
                           : undefined,
-                        pointerEvents: interactive ? 'auto' : 'none',
+                        // Never block cards/marquee. Select via title chip;
+                        // drag only when already selected.
+                        pointerEvents:
+                          interactive && selected ? 'auto' : 'none',
+                        cursor: selected ? dragCursor : undefined,
                       }}
+                      onPointerDown={
+                        interactive && selected
+                          ? onPanelPointerDown(p)
+                          : undefined
+                      }
+                      onPointerMove={
+                        interactive && selected ? onPanelPointerMove : undefined
+                      }
+                      onPointerUp={
+                        interactive && selected ? endDrag : undefined
+                      }
+                      onPointerCancel={
+                        interactive && selected ? endDrag : undefined
+                      }
                     />
                   ))
                 )}
@@ -416,10 +449,11 @@ export function LayoutPanelsLayer({
           })}
       </div>
 
+      {/* Container must stay pointer-events-none so empty board + cards remain
+          clickable; only individual title chips opt into hit-testing. */}
       <div
         className="pointer-events-none absolute inset-0 z-[30]"
         data-testid="layout-panel-titles"
-        aria-hidden
       >
         {[...panels]
           .sort((a, b) => (a.hierarchyLevel ?? 1) - (b.hierarchyLevel ?? 1))
@@ -471,6 +505,12 @@ export function LayoutPanelsLayer({
                 key={`${p.id}-title`}
                 data-layout-panel-title={p.id}
                 data-layout-panel-title-level={level}
+                role={interactive ? 'button' : undefined}
+                tabIndex={interactive ? 0 : undefined}
+                onPointerDown={interactive ? onPanelPointerDown(p) : undefined}
+                onPointerMove={interactive ? onPanelPointerMove : undefined}
+                onPointerUp={interactive ? endDrag : undefined}
+                onPointerCancel={interactive ? endDrag : undefined}
                 style={{
                   position: 'absolute',
                   left: titleLeft,
@@ -495,6 +535,13 @@ export function LayoutPanelsLayer({
                       : `1px solid ${accentFill(accent, 0.28)}`,
                   boxShadow: '0 1px 3px rgba(0,0,0,0.45)',
                   zIndex: isOuter ? 40 : 25 + level,
+                  cursor: interactive
+                    ? selected
+                      ? 'grab'
+                      : 'pointer'
+                    : undefined,
+                  // Chip only — parent layer is pointer-events-none
+                  pointerEvents: interactive ? 'auto' : 'none',
                 }}
               >
                 {p.title}

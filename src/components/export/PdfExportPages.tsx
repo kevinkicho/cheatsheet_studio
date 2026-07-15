@@ -279,6 +279,7 @@ export function PdfExportPages({
                 <ExportLayoutPanelTitle
                   key={`${p.id}-title`}
                   panel={p}
+                  allPanels={c.layoutPanels ?? []}
                   pageOrigin={{ x: page.x, y: page.y }}
                 />
               ))}
@@ -400,8 +401,9 @@ function ExportLayoutPanel({
               width: r.width,
               height: r.height,
               boxSizing: 'border-box',
-              border: `1.5px solid ${accent}`,
-              borderRadius: level <= 1 ? 6 : 5,
+              // Match LayoutPanelsLayer stroke weight (L1=2, L2=1.5)
+              border: `${level <= 1 ? 2 : 1.5}px solid ${accent}`,
+              borderRadius: level <= 1 ? 8 : 5,
               background: fill,
               zIndex: 0,
               pointerEvents: 'none',
@@ -415,9 +417,11 @@ function ExportLayoutPanel({
 
 function ExportLayoutPanelTitle({
   panel,
+  allPanels,
   pageOrigin,
 }: {
   panel: LayoutPanel
+  allPanels: LayoutPanel[]
   x?: number
   y?: number
   pageOrigin: { x: number; y: number }
@@ -426,13 +430,27 @@ function ExportLayoutPanelTitle({
   const accent = panel.accent ?? 'rgba(99, 102, 241, 0.55)'
   const level = panel.hierarchyLevel ?? 1
   const isOuter = panel.showStroke !== false && level <= 1
-  // Export title layer is per-panel; L2 is inset under typical L1 chip height
+  // Match LayoutPanelsLayer: L2 chip sits under parent L1 exclusive header
+  const parentL1 =
+    !isOuter
+      ? allPanels.find(
+          (o) =>
+            o.showStroke !== false &&
+            (o.hierarchyLevel ?? 1) <= 1 &&
+            o.memberIds?.length &&
+            panel.memberIds?.length &&
+            panel.memberIds.every((id) => o.memberIds!.includes(id)),
+        )
+      : undefined
+  let titleTop =
+    panel.y - pageOrigin.y + (isOuter ? 3 : 2)
+  if (parentL1) {
+    const underL1 = parentL1.y - pageOrigin.y + 24
+    titleTop = Math.max(titleTop, underL1)
+  }
   const box = {
     x: panel.x - pageOrigin.x + (isOuter ? 6 : 8),
-    y:
-      panel.y -
-      pageOrigin.y +
-      (isOuter ? 3 : Math.max(2, level > 1 ? 4 : 2)),
+    y: titleTop,
     maxW: Math.max(48, panel.width - (isOuter ? 14 : 16)),
   }
   return (

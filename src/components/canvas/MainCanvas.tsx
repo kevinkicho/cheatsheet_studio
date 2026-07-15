@@ -119,7 +119,6 @@ export function MainCanvas() {
   const selectedIds = useCanvasStore((s) => s.selectedIds)
   const select = useCanvasStore((s) => s.select)
   const toggleSelect = useCanvasStore((s) => s.toggleSelect)
-  const setSelectedIds = useCanvasStore((s) => s.setSelectedIds)
   const canvas = useCanvasStore((s) => s.canvas)
   // Dedicated selectors so opacity/spacing updates always re-render this view
   const gridOpacityRaw = useCanvasStore((s) => s.canvas.gridOpacity)
@@ -243,6 +242,10 @@ export function MainCanvas() {
     if (!el) return false
     if (el.closest('[data-canvas-item]')) return false
     if (el.closest('[data-print-page-handle]')) return false
+    // Layout panel title chips / stroke hits are not "background", but allow
+    // marquee on empty board (panel fills use pointer-events:none).
+    if (el.closest('[data-layout-panel-title], [data-layout-panel-hit], [data-layout-panel-outline]'))
+      return false
     if (el.closest('button, input, textarea, a, [role="button"]')) return false
     return true
   }
@@ -428,9 +431,9 @@ export function MainCanvas() {
       const minY = Math.min(m.y0, end.y)
       const maxY = Math.max(m.y0, end.y)
 
-      const hit = useCanvasStore
-        .getState()
-        .items.filter(
+      const state = useCanvasStore.getState()
+      const hit = state.items
+        .filter(
           (it) =>
             !it.hidden &&
             it.x < maxX &&
@@ -440,11 +443,30 @@ export function MainCanvas() {
         )
         .map((it) => it.id)
 
+      // Marquee selects layout panels like objects (all intersecting frames),
+      // together with cards — not panel-XOR-cards.
+      const hitPanels = (state.canvas.layoutPanels ?? []).filter((p) => {
+        const px2 = p.x + p.width
+        const py2 = p.y + p.height
+        return p.x < maxX && px2 > minX && p.y < maxY && py2 > minY
+      })
+      // Prefer smaller (nested) panels first in the multi-select list so the
+      // last/primary is the most specific when many nest.
+      const panelIds = [...hitPanels]
+        .sort((a, b) => b.width * b.height - a.width * a.height)
+        .map((p) => p.id)
+
       if (m.additive) {
-        const prev = useCanvasStore.getState().selectedIds
-        setSelectedIds([...new Set([...prev, ...hit])])
+        const prevCards = state.selectedIds
+        const prevPanels = state.selectedPanelIds ?? []
+        state.setMarqueeSelection(
+          [...new Set([...prevCards, ...hit])],
+          [...new Set([...prevPanels, ...panelIds])],
+        )
+      } else if (hit.length > 0 || panelIds.length > 0) {
+        state.setMarqueeSelection(hit, panelIds)
       } else {
-        setSelectedIds(hit)
+        state.setMarqueeSelection([], [])
       }
 
       if (vp) {

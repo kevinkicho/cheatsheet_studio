@@ -78,4 +78,81 @@ describe("autoOrganize store wiring", () => {
     expect(fv.x).toBeLessThan(200);
     expect(fv.contentFill).toBe(false);
   });
+
+  it("passes panelBorderLevels and panelNgonLevels through to the packer", () => {
+    useCanvasStore.setState({
+      items: [
+        {
+          id: "a1",
+          type: "equation",
+          x: 0,
+          y: 0,
+          width: 120,
+          height: 60,
+          zIndex: 1,
+          latex: "a=1",
+          title: "A1",
+          folderId: "t1a",
+        },
+        {
+          id: "a2",
+          type: "equation",
+          x: 0,
+          y: 0,
+          width: 100,
+          height: 50,
+          zIndex: 2,
+          latex: "a=2",
+          title: "A2",
+          folderId: "t1a",
+        },
+        {
+          id: "b1",
+          type: "equation",
+          x: 0,
+          y: 0,
+          width: 100,
+          height: 50,
+          zIndex: 3,
+          latex: "b=1",
+          title: "B1",
+          folderId: "t1b",
+        },
+      ],
+      folders: [
+        { id: "t1", name: "1. Topic", parentId: null, order: 0 },
+        { id: "t1a", name: "1.1 Sub", parentId: "t1", order: 0 },
+        { id: "t1b", name: "1.2 Sub", parentId: "t1", order: 1 },
+      ],
+      canvas: { ...DEFAULT_CANVAS },
+      dirty: false,
+    });
+    useCanvasStore.getState().autoOrganize({
+      density: "sm",
+      groupChrome: "panels",
+      panelShape: "polygon",
+      panelGroupLevels: [1, 2],
+      panelBorderLevels: [1, 2],
+      panelNgonLevels: [2],
+      panelPadding: 8,
+      fitPrint: true,
+      multiPage: true,
+    });
+    const panels = useCanvasStore.getState().canvas.layoutPanels ?? [];
+    const L1 = panels.filter((p) => p.hierarchyLevel === 1);
+    const L2 = panels.filter((p) => p.hierarchyLevel === 2);
+    expect(L1.length).toBeGreaterThanOrEqual(1);
+    expect(L2.length).toBeGreaterThanOrEqual(1);
+    // Borders on both levels
+    expect(L1.every((p) => p.showStroke !== false)).toBe(true);
+    expect(L2.every((p) => p.showStroke !== false)).toBe(true);
+    // N-gon only on L2; L1 stays rect
+    expect(L1.every((p) => p.shape === "rect")).toBe(true);
+    expect(L2.every((p) => p.shape === "polygon")).toBe(true);
+    // Snapshot retains the per-level knobs
+    const snap = useCanvasStore.getState().lastAutoLayout;
+    expect(snap?.panelBorderLevels).toEqual([1, 2]);
+    expect(snap?.panelNgonLevels).toEqual([2]);
+  });
 });
+
