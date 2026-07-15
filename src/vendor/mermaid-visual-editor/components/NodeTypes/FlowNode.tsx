@@ -14,6 +14,7 @@ import {
   type PortPlacement,
 } from '../../lib/portLayout'
 import { wrapMindmapLabelLines } from '../../lib/mindmap'
+import { fitLabelFontPx } from '../../lib/fitNodeLabel'
 
 // ─── SVG shape paths (viewBox 0 0 200 100, preserveAspectRatio="none") ────────
 // All points are in the 200×100 coordinate space so they stretch with the node.
@@ -365,7 +366,7 @@ function IconBadge(_props: { icon?: string }) {
 }
 
 // ─── Main FlowNode component ──────────────────────────────────────────────────
-export function FlowNode({ id, data, selected }: NodeProps) {
+export function FlowNode({ id, data, selected, width, height }: NodeProps) {
   const nodeData = data as FlowNodeData
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(nodeData.label)
@@ -376,10 +377,46 @@ export function FlowNode({ id, data, selected }: NodeProps) {
   const handDrawn = look === 'handDrawn'
   const isMindmap = useFlowStore((s) => s.diagramKind === 'mindmap')
   const updateNodeInternals = useUpdateNodeInternals()
-  // Mind maps use a larger type scale so topics read clearly at a glance
-  const fontSize = isMindmap
-    ? 'var(--node-font-size-mindmap, 17px)'
-    : 'var(--node-font-size, 16px)'
+
+  // Measured RF box (preferred) or style size from layout/import
+  const boxW =
+    typeof width === 'number' && width > 0
+      ? width
+      : typeof (data as { width?: number }).width === 'number'
+        ? (data as { width: number }).width
+        : 120
+  const boxH =
+    typeof height === 'number' && height > 0
+      ? height
+      : typeof (data as { height?: number }).height === 'number'
+        ? (data as { height: number }).height
+        : 48
+
+  // Scale type to the shape so short labels fill Mermaid-sized boxes
+  // (fixed 16px left large empty rings — screenshot 021358).
+  const fontSizePx = useMemo(() => {
+    const label = String(nodeData.label ?? '')
+    if (isMindmap) {
+      const lines = wrapMindmapLabelLines(
+        label,
+        boxW > 140 ? 16 : 13,
+      )
+      return fitLabelFontPx(label, boxW, boxH, {
+        lines,
+        padX: 8,
+        padY: 8,
+        minPx: 12,
+        maxPx: 28,
+      })
+    }
+    return fitLabelFontPx(label, boxW, boxH, {
+      padX: 8,
+      padY: 6,
+      minPx: 13,
+      maxPx: 32,
+    })
+  }, [nodeData.label, boxW, boxH, isMindmap])
+  const fontSize = `${fontSizePx}px`
 
   const commitLabel = useCallback(() => {
     const trimmed = draft.trim() || 'Node'
@@ -552,8 +589,11 @@ export function FlowNode({ id, data, selected }: NodeProps) {
           className="relative z-10 flex items-center justify-center w-full h-full pointer-events-none"
           style={{
             height: '100%',
-            // Tight inset so labels fill the shape (was px-3 py-1 waste)
-            padding: shape === 'diamond' || shape === 'hexagon' ? '6% 10%' : '4% 6%',
+            // Minimal inset — font scales to box (fitLabelFontPx)
+            padding:
+              shape === 'diamond' || shape === 'hexagon'
+                ? '8% 12%'
+                : '3px 6px',
             boxSizing: 'border-box',
           }}
         >
@@ -646,11 +686,11 @@ export function FlowNode({ id, data, selected }: NodeProps) {
         minHeight: 0,
         // overflow visible so mid-side ports aren't clipped into a weird ring
         overflow: 'visible',
-        // Minimal pad — labels fill the node box (was 10/4 and looked sparse)
-        paddingLeft: shape === 'stadium' || isCircleShape ? 4 : 5,
-        paddingRight: shape === 'stadium' || isCircleShape ? 4 : 5,
-        paddingTop: shape === 'stadium' || isCircleShape ? 2 : 3,
-        paddingBottom: shape === 'stadium' || isCircleShape ? 2 : 3,
+        // Bare minimum chrome pad — type size does the “fill”
+        paddingLeft: shape === 'stadium' || isCircleShape ? 3 : 4,
+        paddingRight: shape === 'stadium' || isCircleShape ? 3 : 4,
+        paddingTop: shape === 'stadium' || isCircleShape ? 1 : 2,
+        paddingBottom: shape === 'stadium' || isCircleShape ? 1 : 2,
         boxSizing: 'border-box',
       }}
       onDoubleClick={handleDoubleClick}

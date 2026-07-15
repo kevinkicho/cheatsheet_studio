@@ -30,6 +30,7 @@ import {
   straightMindmapPath,
   wrapMindmapLabelLines,
 } from '@/vendor/mermaid-visual-editor/lib/mindmap'
+import { fitLabelFontPx } from '@/vendor/mermaid-visual-editor/lib/fitNodeLabel'
 
 export const PROCESS_FLOW_VERSION = 1 as const
 
@@ -675,7 +676,6 @@ export function processFlowToSvg(
   }
 
   const isMm = snap.diagramKind === 'mindmap'
-  const nodeFont = isMm ? MINDMAP_FONT_SIZE : 14
   const nodeEls: string[] = []
   for (const n of snap.nodes) {
     const fill = n.fillColor || STUDIO.fill
@@ -697,7 +697,15 @@ export function processFlowToSvg(
     const lines = isMm
       ? wrapMindmapLabelLines(n.label, n.width > 140 ? 16 : 13)
       : [n.label]
-    const lineH = nodeFont * 1.25
+    // Match interactive editor: scale type to node box (not fixed 14/17px)
+    const nodeFont = fitLabelFontPx(n.label, n.width, n.height, {
+      lines,
+      padX: isMm ? 10 : 8,
+      padY: isMm ? 10 : 6,
+      minPx: isMm ? 12 : 13,
+      maxPx: isMm ? 26 : 32,
+    })
+    const lineH = nodeFont * 1.15
     const startY = cy - ((lines.length - 1) * lineH) / 2
     lines.forEach((line, i) => {
       nodeEls.push(
@@ -705,6 +713,7 @@ export function processFlowToSvg(
       )
     })
   }
+  void MINDMAP_FONT_SIZE
 
   const w = Math.max(40, snap.width)
   const h = Math.max(40, snap.height)

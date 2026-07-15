@@ -5,8 +5,10 @@
  * Shapes: https://mermaid.js.org/syntax/mindmap.html#different-shapes
  */
 import { Handle, NodeResizer, Position, type NodeProps } from '@xyflow/react'
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { useFlowStore, type FlowNodeData, type NodeShape } from '../../lib/store'
+import { wrapMindmapLabelLines } from '../../lib/mindmap'
+import { fitLabelFontPx } from '../../lib/fitNodeLabel'
 
 const DEFAULT_SIZE = 96
 const ROOT_SIZE = 120
@@ -204,6 +206,18 @@ export function MindmapNode({ id, data, selected, width, height }: NodeProps) {
           ? ROOT_SIZE
           : DEFAULT_SIZE
 
+  const fontSizePx = useMemo(() => {
+    const label = String(nodeData.label ?? '')
+    const lines = wrapMindmapLabelLines(label, w > 140 ? 16 : 13)
+    return fitLabelFontPx(label, w, h, {
+      lines,
+      padX: 10,
+      padY: 10,
+      minPx: isHub ? 13 : 11,
+      maxPx: isHub ? 26 : 22,
+    })
+  }, [nodeData.label, w, h, isHub])
+
   const commitLabel = useCallback(() => {
     const trimmed = draft.trim() || 'Topic'
     updateNodeLabel(id, trimmed)
@@ -330,15 +344,15 @@ export function MindmapNode({ id, data, selected, width, height }: NodeProps) {
 
       {/* ::icon kept on data for Mermaid export / Object Settings — not painted on shape */}
 
-      {/* Use most of the shape for text — was 85% + px (wasteful empty ring) */}
+      {/* Font scales to circle size; use almost the full diameter */}
       <div
         className="relative z-10 flex items-center justify-center"
         style={{
-          maxWidth: '94%',
-          maxHeight: '94%',
-          width: '94%',
-          height: '94%',
-          padding: shape === 'circle' || shape === 'double-circle' ? 2 : 3,
+          maxWidth: '92%',
+          maxHeight: '92%',
+          width: '92%',
+          height: '92%',
+          padding: 2,
           boxSizing: 'border-box',
         }}
       >
@@ -352,8 +366,8 @@ export function MindmapNode({ id, data, selected, width, height }: NodeProps) {
             className="w-full max-w-full bg-transparent text-center font-medium outline-none"
             style={{
               color: text,
-              fontSize: isHub ? 14 : 12,
-              lineHeight: 1.15,
+              fontSize: fontSizePx,
+              lineHeight: 1.12,
               padding: 0,
             }}
             autoFocus
@@ -364,8 +378,8 @@ export function MindmapNode({ id, data, selected, width, height }: NodeProps) {
             className="break-words text-center font-medium select-none"
             style={{
               color: text,
-              fontSize: isHub ? 14 : 12,
-              lineHeight: 1.15,
+              fontSize: fontSizePx,
+              lineHeight: 1.12,
               maxWidth: '100%',
               padding: 0,
             }}
