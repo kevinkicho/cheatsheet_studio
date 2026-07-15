@@ -13,6 +13,7 @@ import {
   type GroupChrome,
   normalizeGroupChrome,
   resolveLayoutGaps,
+  gapPxToCells,
   type PanelGroupLevel,
   type GroupSortOrder,
 } from './constants'
@@ -100,13 +101,8 @@ export function packCheatsheetLayout(
   } = resolveLayoutGaps(options)
   // Legacy alias used by gravity / single-level paths
   const gapPx = l1GapPx
-  /** Early cell conversion for leaf body pack (before hierarchy flags). */
-  const earlyPxToCells = (px: number) => {
-    if (px <= 0) return 0
-    if (px < grid / 2) return 0
-    return Math.max(1, Math.ceil(px / grid))
-  }
-  const blockGapCells = earlyPxToCells(blockGapPx)
+  // Card free-flow gap cells (any blockGap > 0 → ≥1 cell on the organize grid)
+  const blockGapCells = gapPxToCells(blockGapPx, grid)
   const fitPrint = options.fitPrint !== false
   const multiPage = options.multiPage !== false
   const groupByFolder = options.groupByFolder !== false
@@ -452,42 +448,33 @@ export function packCheatsheetLayout(
   // borders don't stack; pad itself is visual chrome, not a second free-flow gap.
   const nestInsetPx = useHierarchicalPlace ? panelPad : 0
 
-  /** px → free-flow gap cells (0 when sub-cell; honor larger user gaps). */
-  const pxToCells = (px: number) => {
-    if (px <= 0) return 0
-    if (px < grid / 2) return 0
-    return Math.max(1, Math.ceil(px / grid))
-  }
-
-  // L1 title strip is reserved via titleCells *inside* each parent — still
-  // need inter-L1 content clearance so the next L1 frame (pad + gap) clears
-  // the previous topic's cards. L1 title itself is not added here when
-  // multi-level (titleCells handles it).
+  // L1 title strip is reserved via titleCells *inside* each parent.
+  // L2 title strip is inside each L2 chrome — leaf free-flow must still leave
+  // enough air so the next L2 title band is not covered (title + pad floor).
   const L1_TITLE_CLEAR_PX = 26
   const L2_TITLE_PX = leafLevelsStroke ? 16 : 0
 
   // Content-to-content clearance so stroked frames sit ~userGap apart:
-  // frameGap ≈ contentGap − 2×pad  →  contentGap = userGap + 2×pad
+  // contentGap = userGap + 2×pad (pad lives inside each frame).
+  // Title bands are inside chrome, not added again into L1 leaf gaps.
   const l1ContentClearPx = usePanels
     ? Math.max(0, l1GapPx) + (outerLevelsStroke ? panelPad * 2 : 0)
     : Math.max(0, l1GapPx)
+  // L2: user gap + pad on both frames + room so next L2 title is free of
+  // previous L2's cards (header-clear rule).
   const l2ContentClearPx =
     usePanels && leafLevelsStroke
       ? Math.max(0, l2GapPx) + panelPad * 2 + L2_TITLE_PX
       : Math.max(0, l2GapPx)
 
-  // Between L2 leaf clusters (inside L1) — same for rect and n-gon
-  const leafGapCells = leafLevelsStroke
-    ? Math.max(0, pxToCells(l2ContentClearPx))
-    : pxToCells(l2GapPx)
-  // Between L1 outer clusters
-  const outerGapCells = usePanels
-    ? Math.max(0, pxToCells(l1ContentClearPx))
-    : pxToCells(l1GapPx)
+  // Free-flow cells — any positive px gap → ≥1 cell (see gapPxToCells)
+  const leafGapCells = gapPxToCells(l2ContentClearPx, grid)
+  const outerGapCells = gapPxToCells(l1ContentClearPx, grid)
 
-  // Legacy name used by single-level / stack helpers
+  // Pixel post-passes (separateFolderClusters / resolveLeafGroupCollisions)
   const interTopicChromePx = usePanels
-    ? l1ContentClearPx + (outerLevelsStroke && !useHierarchicalPlace ? L1_TITLE_CLEAR_PX : 0)
+    ? l1ContentClearPx +
+      (outerLevelsStroke && !useHierarchicalPlace ? L1_TITLE_CLEAR_PX : 0)
     : l1GapPx
 
   // L1 exclusive band: chip + nested top-row L2 chip room when multi-level

@@ -845,6 +845,65 @@ describe('packCheatsheetLayout', () => {
     expect(stem).not.toMatch(/[<>:"/\\|?*]/)
   })
 
+  it('gap knobs affect free-flow spacing (rect and n-gon)', () => {
+    const folders = [
+      { id: 'f1', order: 0, name: '1. Alpha' },
+      { id: 'f2', order: 1, name: '2. Beta' },
+    ]
+    const items: CanvasItem[] = [
+      card('a1', { folderId: 'f1', title: 'A1', width: 100, height: 60 }),
+      card('a2', { folderId: 'f1', title: 'A2', width: 100, height: 60 }),
+      card('b1', { folderId: 'f2', title: 'B1', width: 100, height: 60 }),
+      card('b2', { folderId: 'f2', title: 'B2', width: 100, height: 60 }),
+    ]
+    const pack = (
+      shape: 'rect' | 'polygon',
+      l1: number,
+      block: number,
+    ) =>
+      packCheatsheetLayout(items, DEFAULT_CANVAS, {
+        density: 'sm',
+        groupChrome: 'panels',
+        panelShape: shape,
+        panelGroupLevels: [1],
+        panelBorderLevels: [1],
+        panelPadding: 4,
+        l1PanelGap: l1,
+        l2PanelGap: 2,
+        blockGap: block,
+        folders,
+        groupSort: 'name-asc',
+      })
+    const ySpan = (out: ReturnType<typeof packCheatsheetLayout>) => {
+      const cards = out.items.filter((i) => !i.hidden)
+      return (
+        Math.max(...cards.map((c) => c.y + c.height)) -
+        Math.min(...cards.map((c) => c.y))
+      )
+    }
+    const topicGap = (out: ReturnType<typeof packCheatsheetLayout>) => {
+      const a = out.items.filter((i) => i.folderId === 'f1' && !i.hidden)
+      const b = out.items.filter((i) => i.folderId === 'f2' && !i.hidden)
+      const aBot = Math.max(...a.map((c) => c.y + c.height))
+      const bTop = Math.min(...b.map((c) => c.y))
+      const aTop = Math.min(...a.map((c) => c.y))
+      const bBot = Math.max(...b.map((c) => c.y + c.height))
+      // Vertical separation between topic clusters (either order)
+      return Math.max(0, Math.max(bTop - aBot, aTop - bBot))
+    }
+    // Larger L1 gap → more air between topic clusters (rect + n-gon)
+    expect(topicGap(pack('rect', 48, 0))).toBeGreaterThan(
+      topicGap(pack('rect', 0, 0)),
+    )
+    expect(topicGap(pack('polygon', 48, 0))).toBeGreaterThan(
+      topicGap(pack('polygon', 0, 0)),
+    )
+    // Larger block gap → taller overall when cards stack under densify
+    expect(ySpan(pack('rect', 2, 48))).toBeGreaterThanOrEqual(
+      ySpan(pack('rect', 2, 0)),
+    )
+  })
+
   it('gap + panelPadding together increase inter-panel free-flow clearance', () => {
     const folders = Array.from({ length: 4 }, (_, i) => ({
       id: `f${i}`,

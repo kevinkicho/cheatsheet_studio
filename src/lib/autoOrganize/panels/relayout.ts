@@ -490,20 +490,17 @@ export function relayoutPanelContents(
     }
   }
 
-  const pxToCells = (px: number) => {
+  // Any gap > 0 → ≥1 grid cell so sub-grid settings still produce air
+  const gapPxToCellsLocal = (px: number) => {
     if (px <= 0) return 0
-    if (px < grid / 2) return 0
     return Math.max(1, Math.ceil(px / grid))
   }
   // Card free-flow gap from blockGap (rect + n-gon both honor this)
-  const cardGapCells = pxToCells(blockGapPx)
+  const cardGapCells = gapPxToCellsLocal(blockGapPx)
   // L2 sibling frames: user l2 gap + pad floor + title band when nested stroke
   const leafGapCells = hasNestedStroke
-    ? Math.max(
-        0,
-        pxToCells(l2PanelGapPx + pad * 2 + NESTED_TITLE_BAND_PX),
-      )
-    : pxToCells(l2PanelGapPx)
+    ? gapPxToCellsLocal(l2PanelGapPx + pad * 2 + NESTED_TITLE_BAND_PX)
+    : gapPxToCellsLocal(l2PanelGapPx)
   // N-gon prefers full width seeds; rect may try narrower mosaics
   const packBoxW = hardTetris
     ? contentW

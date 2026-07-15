@@ -38,12 +38,12 @@ export function AutoLayoutPanel() {
   const autoOrganize = useCanvasStore((s) => s.autoOrganize)
   const applyItemLayout = useCanvasStore((s) => s.applyItemLayout)
   const [density, setDensity] = useState<ContentDensity>('sm')
-  /** L1 outer panel frame gap (legacy “gap”). */
-  const [l1PanelGap, setL1PanelGap] = useState(4)
-  /** L2 sibling panel frame gap inside an L1. */
-  const [l2PanelGap, setL2PanelGap] = useState(4)
-  /** Card-to-card gap inside a leaf pack. */
-  const [blockGap, setBlockGap] = useState(4)
+  /** L1 outer panel frame gap (legacy “gap”). Default 2px. */
+  const [l1PanelGap, setL1PanelGap] = useState(2)
+  /** L2 sibling panel frame gap inside an L1. Default 2px. */
+  const [l2PanelGap, setL2PanelGap] = useState(2)
+  /** Card-to-card gap inside a leaf pack. Default 2px. */
+  const [blockGap, setBlockGap] = useState(2)
   /** Topic chrome: labels (banner rows) vs panels (encapsulating frames). */
   const [groupChrome, setGroupChrome] = useState<GroupChrome>('panels')
   const [panelShape, setPanelShape] = useState<PanelShape>('rect')

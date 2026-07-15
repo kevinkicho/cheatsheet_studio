@@ -1129,10 +1129,10 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         {
           grid: s.canvas.gridSpacing ?? 24,
           gapPx:
-            s.lastAutoLayout?.l1PanelGap ?? s.lastAutoLayout?.gap ?? 6,
-          blockGapPx: s.lastAutoLayout?.blockGap ?? 4,
+            s.lastAutoLayout?.l1PanelGap ?? s.lastAutoLayout?.gap ?? 2,
+          blockGapPx: s.lastAutoLayout?.blockGap ?? 2,
           l2PanelGapPx:
-            s.lastAutoLayout?.l2PanelGap ?? s.lastAutoLayout?.gap ?? 4,
+            s.lastAutoLayout?.l2PanelGap ?? s.lastAutoLayout?.gap ?? 2,
           panelPad: s.lastAutoLayout?.panelPadding ?? 4,
           mode: 'dense',
           allPanels: panels,

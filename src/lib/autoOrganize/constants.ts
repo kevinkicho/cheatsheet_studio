@@ -194,6 +194,9 @@ export type AutoLayoutExportSnapshot = {
   dissolvePrintArea?: boolean
 }
 
+/** Default for L1 / L2 / block gap sliders (px). */
+export const DEFAULT_LAYOUT_GAP_PX = 2
+
 /** Resolve the three user gap knobs with legacy `gap` fallback. */
 export function resolveLayoutGaps(options: {
   gap?: number
@@ -201,12 +204,25 @@ export function resolveLayoutGaps(options: {
   l2PanelGap?: number
   blockGap?: number
 }): { l1PanelGap: number; l2PanelGap: number; blockGap: number } {
-  const legacy = Math.max(0, options.gap ?? 4)
+  const legacy = Math.max(0, options.gap ?? DEFAULT_LAYOUT_GAP_PX)
   return {
     l1PanelGap: Math.max(0, options.l1PanelGap ?? legacy),
     l2PanelGap: Math.max(0, options.l2PanelGap ?? legacy),
-    blockGap: Math.max(0, options.blockGap ?? 4),
+    blockGap: Math.max(0, options.blockGap ?? DEFAULT_LAYOUT_GAP_PX),
   }
+}
+
+/**
+ * Convert a pixel gap to free-flow grid cells.
+ * Any gap > 0 becomes at least 1 cell so sub-grid settings (e.g. 2px on a
+ * 24px grid) still produce visible air — previously `px < grid/2 → 0` made
+ * all small gaps a no-op.
+ */
+export function gapPxToCells(px: number, grid: number): number {
+  const g = Math.max(4, grid)
+  const p = Math.max(0, px)
+  if (p <= 0) return 0
+  return Math.max(1, Math.ceil(p / g))
 }
 
 // Export filename helpers live in exportTags.ts (avoid star-export conflicts).
