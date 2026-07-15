@@ -6,6 +6,7 @@ import {
   normalizePanelGroupLevels,
   normalizeLevelSubset,
   normalizeNgonLevels,
+  resolveLayoutGaps,
 } from './constants'
 
 export function sanitizeExportFileStem(raw: string): string {
@@ -79,8 +80,11 @@ export function formatAutoLayoutFileTag(
     sort === 'name-asc' ? 'az' : sort === 'name-desc' ? 'za' : 'nosort',
   )
 
-  // Always tag main free-flow gap; panel chrome pad when panels are on
-  parts.push(`gap${Math.round(opts.gap ?? 4)}`)
+  // Gap knobs: L1 panels · L2 panels · blocks · chrome pad
+  const gaps = resolveLayoutGaps(opts)
+  parts.push(`l1g${Math.round(gaps.l1PanelGap)}`)
+  parts.push(`l2g${Math.round(gaps.l2PanelGap)}`)
+  parts.push(`bg${Math.round(gaps.blockGap)}`)
   if (panelsOn) {
     parts.push(`pgap${Math.round(opts.panelPadding ?? 4)}`)
   }
@@ -112,6 +116,7 @@ export function buildExportFileNameStem(
 export function snapshotAutoLayoutOptions(
   opts: CheatsheetLayoutOptions,
 ): AutoLayoutExportSnapshot {
+  const gaps = resolveLayoutGaps(opts)
   return {
     density: opts.density ?? 'sm',
     groupChrome: opts.groupChrome ?? 'labels',
@@ -121,7 +126,10 @@ export function snapshotAutoLayoutOptions(
     panelBorderLevels: opts.panelBorderLevels,
     panelNgonLevels: opts.panelNgonLevels,
     groupSort: opts.groupSort,
-    gap: opts.gap,
+    gap: gaps.l1PanelGap,
+    l1PanelGap: gaps.l1PanelGap,
+    l2PanelGap: gaps.l2PanelGap,
+    blockGap: gaps.blockGap,
     multiPage: opts.multiPage,
     dissolvePrintArea: opts.dissolvePrintArea,
   }

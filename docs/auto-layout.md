@@ -41,8 +41,13 @@ Implementation: `packCheatsheetLayout` in [`src/lib/autoOrganize.ts`](../src/lib
 |---------|---------|
 | **Rectangle** | Full axis-aligned box around the group (empty corner included) |
 | **N-gon (L-fill)** | Stepped/L polyomino chrome on **all bordered levels**. Fill per run; single exterior outline (no double borders). |
-| **Gap** | Free-flow air between topic groups / panel **outer** edges |
-| **Panel pad** | Chrome inset (cards → frame stroke). With panels, free-flow clearance = **gap + 2× pad** |
+| **Level 1 panel gap** | Distance between outer (L1) topic frames |
+| **Level 2 panel gap** | Distance between L2 subsection frames inside an L1 |
+| **Block gap** | Distance between cards inside a leaf pack |
+| **Panel pad** | Chrome inset (cards → frame stroke only) |
+
+Rect and n-gon packing both honor these gaps. Title/header bands still clear
+cards (exclusive title strip is separate from gap knobs).
 
 Per-level “n-gon levels” toggles were removed — choose rectangle vs n-gon once for panel packing.
 

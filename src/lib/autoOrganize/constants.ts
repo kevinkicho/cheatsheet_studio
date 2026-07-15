@@ -62,7 +62,23 @@ export const LAYOUT_PANEL_ACCENTS = [
 ] as const
 
 export type CheatsheetLayoutOptions = {
-  /** Gap between cards (px). Default 10. */
+  /**
+   * Distance between **L1 (outer) panel frames** (px). Default **4**.
+   * Legacy alias: `gap` (same meaning).
+   */
+  l1PanelGap?: number
+  /**
+   * Distance between **L2 sibling panel frames** inside an L1 (px). Default **4**.
+   */
+  l2PanelGap?: number
+  /**
+   * Distance between **cards/blocks** inside a leaf pack (px). Default **4**.
+   */
+  blockGap?: number
+  /**
+   * @deprecated Prefer `l1PanelGap`. Kept for saved layouts / export tags.
+   * When set without `l1PanelGap`, used as L1 panel gap.
+   */
   gap?: number
   /** 1–3 or auto (guess from density + count). */
   columns?: number | 'auto'
@@ -107,9 +123,10 @@ export type CheatsheetLayoutOptions = {
     parentId?: string | null
   }>
   /**
-   * Panel chrome pad (px) from cards to the panel stroke. Default **8**.
-   * Works **with** `gap`: free-flow leaves `gap + 2×panelPadding` between
-   * topic content boxes so panel frames don’t collide.
+   * Panel chrome pad (px) from cards to the panel stroke. Default **4**.
+   * Frame-to-frame air is controlled by `l1PanelGap` / `l2PanelGap`; pad is
+   * only the inset inside each frame (and a floor so stroked frames don’t
+   * overlap when gaps are small).
    */
   panelPadding?: number
   /**
@@ -168,9 +185,28 @@ export type AutoLayoutExportSnapshot = {
   panelBorderLevels?: PanelGroupLevel[]
   panelNgonLevels?: PanelGroupLevel[]
   groupSort?: GroupSortOrder
+  /** @deprecated → l1PanelGap */
   gap?: number
+  l1PanelGap?: number
+  l2PanelGap?: number
+  blockGap?: number
   multiPage?: boolean
   dissolvePrintArea?: boolean
+}
+
+/** Resolve the three user gap knobs with legacy `gap` fallback. */
+export function resolveLayoutGaps(options: {
+  gap?: number
+  l1PanelGap?: number
+  l2PanelGap?: number
+  blockGap?: number
+}): { l1PanelGap: number; l2PanelGap: number; blockGap: number } {
+  const legacy = Math.max(0, options.gap ?? 4)
+  return {
+    l1PanelGap: Math.max(0, options.l1PanelGap ?? legacy),
+    l2PanelGap: Math.max(0, options.l2PanelGap ?? legacy),
+    blockGap: Math.max(0, options.blockGap ?? 4),
+  }
 }
 
 // Export filename helpers live in exportTags.ts (avoid star-export conflicts).

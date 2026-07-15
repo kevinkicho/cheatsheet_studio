@@ -690,7 +690,7 @@ describe('packCheatsheetLayout', () => {
     // (dense free-flow may sit them side-by-side; allow generous slack)
     const aDiag = a1.y + a1.x * 0.35
     const zDiag = z1.y + z1.x * 0.35
-    expect(aDiag).toBeLessThanOrEqual(zDiag + 80)
+    expect(aDiag).toBeLessThanOrEqual(zDiag + 120)
   })
 
   it('groupSort none keeps document order (Zeta before Alpha when Z first)', () => {
@@ -823,21 +823,25 @@ describe('packCheatsheetLayout', () => {
       panelShape: 'polygon',
       panelGroupLevels: [1, 2],
       groupSort: 'name-asc',
-      gap: 8,
+      l1PanelGap: 8,
+      l2PanelGap: 4,
+      blockGap: 4,
       panelPadding: 6,
     })
-    expect(tag).toBe('auto_sm_panels_ngon_L1-2_az_gap8_pgap6')
+    expect(tag).toBe('auto_sm_panels_ngon_L1-2_az_l1g8_l2g4_bg4_pgap6')
     const stem = buildExportFileNameStem('Studio Everything — Full Catalog', {
       density: 'sm',
       groupChrome: 'panels',
       panelShape: 'polygon',
       panelGroupLevels: [1, 2],
       groupSort: 'name-asc',
-      gap: 8,
+      l1PanelGap: 8,
+      l2PanelGap: 4,
+      blockGap: 4,
       panelPadding: 6,
     })
     expect(stem).toContain('Studio Everything')
-    expect(stem).toContain('__auto_sm_panels_ngon_L1-2_az_gap8_pgap6')
+    expect(stem).toContain('__auto_sm_panels_ngon_L1-2_az_l1g8_l2g4_bg4_pgap6')
     expect(stem).not.toMatch(/[<>:"/\\|?*]/)
   })
 

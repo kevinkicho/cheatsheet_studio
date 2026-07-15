@@ -313,6 +313,7 @@ export function measureShelfPack(
 export function naturalTopicPack(
   bodyRects: CellRect[],
   pageCols: number,
+  opts?: { gapCells?: number },
 ): {
   /** Body rects (cw may be clamped to chosen width). */
   rects: CellRect[]
@@ -322,6 +323,7 @@ export function naturalTopicPack(
   contentCw: number
   contentCh: number
 } {
+  const gapCells = Math.max(0, opts?.gapCells ?? 0)
   if (bodyRects.length === 0) {
     return {
       rects: [],
@@ -390,7 +392,7 @@ export function naturalTopicPack(
     const densePos = placeTopicRegionsDense(
       rects.map((r, i) => ({ index: i, cw: r.cw, ch: r.ch })),
       w,
-      0,
+      gapCells,
       { multiOrder: true, readingFlow: false },
     )
     let usedCw = 1

@@ -882,6 +882,9 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       const packOpts = {
         density: opts?.density ?? 'sm',
         gap: opts?.gap,
+        l1PanelGap: opts?.l1PanelGap ?? opts?.gap,
+        l2PanelGap: opts?.l2PanelGap,
+        blockGap: opts?.blockGap,
         columns: opts?.columns ?? 'auto',
         mode: opts?.mode ?? 'columns',
         groupChrome: opts?.groupChrome ?? 'labels',
@@ -1125,7 +1128,11 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         panelForLayout,
         {
           grid: s.canvas.gridSpacing ?? 24,
-          gapPx: s.lastAutoLayout?.gap ?? 6,
+          gapPx:
+            s.lastAutoLayout?.l1PanelGap ?? s.lastAutoLayout?.gap ?? 6,
+          blockGapPx: s.lastAutoLayout?.blockGap ?? 4,
+          l2PanelGapPx:
+            s.lastAutoLayout?.l2PanelGap ?? s.lastAutoLayout?.gap ?? 4,
           panelPad: s.lastAutoLayout?.panelPadding ?? 4,
           mode: 'dense',
           allPanels: panels,

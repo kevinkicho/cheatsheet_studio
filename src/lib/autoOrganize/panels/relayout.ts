@@ -362,18 +362,24 @@ export function relayoutPanelContents(
      * Chrome shape for this panel (+ nested children). Defaults to panel.shape.
      */
     panelShape?: 'rect' | 'polygon'
+    /** Card-to-card gap (px). Default 4. */
+    blockGapPx?: number
+    /** L2 sibling panel gap (px). Default 4. */
+    l2PanelGapPx?: number
   },
 ): { items: CanvasItem[]; panel: LayoutPanel; panels?: LayoutPanel[] } {
   const ids = new Set(panel.memberIds ?? [])
   if (ids.size === 0) return { items, panel }
 
-  const gap = Math.max(2, opts?.gapPx ?? 6)
+  const gap = Math.max(0, opts?.gapPx ?? 6)
+  const blockGapPx = Math.max(0, opts?.blockGapPx ?? 4)
+  const l2PanelGapPx = Math.max(0, opts?.l2PanelGapPx ?? gap)
   const pad = Math.max(2, opts?.panelPad ?? 4)
   const grid = opts?.grid ?? ORGANIZE_GRID
   const dense = opts?.mode === 'dense'
   // Default: Name A→Z (user preference for Auto-layout inside panel)
   const sort = panel.contentSort ?? 'name-asc'
-  // N-gon mode = hard tetris (same policy as full-sheet polygon pack)
+  // N-gon = denser multi-order seeds; both shapes honor gap knobs
   const chromeShape = opts?.panelShape ?? panel.shape ?? 'rect'
   const hardTetris = chromeShape === 'polygon'
   const packSeed =
@@ -484,24 +490,21 @@ export function relayoutPanelContents(
     }
   }
 
-  // Card free-flow gap: n-gon hard tetris = 0 cells (same as sheet packer);
-  // rect may use user gap when ≥ half a grid cell.
-  const cardGapCells = hardTetris
-    ? 0
-    : gap < grid / 2
-      ? 0
-      : Math.min(2, Math.max(0, Math.ceil(gap / grid)))
-  // Between leaf L2 slabs: hard tetris = pad + L2 title only (0–1 cell);
-  // rect = at least that clearance.
-  const leafGapCells = hardTetris
-    ? hasNestedStroke
-      ? Math.max(1, Math.ceil((pad * 2 + NESTED_TITLE_BAND_PX) / grid))
-      : 0
-    : Math.max(
-        cardGapCells,
-        Math.ceil((pad * 2 + NESTED_TITLE_BAND_PX) / grid),
+  const pxToCells = (px: number) => {
+    if (px <= 0) return 0
+    if (px < grid / 2) return 0
+    return Math.max(1, Math.ceil(px / grid))
+  }
+  // Card free-flow gap from blockGap (rect + n-gon both honor this)
+  const cardGapCells = pxToCells(blockGapPx)
+  // L2 sibling frames: user l2 gap + pad floor + title band when nested stroke
+  const leafGapCells = hasNestedStroke
+    ? Math.max(
+        0,
+        pxToCells(l2PanelGapPx + pad * 2 + NESTED_TITLE_BAND_PX),
       )
-  // N-gon always packs full panel width (hard tetris); rect may try narrower
+    : pxToCells(l2PanelGapPx)
+  // N-gon prefers full width seeds; rect may try narrower mosaics
   const packBoxW = hardTetris
     ? contentW
     : Math.max(

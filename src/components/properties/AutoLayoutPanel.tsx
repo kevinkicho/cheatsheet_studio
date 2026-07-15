@@ -38,11 +38,16 @@ export function AutoLayoutPanel() {
   const autoOrganize = useCanvasStore((s) => s.autoOrganize)
   const applyItemLayout = useCanvasStore((s) => s.applyItemLayout)
   const [density, setDensity] = useState<ContentDensity>('sm')
-  const [gap, setGap] = useState(4)
+  /** L1 outer panel frame gap (legacy “gap”). */
+  const [l1PanelGap, setL1PanelGap] = useState(4)
+  /** L2 sibling panel frame gap inside an L1. */
+  const [l2PanelGap, setL2PanelGap] = useState(4)
+  /** Card-to-card gap inside a leaf pack. */
+  const [blockGap, setBlockGap] = useState(4)
   /** Topic chrome: labels (banner rows) vs panels (encapsulating frames). */
   const [groupChrome, setGroupChrome] = useState<GroupChrome>('panels')
   const [panelShape, setPanelShape] = useState<PanelShape>('rect')
-  /** Gap between panels + chrome pad (px). Drives free-flow inter-panel cells. */
+  /** Chrome inset: cards → panel stroke (not free-flow air). */
   const [panelPadding, setPanelPadding] = useState(4)
   /**
    * Multi-select hierarchy depths. Selecting 1+2 draws outer (top) panels
@@ -102,7 +107,11 @@ export function AutoLayoutPanel() {
 
   const opts = (): CheatsheetLayoutOptions => ({
     density,
-    gap,
+    // Three gap knobs (also set legacy `gap` = L1 for older snapshots)
+    gap: l1PanelGap,
+    l1PanelGap,
+    l2PanelGap,
+    blockGap,
     // Dense mosaic only — no forced multi-column / row bands (those leave
     // large gutters between uneven topic groups).
     groupChrome,
@@ -137,7 +146,7 @@ export function AutoLayoutPanel() {
       ? ` · ${panelShape === 'polygon' ? 'n-gon' : 'rect'} · borders L${panelBorderLevels.join('+')} · pad ${panelPadding}px`
       : ''
     setStatus(
-      `Packed ${items.filter((i) => !i.hidden).length} cards · ${DENSITY_PRESETS[density].label} · ${chrome} · levels L${panelGroupLevels.join('+')} · gap ${gap}px${panelBit}`,
+      `Packed ${items.filter((i) => !i.hidden).length} cards · ${DENSITY_PRESETS[density].label} · ${chrome} · levels L${panelGroupLevels.join('+')} · L1 ${l1PanelGap}px · L2 ${l2PanelGap}px · blocks ${blockGap}px${panelBit}`,
     )
   }
 
@@ -237,29 +246,69 @@ export function AutoLayoutPanel() {
         </div>
       </div>
 
-      <label className="flex flex-col gap-1">
-        <span className="text-[10px] text-zinc-500">
-          Gap · {gap}px
-          <span className="font-normal text-zinc-600">
-            {' '}
-            (between groups / panel outers)
+      <div className="space-y-2 rounded-md border border-zinc-800 bg-zinc-950/30 p-2">
+        <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+          Gap
+        </p>
+        <p className="text-[9px] leading-snug text-zinc-600">
+          Applied to both rectangle and n-gon packing. Title/header bands stay
+          clear of cards (title room is separate from these gaps).
+        </p>
+        <label className="flex flex-col gap-1">
+          <span className="text-[10px] text-zinc-500">
+            Level 1 panel gap · {l1PanelGap}px
           </span>
-        </span>
-        <input
-          type="range"
-          min={0}
-          max={48}
-          step={2}
-          value={gap}
-          onChange={(e) => setGap(Number(e.target.value))}
-          className="w-full"
-          data-testid="pack-gap-slider"
-        />
-        <span className="text-[9px] text-zinc-600">
-          Free-flow air between topic groups. With panels, clearance between
-          frames is gap + 2× panel pad.
-        </span>
-      </label>
+          <input
+            type="range"
+            min={0}
+            max={48}
+            step={2}
+            value={l1PanelGap}
+            onChange={(e) => setL1PanelGap(Number(e.target.value))}
+            className="w-full"
+            data-testid="pack-l1-gap-slider"
+          />
+          <span className="text-[9px] text-zinc-600">
+            Distance between outer (L1) topic frames.
+          </span>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[10px] text-zinc-500">
+            Level 2 panel gap · {l2PanelGap}px
+          </span>
+          <input
+            type="range"
+            min={0}
+            max={48}
+            step={2}
+            value={l2PanelGap}
+            onChange={(e) => setL2PanelGap(Number(e.target.value))}
+            className="w-full"
+            data-testid="pack-l2-gap-slider"
+          />
+          <span className="text-[9px] text-zinc-600">
+            Distance between L2 subsection frames inside an L1.
+          </span>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[10px] text-zinc-500">
+            Block gap · {blockGap}px
+          </span>
+          <input
+            type="range"
+            min={0}
+            max={48}
+            step={2}
+            value={blockGap}
+            onChange={(e) => setBlockGap(Number(e.target.value))}
+            className="w-full"
+            data-testid="pack-block-gap-slider"
+          />
+          <span className="text-[9px] text-zinc-600">
+            Distance between cards (blocks) inside a leaf pack.
+          </span>
+        </label>
+      </div>
 
       <div>
         <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
@@ -366,8 +415,8 @@ export function AutoLayoutPanel() {
               data-testid="panel-gap-slider"
             />
             <span className="text-[9px] text-zinc-600">
-              Chrome inset around cards. Combined with Gap: outer spacing =
-              gap + 2× pad (no second panel-gap control).
+              Inset inside each frame only. Frame-to-frame air is set under Gap
+              (L1 / L2 panel gaps).
             </span>
           </label>
 
