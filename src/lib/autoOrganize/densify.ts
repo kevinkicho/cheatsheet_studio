@@ -1030,3 +1030,295 @@ export function resolveSameLevelPanelCollisions(
   }
   return next
 }
+
+/**
+ * Hard panel layout invariants (user: panels must not overlap; headers
+ * must not be covered by cards or other panels).
+ *
+ * 1. Push member cards below each panel's title band.
+ * 2. Keep nested children below parent title chip.
+ * 3. Separate same-level non-nested stroked panels (live geometry each step).
+ *    Thin pad-only collisions: rebuild with reduced pad first; else translate.
+ */
+export function enforcePanelLayoutInvariants(
+  items: CanvasItem[],
+  panels: LayoutPanel[],
+  opts?: {
+    grid?: number
+    panelPad?: number
+    contentLeft?: number
+    contentRight?: number
+    contentTop?: number
+    minGapPx?: number
+  },
+): { items: CanvasItem[]; panels: LayoutPanel[] } {
+  if (panels.length === 0) return { items, panels }
+  const grid = Math.max(4, opts?.grid ?? ORGANIZE_GRID)
+  const padBudget = Math.max(0, opts?.panelPad ?? 4)
+  const minGap = Math.max(0, opts?.minGapPx ?? 2)
+  const left = opts?.contentLeft
+  const right = opts?.contentRight
+  const top = opts?.contentTop
+
+  /** Match buildNestedHierarchyPanels: nested L2/L3 under multi have no exclusive band. */
+  const hasOuterParent = (p: LayoutPanel, all: LayoutPanel[]) => {
+    if ((p.hierarchyLevel ?? 1) <= 1) return false
+    const set = new Set(p.memberIds ?? [])
+    if (set.size === 0) return false
+    return all.some(
+      (o) =>
+        o.id !== p.id &&
+        o.showStroke !== false &&
+        (o.hierarchyLevel ?? 1) < (p.hierarchyLevel ?? 1) &&
+        o.memberIds?.length &&
+        p.memberIds!.every((id) => o.memberIds!.includes(id)),
+    )
+  }
+
+  const titleBandFor = (p: LayoutPanel, all: LayoutPanel[]): number => {
+    if (p.showTitle === false || p.showStroke === false) return 0
+    const level = p.hierarchyLevel ?? 1
+    if (level <= 1) return 26
+    // Nested under an outer stroked parent → no exclusive title strip
+    if (hasOuterParent(p, all)) return 0
+    return 18
+  }
+
+  const isNestedPair = (a: LayoutPanel, b: LayoutPanel) => {
+    if (!a.memberIds?.length || !b.memberIds?.length) return false
+    const aSet = new Set(a.memberIds)
+    const bSet = new Set(b.memberIds)
+    return (
+      b.memberIds.every((id) => aSet.has(id)) ||
+      a.memberIds.every((id) => bSet.has(id))
+    )
+  }
+
+  const padOf = new Map<string, number>(
+    panels.map((p) => [p.id, padBudget]),
+  )
+
+  const rebuild = (
+    p: LayoutPanel,
+    byId: Map<string, CanvasItem>,
+    allPanels: LayoutPanel[],
+    padUse?: number,
+  ): LayoutPanel => {
+    const members = (p.memberIds ?? [])
+      .map((id) => byId.get(id))
+      .filter((m): m is CanvasItem => Boolean(m) && !m.hidden)
+    if (members.length === 0) return p
+    const titleBand = titleBandFor(p, allPanels)
+    const useNgon = p.shape === 'polygon'
+    let effPad = Math.max(0, padUse ?? padOf.get(p.id) ?? padBudget)
+    const minX = Math.min(...members.map((m) => m.x))
+    const maxX = Math.max(...members.map((m) => m.x + m.width))
+    if (left != null) {
+      effPad = Math.min(effPad, Math.max(0, minX - left))
+    }
+    if (right != null) {
+      effPad = Math.min(effPad, Math.max(0, right - maxX))
+    }
+    const chrome = chromeFromMembers(members, {
+      pad: effPad,
+      titleBand,
+      shape: useNgon ? 'polygon' : 'rect',
+      grid,
+      solidMode: useNgon ? 'blocks' : 'solid-aabb',
+    })
+    let { x, y, width, height } = chrome
+    if (left != null && x < left) {
+      width -= left - x
+      x = left
+    }
+    if (right != null && x + width > right) {
+      width = Math.max(8, right - x)
+    }
+    if (top != null && y < top) {
+      height -= top - y
+      y = top
+    }
+    const runs = (chrome.runs ?? [{ x, y, width, height }]).map((r) => {
+      let rx = r.x
+      let ry = r.y
+      let rw = r.width
+      let rh = r.height
+      if (left != null && rx < left) {
+        rw -= left - rx
+        rx = left
+      }
+      if (right != null && rx + rw > right) rw = Math.max(8, right - rx)
+      if (top != null && ry < top) {
+        rh -= top - ry
+        ry = top
+      }
+      return {
+        x: Math.round(rx),
+        y: Math.round(ry),
+        width: Math.max(8, Math.round(rw)),
+        height: Math.max(8, Math.round(rh)),
+      }
+    })
+    return {
+      ...p,
+      x: Math.round(x),
+      y: Math.round(y),
+      width: Math.max(8, Math.round(width)),
+      height: Math.max(8, Math.round(height)),
+      runs,
+      outlinePath:
+        chrome.outlinePath && width >= chrome.width - 1
+          ? chrome.outlinePath
+          : rectPerimeterPathD(x, y, width, height),
+      shape: useNgon ? 'polygon' : p.shape,
+    }
+  }
+
+  const translateIds = (
+    nextItems: CanvasItem[],
+    idSet: Set<string>,
+    dx: number,
+    dy: number,
+  ): CanvasItem[] => {
+    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return nextItems
+    return nextItems.map((it) =>
+      idSet.has(it.id) && !it.hidden
+        ? {
+            ...it,
+            x: Math.round(it.x + dx),
+            y: Math.round(it.y + dy),
+          }
+        : it,
+    )
+  }
+
+  const rebuildAll = (nextItems: CanvasItem[], nextPanels: LayoutPanel[]) => {
+    const byId = new Map(nextItems.map((i) => [i.id, i]))
+    return nextPanels.map((p) =>
+      rebuild(p, byId, nextPanels, padOf.get(p.id)),
+    )
+  }
+
+  let nextItems = items.map((i) => ({ ...i }))
+  let nextPanels = rebuildAll(nextItems, panels.map((p) => ({ ...p })))
+
+  // ── A: cards must sit below their panel title chip ────────────────────
+  for (let pass = 0; pass < 6; pass++) {
+    let moved = false
+    nextPanels = rebuildAll(nextItems, nextPanels)
+    const byId = new Map(nextItems.map((i) => [i.id, i]))
+    for (const p of nextPanels) {
+      if (p.showStroke === false) continue
+      const band = titleBandFor(p, nextPanels)
+      if (band <= 0) continue
+      const titleBot = p.y + band
+      for (const id of p.memberIds ?? []) {
+        const c = byId.get(id)
+        if (!c || c.hidden) continue
+        if (c.y < titleBot - 0.5) {
+          const dy = Math.ceil((titleBot - c.y) / grid) * grid
+          if (dy > 0) {
+            nextItems = translateIds(nextItems, new Set([id]), 0, dy)
+            moved = true
+          }
+        }
+      }
+    }
+    if (!moved) break
+  }
+
+  // ── B: nested children below parent title; sibling non-overlap ────────
+  for (let pass = 0; pass < 16; pass++) {
+    let moved = false
+    nextPanels = rebuildAll(nextItems, nextPanels)
+
+    // B1: child panel top ≥ parent title bottom
+    for (const parent of nextPanels) {
+      if (parent.showStroke === false) continue
+      const pBand = titleBandFor(parent, nextPanels)
+      if (pBand <= 0) continue
+      const parentSet = new Set(parent.memberIds ?? [])
+      const titleBot = parent.y + pBand
+      for (const child of nextPanels) {
+        if (child.id === parent.id || child.showStroke === false) continue
+        if ((child.hierarchyLevel ?? 1) <= (parent.hierarchyLevel ?? 1)) continue
+        if (!child.memberIds?.every((id) => parentSet.has(id))) continue
+        if (child.y < titleBot - 0.5) {
+          const dy = Math.ceil((titleBot - child.y) / grid) * grid
+          if (dy > 0 && child.memberIds?.length) {
+            nextItems = translateIds(
+              nextItems,
+              new Set(child.memberIds),
+              0,
+              dy,
+            )
+            moved = true
+          }
+        }
+      }
+    }
+
+    nextPanels = rebuildAll(nextItems, nextPanels)
+
+    // B2: same-level non-nested — no AABB/run overlap
+    const levels = [
+      ...new Set(nextPanels.map((p) => p.hierarchyLevel ?? 1)),
+    ].sort((a, b) => a - b)
+
+    for (const level of levels) {
+      const list = nextPanels
+        .filter(
+          (p) =>
+            (p.hierarchyLevel ?? 1) === level && p.showStroke !== false,
+        )
+        .sort(
+          (a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id),
+        )
+      for (let i = 0; i < list.length; i++) {
+        for (let j = i + 1; j < list.length; j++) {
+          // Live fetch
+          const a =
+            nextPanels.find((p) => p.id === list[i]!.id) ?? list[i]!
+          const b =
+            nextPanels.find((p) => p.id === list[j]!.id) ?? list[j]!
+          if (isNestedPair(a, b)) continue
+          if (!(panelRunsOverlap(a, b, 0) || rectsOverlap(a, b, minGap))) {
+            continue
+          }
+
+          // Thin edge collision from pad: try smaller pad before moving cards
+          const yOverlap =
+            Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y)
+          const xOverlap =
+            Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x)
+          const padA = padOf.get(a.id) ?? padBudget
+          const padB = padOf.get(b.id) ?? padBudget
+          if (
+            (xOverlap > 0 && yOverlap > 0) &&
+            xOverlap <= padA + padB + minGap + 2 &&
+            (padA > 0 || padB > 0)
+          ) {
+            padOf.set(a.id, Math.max(0, padA - 2))
+            padOf.set(b.id, Math.max(0, padB - 2))
+            nextPanels = rebuildAll(nextItems, nextPanels)
+            moved = true
+            continue
+          }
+
+          // Otherwise push the later cluster (by y then x) fully below A
+          const needY = a.y + a.height + minGap - b.y
+          if (needY > 0.5 && b.memberIds?.length) {
+            const dy = Math.ceil(needY / grid) * grid
+            nextItems = translateIds(nextItems, new Set(b.memberIds), 0, dy)
+            nextPanels = rebuildAll(nextItems, nextPanels)
+            moved = true
+          }
+        }
+      }
+    }
+    if (!moved) break
+  }
+
+  nextPanels = rebuildAll(nextItems, nextPanels)
+  return { items: nextItems, panels: nextPanels }
+}

@@ -27,6 +27,7 @@ import {
   rectsOverlap,
 } from './geometry'
 import type { TopicSectionPlan } from './sizing'
+import { enforcePanelLayoutInvariants } from './densify'
 
 /**
  * Build panel chrome from actual member cards (tight pad).
@@ -218,14 +219,18 @@ export function buildNestedHierarchyPanels(args: {
      */
     const L1_CHIP = 22
     const L2_CHIP = 18
-    // Multi-level: L1 only reserves its own chip band. L2 chips sit on L2
-    // frames (not a second exclusive row under L1) — that double-band forced
-    // huge inter-topic voids (screenshot 214206).
+    // Multi-level: L1 owns an exclusive header strip. Nested L2/L3 do NOT
+    // add another exclusive strip above cards — that always put L2.y inside
+    // the L1 title band (L2.y = cards−pad−L2chip < L1.y+L1chip). L2 chips
+    // paint under the L1 chip via LayoutPanelsLayer. Flat (non-multi) L2
+    // still gets a normal title band.
     const titleBand = isOutermost
       ? multi
         ? L1_CHIP + 4 // ~26
         : Math.max(16, titleBandPx)
-      : L2_CHIP
+      : multi
+        ? 0
+        : L2_CHIP
 
     const groups = new Map<string, CanvasItem[]>()
     for (const c of cards) {
@@ -471,13 +476,23 @@ export function nestContainPanels(
     const mem = (p.memberIds ?? [])
       .map((id) => byId.get(id))
       .filter((m): m is CanvasItem => Boolean(m) && !m.hidden)
-    // Match buildNestedHierarchyPanels title bands (L1 multi ~26, L2 ~18)
+    // Match buildNestedHierarchyPanels: nested L2 under multi has no exclusive band
     const titleExtra =
       p.showTitle === false
         ? 0
         : (p.hierarchyLevel ?? 1) <= 1
           ? 26
-          : 18
+          : (() => {
+              const hasOuter = next.some(
+                (o) =>
+                  o.id !== p.id &&
+                  o.showStroke !== false &&
+                  (o.hierarchyLevel ?? 1) < (p.hierarchyLevel ?? 1) &&
+                  o.memberIds?.length &&
+                  p.memberIds?.every((id) => o.memberIds!.includes(id)),
+              )
+              return hasOuter ? 0 : 18
+            })()
 
     const clampBox = (
       x0: number,
@@ -1404,37 +1419,141 @@ export function relayoutPanelContents(
   )
   const contentH = Math.max(48, panel.height - pad * 2 - titleBand)
 
-  // Dense: try natural pack widths, pick densest that fits contentW
   type Place = { id: string; x: number; y: number; w: number; h: number }
   let places: Place[] = []
 
-  if (dense) {
-    // Shelf pack at current sizes; if overflows height, uniform scale down
-    const packShelf = (scale: number) => {
-      const out: Place[] = []
+  // Nested L2/L3 under this panel — pack by group so children stay clustered
+  // (flat shelf mixed L2s and left L2 frames stranded / broken).
+  const nestedChildren = (opts?.allPanels ?? [])
+    .filter(
+      (p) =>
+        p.id !== panel.id &&
+        p.memberIds?.length &&
+        p.memberIds.every((id) => ids.has(id)) &&
+        (p.hierarchyLevel ?? 1) > (panel.hierarchyLevel ?? 1),
+    )
+    .sort(
+      (a, b) => (b.hierarchyLevel ?? 1) - (a.hierarchyLevel ?? 1),
+    )
+
+  // Deepest nested panels only (leaves) — avoid packing both L2 and L3 for same cards
+  const leafNested = nestedChildren.filter((p) => {
+    const deeper = nestedChildren.some(
+      (o) =>
+        o.id !== p.id &&
+        (o.hierarchyLevel ?? 1) > (p.hierarchyLevel ?? 1) &&
+        o.memberIds?.every((id) => p.memberIds?.includes(id)),
+    )
+    return !deeper
+  })
+
+  const packShelfInBox = (
+    group: CanvasItem[],
+    ox: number,
+    oy: number,
+    boxW: number,
+    scale: number,
+    keepSize: boolean,
+  ): { out: Place[]; width: number; height: number } => {
+    const out: Place[] = []
+    let x = ox
+    let y = oy
+    let rowH = 0
+    let maxX = ox
+    for (const m of group) {
+      const w = keepSize
+        ? m.width
+        : Math.max(24, Math.round(m.width * scale))
+      const h = keepSize
+        ? m.height
+        : Math.max(20, Math.round(m.height * scale))
+      if (x > ox && x + w > ox + boxW) {
+        x = ox
+        y += rowH + gap
+        rowH = 0
+      }
+      const ww = Math.min(w, boxW)
+      out.push({ id: m.id, x: Math.round(x), y: Math.round(y), w: ww, h })
+      x += ww + gap
+      rowH = Math.max(rowH, h)
+      maxX = Math.max(maxX, Math.round(x - gap))
+    }
+    const bottom = out.reduce((b, p) => Math.max(b, p.y + p.h), oy)
+    return {
+      out,
+      width: Math.max(8, maxX - ox),
+      height: Math.max(8, bottom - oy),
+    }
+  }
+
+  if (dense && leafNested.length >= 1) {
+    // 1) Dense-pack cards inside each leaf L2/L3 group
+    // 2) Stack those groups inside the parent content box (keep clusters intact)
+    type LeafPack = { places: Place[]; w: number; h: number }
+    let scale = 1
+    const packAllLeaves = (s: number): { out: Place[]; height: number } => {
+      const leaves: LeafPack[] = []
+      const claimed = new Set<string>()
+      for (const child of leafNested) {
+        const group = members.filter((m) => child.memberIds?.includes(m.id))
+        if (group.length === 0) continue
+        for (const m of group) claimed.add(m.id)
+        const local = packShelfInBox(group, 0, 0, contentW, s, false)
+        leaves.push({ places: local.out, w: local.width, h: local.height })
+      }
+      const rest = members.filter((m) => !claimed.has(m.id))
+      if (rest.length > 0) {
+        const local = packShelfInBox(rest, 0, 0, contentW, s, false)
+        leaves.push({ places: local.out, w: local.width, h: local.height })
+      }
+      // Place leaf blocks: free-flow left→right, wrap (tetris of L2 slabs)
       let x = contentX
       let y = contentY
       let rowH = 0
-      for (const m of members) {
-        const w = Math.max(24, Math.round(m.width * scale))
-        const h = Math.max(20, Math.round(m.height * scale))
-        if (x > contentX && x + w > contentX + contentW) {
+      const abs: Place[] = []
+      for (const leaf of leaves) {
+        if (x > contentX && x + leaf.w > contentX + contentW + 0.5) {
           x = contentX
           y += rowH + gap
           rowH = 0
         }
-        // Clamp single card wider than box
-        const ww = Math.min(w, contentW)
-        out.push({ id: m.id, x: Math.round(x), y: Math.round(y), w: ww, h })
-        x += ww + gap
-        rowH = Math.max(rowH, h)
+        for (const p of leaf.places) {
+          abs.push({
+            id: p.id,
+            x: Math.round(x + p.x),
+            y: Math.round(y + p.y),
+            w: p.w,
+            h: p.h,
+          })
+        }
+        x += leaf.w + gap
+        rowH = Math.max(rowH, leaf.h)
       }
-      const bottom = out.reduce((b, p) => Math.max(b, p.y + p.h), contentY)
-      return { out, height: bottom - contentY }
+      const height =
+        abs.reduce((b, p) => Math.max(b, p.y + p.h), contentY) - contentY
+      return { out: abs, height }
+    }
+    let best = packAllLeaves(1)
+    while (best.height > contentH + 2 && scale > 0.55) {
+      scale *= 0.9
+      best = packAllLeaves(scale)
+    }
+    places = best.out
+  } else if (dense) {
+    // Flat dense shelf (no nested children)
+    const packShelf = (scale: number) => {
+      const packed = packShelfInBox(
+        members,
+        contentX,
+        contentY,
+        contentW,
+        scale,
+        false,
+      )
+      return { out: packed.out, height: packed.height }
     }
     let scale = 1
     let best = packShelf(1)
-    // Shrink until fits panel height (or scale floor)
     while (best.height > contentH + 2 && scale > 0.55) {
       scale *= 0.9
       best = packShelf(scale)
@@ -1442,27 +1561,14 @@ export function relayoutPanelContents(
     places = best.out
   } else {
     // Simple shelf (keep sizes) — contentSort path
-    let x = contentX
-    let y = contentY
-    let rowH = 0
-    for (const m of members) {
-      const w = m.width
-      const h = m.height
-      if (x > contentX && x + w > contentX + contentW) {
-        x = contentX
-        y += rowH + gap
-        rowH = 0
-      }
-      places.push({
-        id: m.id,
-        x: Math.round(x),
-        y: Math.round(y),
-        w,
-        h,
-      })
-      x += w + gap
-      rowH = Math.max(rowH, h)
-    }
+    places = packShelfInBox(
+      members,
+      contentX,
+      contentY,
+      contentW,
+      1,
+      true,
+    ).out
   }
 
   const byPlace = new Map(places.map((p) => [p.id, p]))
@@ -1564,10 +1670,17 @@ export function relayoutPanelContents(
     }
   }
 
-  const panels = allPanels.map((p) => rebuilt.get(p.id) ?? p)
+  let panelsOut = allPanels.map((p) => rebuilt.get(p.id) ?? p)
+  // Enforce no same-level overlap + clear title bands after in-panel reflow
+  const fixed = enforcePanelLayoutInvariants(nextItems, panelsOut, {
+    grid,
+    panelPad: pad,
+    minGapPx: Math.max(2, gap),
+  })
+  panelsOut = fixed.panels
   return {
-    items: nextItems,
-    panel: rebuilt.get(panel.id) ?? nextPanel,
-    panels,
+    items: fixed.items,
+    panel: panelsOut.find((p) => p.id === panel.id) ?? nextPanel,
+    panels: panelsOut,
   }
 }

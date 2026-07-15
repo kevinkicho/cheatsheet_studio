@@ -46,6 +46,7 @@ import {
   separateFolderClusters,
   resolveCardOverlaps,
   resolveSameLevelPanelCollisions,
+  enforcePanelLayoutInvariants,
 } from './densify'
 import {
   resolveMultipageStraddles,
@@ -345,12 +346,20 @@ export function packCheatsheetLayout(
     })
 
     const natural = naturalTopicPack(bodyRects, pageCols)
-    const placeHeadingCh = useLabels && meta.heading ? meta.headingCh : 0
+    // Labels+panels (both) + nested hierarchy: panel title chips are the
+    // labels — placing full heading banners *and* panelTitleCh + outerTitle
+    // triple-stacked and left huge voids / overlapping chrome.
+    // both + multiLevel → panels-only placement (hide banners); flat both keeps banners.
+    const bothNested = useLabels && usePanels && multiLevelHierarchy
+    const placeHeadingCh =
+      useLabels && meta.heading && !bothNested ? meta.headingCh : 0
     // Title chip band inside the region (1 cell max — avoid bloating every leaf).
     const panelTitleCh =
       usePanels && (meta.heading || meta.body.length)
         ? multiLevelHierarchy
-          ? 1
+          ? bothNested
+            ? 0
+            : 1
           : PANEL_TITLE_BAND_PX > 0
             ? 1
             : 0
@@ -521,16 +530,19 @@ export function packCheatsheetLayout(
     const origin = regionPos.get(plan.index) ?? { c: 0, r: 0 }
     let localR = 0
 
-    // Panels-only: hide section banners (panel title chip is enough).
-    // Labels / both: place full-width topic banners so modes look different.
-    if (usePanels && !useLabels && plan.heading) {
-      placed.push({
-        ...plan.heading,
-        hidden: true,
-        autoFit: false,
-      })
+    // Panels-only, or both+nested: hide section banners (panel chips = labels).
+    // Labels-only or both+flat: place full-width topic banners.
+    const bothNestedPlace = useLabels && usePanels && multiLevelHierarchy
+    if ((usePanels && !useLabels) || bothNestedPlace) {
+      if (plan.heading) {
+        placed.push({
+          ...plan.heading,
+          hidden: true,
+          autoFit: false,
+        })
+      }
     } else if (useLabels && plan.heading && plan.headingCh > 0) {
-      // Topic labels (and labels+panels): banner row above the section's cards
+      // Topic labels (and flat labels+panels): banner row above section cards
       const hCh = Math.max(1, plan.headingCh)
       const isProc = isProcessItem(plan.heading)
       const isFig =
@@ -859,10 +871,11 @@ export function packCheatsheetLayout(
     (options.folders ?? []).map((f) => [f.id, f.name ?? f.id]),
   )
 
+  const bothNestedMerge = useLabels && usePanels && multiLevelHierarchy
   const mergedBase = items.map((old) => {
-    // None / panels-only: hide ALL heading banners so chrome ≠ topic labels.
-    // Labels / both: keep banners (placed above as full-width rows).
-    if (!useLabels && isHeadingCard(old)) {
+    // None / panels-only / both+nested: hide heading banners (panel chips).
+    // Labels / both+flat: keep banners (placed above as full-width rows).
+    if ((!useLabels || bothNestedMerge) && isHeadingCard(old)) {
       return { ...old, hidden: true, autoFit: false }
     }
     if (old.hidden && !byId.has(old.id)) return old
@@ -982,6 +995,25 @@ export function packCheatsheetLayout(
     // Clip L2/L3 n-gon runs into L1 so stepped chrome cannot paint outside
     // the parent frame (screenshot 235248).
     layoutPanels = clipNestedPanelRunsToParents(layoutPanels)
+    // Hard invariants: same-level panels never overlap; title bands never
+    // covered by cards or nested panel headers.
+    {
+      const fixed = enforcePanelLayoutInvariants(merged, layoutPanels, {
+        grid,
+        panelPad,
+        contentLeft: box.left,
+        contentRight: box.left + box.width,
+        contentTop: box.top,
+        minGapPx: Math.max(2, gapPx),
+      })
+      // Replace card positions in merged (panel members only move)
+      const movedById = new Map(fixed.items.map((i) => [i.id, i]))
+      for (let i = 0; i < merged.length; i++) {
+        const n = movedById.get(merged[i]!.id)
+        if (n) merged[i] = n
+      }
+      layoutPanels = fixed.panels
+    }
     // Final hard clamp LAST — rebuild outlines from clamped runs so n-gon
     // path vertices never sit past the content box (outline x=772 > 768).
     layoutPanels = clampPanelsToContentBox(layoutPanels, {
