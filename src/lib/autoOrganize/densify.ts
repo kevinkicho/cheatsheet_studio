@@ -1115,6 +1115,10 @@ export function resolveSameLevelPanelCollisions(
  * - same-level stroked panels do not overlap
  *
  * Batches moves and rebuilds once per pass (not per collision).
+ *
+ * When `scopePanelIds` is set (in-panel auto-layout), title clearance and
+ * sibling separation only apply inside that cluster so packing one panel does
+ * not cascade-push unrelated panels down the sheet.
  */
 export function enforcePanelLayoutInvariants(
   items: CanvasItem[],
@@ -1126,6 +1130,14 @@ export function enforcePanelLayoutInvariants(
     contentRight?: number
     contentTop?: number
     minGapPx?: number
+    /**
+     * Limit title clearance + internal sibling separation to these panels
+     * (edited panel + nested children). External same-level panels are only
+     * nudged if they overlap the `rootPanelId` after growth.
+     */
+    scopePanelIds?: Set<string>
+    /** Root of an in-panel edit — used for one-shot external sibling push. */
+    rootPanelId?: string
   },
 ): { items: CanvasItem[]; panels: LayoutPanel[] } {
   if (panels.length === 0) return { items, panels }
@@ -1135,6 +1147,9 @@ export function enforcePanelLayoutInvariants(
   const left = opts?.contentLeft
   const right = opts?.contentRight
   const top = opts?.contentTop
+  const scope = opts?.scopePanelIds
+  const rootId = opts?.rootPanelId
+  const inScope = (id: string) => !scope || scope.has(id)
 
   /**
    * Bottom of the *visible* title chip — matches LayoutPanelsLayer.
@@ -1274,6 +1289,7 @@ export function enforcePanelLayoutInvariants(
     const dyById = new Map<string, number>()
     for (const p of nextPanels) {
       if (p.showStroke === false) continue
+      if (!inScope(p.id)) continue
       const titleBot = visualTitleBottom(p, nextPanels)
       for (const id of p.memberIds ?? []) {
         const c = byId.get(id)
@@ -1293,8 +1309,11 @@ export function enforcePanelLayoutInvariants(
     })
   }
 
-  // ── B: sibling non-overlap (≤4 passes, one rebuild at end of each) ────
-  for (let pass = 0; pass < 4; pass++) {
+  // ── B: sibling non-overlap ────────────────────────────────────────────
+  // Scoped mode: only separate pairs both in the edited cluster (≤2 passes).
+  // Unscoped: full sheet (≤4 passes).
+  const maxSibPasses = scope ? 2 : 4
+  for (let pass = 0; pass < maxSibPasses; pass++) {
     nextPanels = rebuildAll(nextItems, nextPanels)
     const byIdPanel = new Map(nextPanels.map((p) => [p.id, p]))
     let any = false
@@ -1318,6 +1337,8 @@ export function enforcePanelLayoutInvariants(
           const a = byIdPanel.get(list[i]!.id) ?? list[i]!
           const b = byIdPanel.get(list[j]!.id) ?? list[j]!
           if (isNestedPair(a, b)) continue
+          // Scoped: only resolve collisions inside the edited cluster
+          if (scope && !(inScope(a.id) && inScope(b.id))) continue
           if (!(panelRunsOverlap(a, b, 0) || rectsOverlap(a, b, minGap))) {
             continue
           }
@@ -1327,8 +1348,7 @@ export function enforcePanelLayoutInvariants(
             Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x)
           const padA = padOf.get(a.id) ?? padBudget
           const padB = padOf.get(b.id) ?? padBudget
-          // Prefer vertical separation over pad-shrink (pad-shrink left cards
-          // flush on the stroke — contain-cards flushBorder).
+          // Prefer vertical separation over pad-shrink
           const needY = a.y + a.height + minGap - b.y
           if (needY > 0.5 && b.memberIds?.length && yOverlap > 0) {
             const dy = Math.ceil(needY / grid) * grid
@@ -1367,6 +1387,44 @@ export function enforcePanelLayoutInvariants(
       })
     }
     if (!any) break
+  }
+
+  // ── C: one-shot external push (in-panel only) ─────────────────────────
+  // If the edited root grew into a panel *outside* the scope, nudge that
+  // panel's members down once — no multi-pass cascade on the whole sheet.
+  if (scope && rootId) {
+    nextPanels = rebuildAll(nextItems, nextPanels)
+    const root = nextPanels.find((p) => p.id === rootId)
+    if (root && root.showStroke !== false) {
+      const idDy = new Map<string, number>()
+      const rootLevel = root.hierarchyLevel ?? 1
+      for (const other of nextPanels) {
+        if (other.id === rootId) continue
+        if (other.showStroke === false) continue
+        if ((other.hierarchyLevel ?? 1) !== rootLevel) continue
+        if (inScope(other.id)) continue
+        if (isNestedPair(root, other)) continue
+        if (!(panelRunsOverlap(root, other, 0) || rectsOverlap(root, other, minGap))) {
+          continue
+        }
+        // Only push panels that start at/below the root (below-neighbors)
+        if (other.y + other.height / 2 < root.y + root.height / 2) continue
+        const needY = root.y + root.height + minGap - other.y
+        if (needY <= 0.5 || !other.memberIds?.length) continue
+        const dy = Math.ceil(needY / grid) * grid
+        for (const id of other.memberIds) {
+          idDy.set(id, Math.max(idDy.get(id) ?? 0, dy))
+        }
+      }
+      if (idDy.size > 0) {
+        nextItems = nextItems.map((it) => {
+          const dy = idDy.get(it.id)
+          return dy ? { ...it, y: Math.round(it.y + dy) } : it
+        })
+        // Rebuild only external panels that moved + root tree
+        nextPanels = rebuildAll(nextItems, nextPanels)
+      }
+    }
   }
 
   nextPanels = rebuildAll(nextItems, nextPanels)

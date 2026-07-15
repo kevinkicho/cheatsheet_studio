@@ -578,7 +578,7 @@ export function relayoutPanelContents(
 
   const byPlace = new Map(places.map((p) => [p.id, p]))
   // Dense: move only — never rewrite card width/height (avoids shrink spiral)
-  const nextItems = items.map((it) => {
+  let nextItems = items.map((it) => {
     const p = byPlace.get(it.id)
     if (!p) return it
     return {
@@ -684,12 +684,114 @@ export function relayoutPanelContents(
   }
 
   let panelsOut = allPanels.map((p) => rebuilt.get(p.id) ?? p)
+
+  // Pin the edited panel's top edge so packing doesn't walk the cluster down
+  // the page (title-clearance + rebuild used to nudge y every click).
+  const pinY = panel.y
+  const pinX = panel.x
+  const rootAfter = rebuilt.get(panel.id) ?? nextPanel
+  const dyPin = Math.round(rootAfter.y - pinY)
+  const dxPin = Math.round(rootAfter.x - pinX)
+  if (dyPin !== 0 || dxPin !== 0) {
+    const moveIds = new Set(panel.memberIds ?? [])
+    nextItems = nextItems.map((it) => {
+      if (!moveIds.has(it.id)) return it
+      return {
+        ...it,
+        x: Math.round(it.x - dxPin),
+        y: Math.round(it.y - dyPin),
+      }
+    })
+    const byIdPin = new Map(nextItems.map((i) => [i.id, i]))
+    for (const id of [panel.id, ...nestedIds]) {
+      const prev = rebuilt.get(id)
+      if (!prev) continue
+      rebuilt.set(
+        id,
+        rebuildPanelChromeFromMembers(prev, byIdPin, {
+          ...chromeOpts,
+          allPanels: allPanels.map((p) => rebuilt.get(p.id) ?? p),
+        }),
+      )
+    }
+    // Re-expand parent after pin
+    if (nestedSorted.length > 0) {
+      const childBoxes = nestedSorted
+        .map((c) => rebuilt.get(c.id)!)
+        .filter((c) => c && c.showStroke !== false)
+      const parent = rebuildPanelChromeFromMembers(
+        panelWithSort,
+        byIdPin,
+        chromeOpts,
+      )
+      if (childBoxes.length > 0) {
+        const inset = Math.max(2, pad)
+        const minX = Math.min(parent.x, ...childBoxes.map((c) => c.x - inset))
+        const minY = Math.min(parent.y, ...childBoxes.map((c) => c.y - inset))
+        const maxX = Math.max(
+          parent.x + parent.width,
+          ...childBoxes.map((c) => c.x + c.width + inset),
+        )
+        const maxY = Math.max(
+          parent.y + parent.height,
+          ...childBoxes.map((c) => c.y + c.height + inset),
+        )
+        const x = Math.round(minX)
+        const y = Math.round(minY)
+        const width = Math.max(8, Math.round(maxX - x))
+        const height = Math.max(8, Math.round(maxY - y))
+        rebuilt.set(panel.id, {
+          ...parent,
+          x,
+          y,
+          width,
+          height,
+          runs: [{ x, y, width, height }],
+          outlinePath: rectPerimeterPathD(x, y, width, height),
+          shape: parent.shape === 'polygon' ? 'polygon' : 'rect',
+        })
+      } else {
+        rebuilt.set(panel.id, parent)
+      }
+    }
+    panelsOut = allPanels.map((p) => rebuilt.get(p.id) ?? p)
+  }
+
+  // Enforce only inside the edited cluster — full-sheet sibling separation
+  // was pushing neighboring panels downward after every in-panel pack.
+  const scopePanelIds = new Set<string>([panel.id, ...nestedIds])
   const fixed = enforcePanelLayoutInvariants(nextItems, panelsOut, {
     grid,
     panelPad: pad,
-    minGapPx: Math.max(2, gap),
+    minGapPx: 2,
+    scopePanelIds,
+    rootPanelId: panel.id,
   })
   panelsOut = fixed.panels
+
+  // Re-pin top after enforce (title clearance may have nudged y again)
+  const rootFinal = panelsOut.find((p) => p.id === panel.id)
+  if (rootFinal && Math.abs(rootFinal.y - pinY) > 0.5) {
+    const dy2 = Math.round(rootFinal.y - pinY)
+    const memberSet = new Set(panel.memberIds ?? [])
+    const pinnedItems = fixed.items.map((it) =>
+      memberSet.has(it.id) ? { ...it, y: Math.round(it.y - dy2) } : it,
+    )
+    const byId2 = new Map(pinnedItems.map((i) => [i.id, i]))
+    const pinnedPanels = panelsOut.map((p) => {
+      if (!scopePanelIds.has(p.id)) return p
+      return rebuildPanelChromeFromMembers(p, byId2, {
+        ...chromeOpts,
+        allPanels: panelsOut,
+      })
+    })
+    return {
+      items: pinnedItems,
+      panel: pinnedPanels.find((p) => p.id === panel.id) ?? rootFinal,
+      panels: pinnedPanels,
+    }
+  }
+
   return {
     items: fixed.items,
     panel: panelsOut.find((p) => p.id === panel.id) ?? nextPanel,
