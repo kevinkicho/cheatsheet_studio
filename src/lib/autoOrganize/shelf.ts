@@ -1,38 +1,136 @@
 import type { PanelGroupLevel } from './constants'
 import { folderAtGroupLevel, type FolderRef } from './folders'
 
-export function placeTopicRegionsDense(
+/** Insertion-order strategies for greedy skyline packing (order-sensitive). */
+export type PackOrderStrategy =
+  | 'height-desc'
+  | 'area-desc'
+  | 'width-desc'
+  | 'height-asc'
+  | 'area-asc'
+  | 'input'
+  | 'input-rev'
+  | 'perimeter-desc'
+
+const DENSITY_ORDERS: PackOrderStrategy[] = [
+  'height-desc',
+  'area-desc',
+  'width-desc',
+  'perimeter-desc',
+  'height-asc',
+  'input',
+  'input-rev',
+  'area-asc',
+]
+
+function orderIndices(
+  regions: Array<{ index: number; cw: number; ch: number }>,
+  strategy: PackOrderStrategy,
+): number[] {
+  const entries = regions.map((r, i) => ({
+    i,
+    index: r.index,
+    cw: r.cw,
+    ch: r.ch,
+    area: r.cw * r.ch,
+    peri: 2 * (r.cw + r.ch),
+  }))
+  switch (strategy) {
+    case 'height-desc':
+      entries.sort(
+        (a, b) => b.ch - a.ch || b.area - a.area || a.i - b.i,
+      )
+      break
+    case 'height-asc':
+      entries.sort(
+        (a, b) => a.ch - b.ch || b.area - a.area || a.i - b.i,
+      )
+      break
+    case 'area-desc':
+      entries.sort(
+        (a, b) => b.area - a.area || b.ch - a.ch || a.i - b.i,
+      )
+      break
+    case 'area-asc':
+      entries.sort(
+        (a, b) => a.area - b.area || b.ch - a.ch || a.i - b.i,
+      )
+      break
+    case 'width-desc':
+      entries.sort(
+        (a, b) => b.cw - a.cw || b.ch - a.ch || a.i - b.i,
+      )
+      break
+    case 'perimeter-desc':
+      entries.sort(
+        (a, b) => b.peri - a.peri || b.area - a.area || a.i - b.i,
+      )
+      break
+    case 'input-rev':
+      entries.reverse()
+      break
+    case 'input':
+    default:
+      // keep input order (stable)
+      break
+  }
+  return entries.map((e) => e.i)
+}
+
+/**
+ * Score a placement: lower is better (tetris / density).
+ * Primary: height, then bounding area, then width (prefer short stacks that
+ * fill width rather than tall left-aligned slabs).
+ */
+export function packBBoxScore(usedCw: number, usedCh: number): number {
+  return usedCh * 1e6 + usedCw * usedCh * 8 + usedCw * 0.25
+}
+
+function usedExtent(
+  pos: Map<number, { c: number; r: number }>,
   regions: Array<{ index: number; cw: number; ch: number }>,
   pageCols: number,
-  gapCells = 0,
-  opts?: { sortByHeight?: boolean; readingFlow?: boolean },
+): { usedCw: number; usedCh: number } {
+  let usedCw = 1
+  let usedCh = 1
+  for (const reg of regions) {
+    const p = pos.get(reg.index) ?? { c: 0, r: 0 }
+    const cw = Math.min(pageCols, Math.max(1, reg.cw))
+    usedCw = Math.max(usedCw, p.c + cw)
+    usedCh = Math.max(usedCh, p.r + reg.ch)
+  }
+  return {
+    usedCw: Math.min(pageCols, usedCw),
+    usedCh: Math.max(1, usedCh),
+  }
+}
+
+/**
+ * Greedy skyline free-flow pack with a fixed insertion order.
+ * Order is critical for density — prefer {@link placeTopicRegionsDense} which
+ * multi-orders and keeps the best bbox when densifying.
+ */
+function placeTopicRegionsOnce(
+  regions: Array<{ index: number; cw: number; ch: number }>,
+  pageCols: number,
+  gapCells: number,
+  orderIdx: number[],
+  opts?: { readingFlow?: boolean },
 ): Map<number, { c: number; r: number }> {
   const pos = new Map<number, { c: number; r: number }>()
   if (pageCols < 1 || regions.length === 0) return pos
 
   const gap = Math.max(0, gapCells)
   const readingFlow = opts?.readingFlow === true
-  // Reading-flow places in given order; height-first densifies when flow is off
-  const sortByHeight = !readingFlow && opts?.sortByHeight !== false
   type Placed = {
     index: number
     c: number
     r: number
     cw: number
     ch: number
-    /** Stable place-sequence index (0 = first placed for reading flow). */
     seq: number
   }
   const placed: Placed[] = []
-
-  const order = regions.map((reg, i) => ({ r: reg, i }))
-  if (sortByHeight) {
-    // Taller / larger first fills the skyline better; document order as tie-break
-    order.sort(
-      (a, b) =>
-        b.r.ch - a.r.ch || b.r.cw * b.r.ch - a.r.cw * a.r.ch || a.i - b.i,
-    )
-  }
 
   const collides = (
     c: number,
@@ -55,7 +153,6 @@ export function placeTopicRegionsDense(
     return false
   }
 
-  /** Count how many sides touch an already-placed block (prefer nestling in holes). */
   const contactScore = (
     c: number,
     r: number,
@@ -67,33 +164,30 @@ export function placeTopicRegionsDense(
     let contact = 0
     for (const p of placed) {
       if (ignoreIndex != null && p.index === ignoreIndex) continue
-      // Horizontal abut (share vertical edge)
       const yOverlap =
         Math.min(r + ch, p.r + p.ch) - Math.max(r, p.r)
       if (yOverlap > 0) {
         if (c + cw + gap === p.c || p.c + p.cw + gap === c) contact += yOverlap
       }
-      // Vertical abut (share horizontal edge)
       const xOverlap =
         Math.min(c + cw, p.c + p.cw) - Math.max(c, p.c)
       if (xOverlap > 0) {
         if (r + ch + gap === p.r || p.r + p.ch + gap === r) contact += xOverlap
       }
     }
-    // Also reward sitting on the left wall / top
     if (c === 0) contact += ch * 0.25
     if (r === 0) contact += cw * 0.25
     return contact
   }
 
-  const n = order.length
+  const n = orderIdx.length
   let seq = 0
-  for (const { r: reg } of order) {
+  for (const ri of orderIdx) {
+    const reg = regions[ri]!
     const cw = Math.min(pageCols, Math.max(1, reg.cw))
     const ch = Math.max(1, reg.ch)
     const currentBottom = placed.reduce((m, p) => Math.max(m, p.r + p.ch), 0)
     const searchR = currentBottom + ch + gap + 2
-    // Soft diagonal target for reading flow (not a hard shelf — just a bias)
     const t = n <= 1 ? 0 : seq / (n - 1)
     const diagTarget = t * Math.max(currentBottom, ch)
 
@@ -103,11 +197,9 @@ export function placeTopicRegionsDense(
         if (collides(c, r, cw, ch)) continue
         const newBottom = Math.max(currentBottom, r + ch)
         const contact = contactScore(c, r, cw, ch)
-        // Primary: compact bottom (hole-fill). Contact fills right-side voids.
         let score =
           newBottom * 1e9 + r * 1e5 + c * 10 - contact * 50
         if (readingFlow) {
-          // Weak ascending bias — densification still wins (contact + bottom).
           const diag = r + c * 0.35
           score =
             newBottom * 1e9 +
@@ -136,8 +228,7 @@ export function placeTopicRegionsDense(
     })
   }
 
-  // Gravity compaction. Full up+left for densest packs; reading-flow only
-  // slides left (and slight up) so A→Z diagonal bias isn’t fully erased.
+  // Gravity compaction: pull up+left (or mild up when reading-flow)
   for (let sweep = 0; sweep < 12; sweep++) {
     let moved = false
     const sorted = [...placed].sort((a, b) => a.r - b.r || a.c - b.c)
@@ -145,13 +236,12 @@ export function placeTopicRegionsDense(
       let bestC = p.c
       let bestR = p.r
       let bestContact = contactScore(p.c, p.r, p.cw, p.ch, p.index)
-      const rMax = readingFlow ? p.r : p.r
+      const rMax = p.r
       const rMin = readingFlow ? Math.max(0, p.r - 2) : 0
       for (let r = rMin; r <= rMax; r++) {
         for (let c = 0; c <= pageCols - p.cw; c++) {
           if (collides(c, r, p.cw, p.ch, p.index)) continue
           const contact = contactScore(c, r, p.cw, p.ch, p.index)
-          // Prefer higher, then more contact (fill right holes), then left
           if (
             r < bestR ||
             (r === bestR && contact > bestContact) ||
@@ -179,9 +269,93 @@ export function placeTopicRegionsDense(
 }
 
 /**
- * Pack leaf regions into the tightest free-flow box among candidate widths.
- * Using full pageCols for local pack made every outer parent full-width →
- * vertical stacking and huge empty space lower on the sheet.
+ * Free-flow pack of rectangular regions on a grid.
+ *
+ * **Density mode (default):** tries multiple insertion orders (height / area /
+ * width / input / …) and keeps the placement with the best bounding-box score.
+ * Greedy skyline packing is order-sensitive — a single height-first pass often
+ * leaves large voids that another order packs tightly.
+ *
+ * **Reading-flow mode:** places in input order only (A→Z diagonal bias) so
+ * name sorting stays meaningful for outer topic blocks.
+ */
+export function placeTopicRegionsDense(
+  regions: Array<{ index: number; cw: number; ch: number }>,
+  pageCols: number,
+  gapCells = 0,
+  opts?: {
+    sortByHeight?: boolean
+    readingFlow?: boolean
+    /**
+     * Try multiple insertion orders and keep the densest bbox.
+     * Default true when not readingFlow; false preserves a single order
+     * (height-first if sortByHeight, else input).
+     */
+    multiOrder?: boolean
+    /** Limit which strategies to try (default: full density set). */
+    orders?: PackOrderStrategy[]
+  },
+): Map<number, { c: number; r: number }> {
+  const pos = new Map<number, { c: number; r: number }>()
+  if (pageCols < 1 || regions.length === 0) return pos
+
+  const readingFlow = opts?.readingFlow === true
+  const multiOrder =
+    opts?.multiOrder !== undefined
+      ? opts.multiOrder
+      : !readingFlow
+
+  // Reading-flow: single pass in input order (name sort applied by caller)
+  if (readingFlow || !multiOrder) {
+    let order: number[]
+    if (readingFlow) {
+      order = regions.map((_, i) => i)
+    } else if (opts?.sortByHeight !== false) {
+      order = orderIndices(regions, 'height-desc')
+    } else {
+      order = orderIndices(regions, 'input')
+    }
+    return placeTopicRegionsOnce(regions, pageCols, gapCells, order, {
+      readingFlow,
+    })
+  }
+
+  // Density: multi-order best-of
+  const strategies = opts?.orders?.length ? opts.orders : DENSITY_ORDERS
+  let bestPos: Map<number, { c: number; r: number }> | null = null
+  let bestScore = Infinity
+  let bestUsed = { usedCw: pageCols, usedCh: 1e9 }
+
+  for (const strategy of strategies) {
+    const order = orderIndices(regions, strategy)
+    const candidate = placeTopicRegionsOnce(
+      regions,
+      pageCols,
+      gapCells,
+      order,
+      { readingFlow: false },
+    )
+    const ext = usedExtent(candidate, regions, pageCols)
+    const score = packBBoxScore(ext.usedCw, ext.usedCh)
+    if (
+      score < bestScore - 1e-9 ||
+      (Math.abs(score - bestScore) < 1e-9 &&
+        (ext.usedCh < bestUsed.usedCh ||
+          (ext.usedCh === bestUsed.usedCh &&
+            ext.usedCw < bestUsed.usedCw)))
+    ) {
+      bestScore = score
+      bestPos = candidate
+      bestUsed = ext
+    }
+  }
+
+  return bestPos ?? pos
+}
+
+/**
+ * Pack leaf regions into the tightest free-flow box among candidate widths
+ * **and** insertion orders (via placeTopicRegionsDense multi-order).
  */
 export function packClusterTight(
   members: Array<{ index: number; cw: number; ch: number }>,
@@ -222,29 +396,26 @@ export function packClusterTight(
   } | null = null
 
   for (const cols of candidates) {
-    const pos = placeTopicRegionsDense(
-      members.map((m) => ({
-        index: m.index,
-        cw: Math.min(m.cw, cols),
-        ch: m.ch,
-      })),
-      cols,
-      gap,
-      { sortByHeight: true, readingFlow: false },
-    )
-    let usedCw = 1
-    let usedCh = 1
-    for (const m of members) {
-      const o = pos.get(m.index) ?? { c: 0, r: 0 }
-      const cw = Math.min(m.cw, cols)
-      usedCw = Math.max(usedCw, o.c + cw)
-      usedCh = Math.max(usedCh, o.r + m.ch)
-    }
-    usedCw = Math.min(cols, usedCw)
-    // Prefer shorter stacks (fill width / right-side holes) over tall slabs
-    const score = usedCh * 1e6 + usedCw * usedCh * 8 + usedCw * 0.25
+    const sized = members.map((m) => ({
+      index: m.index,
+      cw: Math.min(m.cw, cols),
+      ch: m.ch,
+    }))
+    // multiOrder default true → best insertion order for this width
+    const pos = placeTopicRegionsDense(sized, cols, gap, {
+      multiOrder: true,
+      sortByHeight: true,
+      readingFlow: false,
+    })
+    const ext = usedExtent(pos, sized, cols)
+    const score = packBBoxScore(ext.usedCw, ext.usedCh)
     if (!best || score < best.score) {
-      best = { pos, usedCw, usedCh, score }
+      best = {
+        pos,
+        usedCw: ext.usedCw,
+        usedCh: ext.usedCh,
+        score,
+      }
     }
   }
   return {
@@ -258,12 +429,9 @@ export function packClusterTight(
  * Hierarchical free-flow placement for nested panel levels.
  *
  * Strategy (density-first):
- * 1. Pack leaf groups **tightly** inside each L1 parent (prefer short/wide).
- * 2. Free-flow outer L1 boxes on the page with outer gap 0 (touch for merge).
- * 3. **Expand** each outer into residual columns on its row so right-side
- *    page space is used (re-pack leaves into the wider budget).
- *
- * Outer title band is reserved so L1 chips sit above L2 content.
+ * 1. Pack leaf groups **tightly** inside each L1 parent (best width × order).
+ * 2. Free-flow outer L1 boxes on the page.
+ * 3. Expand each outer into residual columns when re-pack stays dense.
  */
 export function placePlansHierarchical(
   plans: Array<{
@@ -298,13 +466,10 @@ export function placePlansHierarchical(
   const pos = new Map<number, { c: number; r: number }>()
   if (pageCols < 1 || plans.length === 0) return pos
 
-  // Leaf gap inside L1: when L2/L3 stroke, callers pass gap+2×pad+titleBand
-  // cells so sibling frames clear. Cap only the densest “chip-only” case.
   const gap = Math.max(0, Math.min(gapCells, 6))
   const outerGap = Math.max(0, opts?.outerGapCells ?? 0)
   const outerTitle = Math.max(0, opts?.outerTitleCells ?? 0)
   const nestInset = Math.max(0, opts?.nestInsetCells ?? 0)
-  // Cluster leaf plans by outer ancestor
   type Cluster = {
     key: string
     members: Array<{ index: number; cw: number; ch: number }>
@@ -374,7 +539,7 @@ export function placePlansHierarchical(
     })
   }
 
-  // Global free-flow of outer boxes (non-overlapping L1 / shallow frames)
+  // Outer L1 free-flow: density multi-order unless name reading-flow is on
   const outerPlace = placeTopicRegionsDense(
     outers.map((o, i) => ({ index: i, cw: o.cw, ch: o.ch })),
     pageCols,
@@ -382,6 +547,8 @@ export function placePlansHierarchical(
     {
       sortByHeight: opts?.sortByHeight,
       readingFlow: opts?.readingFlow,
+      // When name-sorted topics, keep reading flow; otherwise pick densest order
+      multiOrder: opts?.readingFlow ? false : true,
     },
   )
 
@@ -402,9 +569,6 @@ export function placePlansHierarchical(
       }
     }
     freeRight = Math.max(0, freeRight)
-    // Claim residual printable columns only when re-pack stays dense.
-    // Low fillRatio left cards on the left and empty “padding” on the right
-    // inside L1 frames (user screenshot: big right/bottom gutters in borders).
     if (freeRight >= 1) {
       const widerInner = Math.max(
         1,
@@ -418,7 +582,6 @@ export function placePlansHierarchical(
       )
       const newCh = Math.max(1, repacked.usedCh + outerTitle + nestInset * 2)
       const shorter = newCh < o.ch
-      // Require high fill so we don't invent empty right/bottom chrome
       const meaningfullyWider =
         newCw > o.cw && fillRatio >= 0.9 && newCh <= o.ch
       if (shorter || meaningfullyWider) {

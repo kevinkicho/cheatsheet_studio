@@ -210,8 +210,9 @@ export function densifyPlacedGroups(
         cw: Math.min(packCols, Math.max(1, Math.ceil(m.width / grid))),
         ch: Math.max(1, Math.ceil(m.height / grid)),
       }))
+      // Multi-order best tetris (not only height-first)
       const pos = placeTopicRegionsDense(regions, packCols, gap, {
-        sortByHeight: true,
+        multiOrder: true,
         readingFlow: false,
       })
       let usedCh = 0
@@ -235,7 +236,8 @@ export function densifyPlacedGroups(
         })
       }
       const area = usedCw * usedCh
-      if (usedCh > spanCh + 1) continue
+      // Prefer denser bbox; allow modest height growth if area drops a lot
+      if (usedCh > spanCh + 3 && area >= oldArea * 0.92) continue
       if (
         contentRight != null &&
         next.some((n) => n.x + n.w > contentRight + 0.5)
@@ -281,9 +283,6 @@ export function densifyPlacedGroups(
         }
       }
       if (selfOl) continue
-      // Allow a little extra height if the bounding area shrinks a lot
-      // (fills side voids that pure “same height” densify left empty — 015429).
-      if (usedCh > spanCh + 3 && area >= oldArea * 0.92) continue
       if (
         !best ||
         area < best.area ||

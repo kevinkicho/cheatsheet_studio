@@ -182,11 +182,12 @@ function packCardsDenseFreeFlow(
       id: m.id,
     }
   })
+  // Multi-order best tetris — single height-first often leaves large voids
   const pos = placeTopicRegionsDense(
     regions.map((r) => ({ index: r.index, cw: r.cw, ch: r.ch })),
     pageCols,
     Math.max(0, gapCells),
-    { sortByHeight: true, readingFlow: false },
+    { multiOrder: true, readingFlow: false },
   )
   const out: Array<{ id: string; x: number; y: number; w: number; h: number }> =
     []

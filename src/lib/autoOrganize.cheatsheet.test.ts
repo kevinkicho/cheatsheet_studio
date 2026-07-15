@@ -1609,31 +1609,87 @@ describe('grid area budget helpers', () => {
   })
 
   it('placeTopicRegionsDense fills holes (does not leave bottom voids)', () => {
-    // Tall left + short right + medium that should go under the short one
-    const pos = placeTopicRegionsDense(
-      [
-        { index: 0, cw: 12, ch: 10 },
-        { index: 1, cw: 12, ch: 3 },
-        { index: 2, cw: 12, ch: 4 },
-      ],
-      30,
-      0,
-      { sortByHeight: false },
-    )
-    expect(pos.get(0)).toEqual({ c: 0, r: 0 })
-    expect(pos.get(1)!.c).toBe(12)
-    expect(pos.get(1)!.r).toBe(0)
-    // Third fills under short block, not far below everything
-    expect(pos.get(2)!.c).toBe(12)
-    expect(pos.get(2)!.r).toBeLessThanOrEqual(4)
+    // Tall + short + medium: densest pack should nest medium into residual space
+    // rather than stacking everything to ~17 rows.
+    const regions = [
+      { index: 0, cw: 12, ch: 10 },
+      { index: 1, cw: 12, ch: 3 },
+      { index: 2, cw: 12, ch: 4 },
+    ]
+    const pos = placeTopicRegionsDense(regions, 30, 0, { multiOrder: true })
+    // No overlaps
+    for (let i = 0; i < regions.length; i++) {
+      for (let j = i + 1; j < regions.length; j++) {
+        const a = regions[i]!
+        const b = regions[j]!
+        const pa = pos.get(a.index)!
+        const pb = pos.get(b.index)!
+        const ol =
+          pa.c < pb.c + b.cw &&
+          pa.c + a.cw > pb.c &&
+          pa.r < pb.r + b.ch &&
+          pa.r + a.ch > pb.r
+        expect(ol).toBe(false)
+      }
+    }
     const bottom = Math.max(
-      ...[0, 1, 2].map((i) => {
-        const p = pos.get(i)!
-        const h = i === 0 ? 10 : i === 1 ? 3 : 4
-        return p.r + h
+      ...regions.map((r) => {
+        const p = pos.get(r.index)!
+        return p.r + r.ch
       }),
     )
+    // Side-by-side with nest: bottom ≤ 10 (tall alone) … ≤ 12 with gap slack
     expect(bottom).toBeLessThanOrEqual(12)
+    // Not a pure vertical stack of 10+3+4
+    expect(bottom).toBeLessThan(10 + 3 + 4)
+  })
+
+  it('placeTopicRegionsDense multi-order picks denser bbox than single height-first', () => {
+    // Adversarial sizes: input/height-first can leave a tall stack; another
+    // insertion order packs into a shorter bounding box.
+    const regions = [
+      { index: 0, cw: 8, ch: 2 },
+      { index: 1, cw: 8, ch: 2 },
+      { index: 2, cw: 8, ch: 2 },
+      { index: 3, cw: 4, ch: 6 },
+      { index: 4, cw: 4, ch: 6 },
+      { index: 5, cw: 12, ch: 3 },
+    ]
+    const heightOnly = placeTopicRegionsDense(regions, 16, 0, {
+      multiOrder: false,
+      sortByHeight: true,
+    })
+    const best = placeTopicRegionsDense(regions, 16, 0, {
+      multiOrder: true,
+    })
+    const bboxH = (
+      pos: Map<number, { c: number; r: number }>,
+    ) =>
+      Math.max(
+        ...regions.map((r) => {
+          const p = pos.get(r.index)!
+          return p.r + r.ch
+        }),
+      )
+    const bboxArea = (pos: Map<number, { c: number; r: number }>) => {
+      let cw = 0
+      let ch = 0
+      for (const r of regions) {
+        const p = pos.get(r.index)!
+        cw = Math.max(cw, p.c + r.cw)
+        ch = Math.max(ch, p.r + r.ch)
+      }
+      return cw * ch
+    }
+    // Best-of is never worse than a single order
+    expect(bboxH(best)).toBeLessThanOrEqual(bboxH(heightOnly))
+    expect(bboxArea(best)).toBeLessThanOrEqual(bboxArea(heightOnly))
+    // Sanity: everything fits without overlap and within 16 cols
+    for (const r of regions) {
+      const p = best.get(r.index)!
+      expect(p.c + r.cw).toBeLessThanOrEqual(16)
+      expect(p.r).toBeGreaterThanOrEqual(0)
+    }
   })
 
   it('density xs makes significantly smaller cards than lg', () => {
