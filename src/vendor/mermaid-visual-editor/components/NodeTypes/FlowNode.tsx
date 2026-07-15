@@ -326,7 +326,8 @@ function NodeLabel({
         onChange={(e) => setDraft(e.target.value)}
         onBlur={onCommit}
         onKeyDown={onKeyDown}
-        className="bg-transparent border-none outline-none text-center text-sm w-full"
+        className="w-full max-w-full bg-transparent border-none outline-none text-center text-[inherit] leading-tight"
+        style={{ fontSize: 'inherit', padding: 0, margin: 0 }}
         autoFocus
         aria-label="Node label"
       />
@@ -336,15 +337,18 @@ function NodeLabel({
     <span
       className={
         allowWrap
-          ? 'select-none text-center font-medium leading-snug break-words whitespace-pre-wrap px-1'
-          : 'select-none text-center font-medium leading-snug whitespace-nowrap px-1'
+          ? 'select-none text-center font-medium leading-tight break-words whitespace-pre-wrap'
+          : 'select-none text-center font-medium leading-tight whitespace-nowrap'
       }
       style={{
         color: color || 'var(--node-text, #f4f4f5)',
         fontFamily: 'var(--node-font, trebuchet ms, verdana, arial, sans-serif)',
         // Inherit mindmap/flowchart size from the node shell
         fontSize: 'inherit',
-        maxWidth: allowWrap ? '100%' : undefined,
+        maxWidth: '100%',
+        // Use almost the full label box — avoid wasteful inner pad
+        padding: 0,
+        lineHeight: 1.15,
       }}
     >
       {value}
@@ -545,8 +549,13 @@ export function FlowNode({ id, data, selected }: NodeProps) {
           <Renderer fill={fillColor} stroke={strokeColor} sw={strokeWidth} />
         </svg>
         <div
-          className="relative z-10 flex items-center justify-center w-full h-full px-3 py-1 pointer-events-none"
-          style={{ height: '100%' }}
+          className="relative z-10 flex items-center justify-center w-full h-full pointer-events-none"
+          style={{
+            height: '100%',
+            // Tight inset so labels fill the shape (was px-3 py-1 waste)
+            padding: shape === 'diamond' || shape === 'hexagon' ? '6% 10%' : '4% 6%',
+            boxSizing: 'border-box',
+          }}
         >
           <NodeLabel {...labelProps} />
         </div>
@@ -578,13 +587,13 @@ export function FlowNode({ id, data, selected }: NodeProps) {
       extraStyle = { borderRadius: 8 }
       break
     case 'stadium':
-      // Pill (Start/Done) — match Mermaid stadium; size comes from layout box
+      // Pill (Start/Done) — size from layout box; tight pad so text fills pill
       extraStyle = {
         borderRadius: 9999,
-        paddingLeft: 12,
-        paddingRight: 12,
-        paddingTop: 6,
-        paddingBottom: 6,
+        paddingLeft: 6,
+        paddingRight: 6,
+        paddingTop: 2,
+        paddingBottom: 2,
       }
       break
     case 'subroutine':
@@ -637,11 +646,11 @@ export function FlowNode({ id, data, selected }: NodeProps) {
         minHeight: 0,
         // overflow visible so mid-side ports aren't clipped into a weird ring
         overflow: 'visible',
-        // Tight padding so Mermaid-measured stadium boxes match selection bounds
-        paddingLeft: shape === 'stadium' ? 10 : 10,
-        paddingRight: shape === 'stadium' ? 10 : 10,
-        paddingTop: shape === 'stadium' ? 4 : 4,
-        paddingBottom: shape === 'stadium' ? 4 : 4,
+        // Minimal pad — labels fill the node box (was 10/4 and looked sparse)
+        paddingLeft: shape === 'stadium' || isCircleShape ? 4 : 5,
+        paddingRight: shape === 'stadium' || isCircleShape ? 4 : 5,
+        paddingTop: shape === 'stadium' || isCircleShape ? 2 : 3,
+        paddingBottom: shape === 'stadium' || isCircleShape ? 2 : 3,
         boxSizing: 'border-box',
       }}
       onDoubleClick={handleDoubleClick}

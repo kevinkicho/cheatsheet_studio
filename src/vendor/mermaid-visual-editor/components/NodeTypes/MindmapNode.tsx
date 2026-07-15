@@ -330,7 +330,18 @@ export function MindmapNode({ id, data, selected, width, height }: NodeProps) {
 
       {/* ::icon kept on data for Mermaid export / Object Settings — not painted on shape */}
 
-      <div className="relative z-10 flex max-h-[85%] max-w-[85%] items-center justify-center px-1">
+      {/* Use most of the shape for text — was 85% + px (wasteful empty ring) */}
+      <div
+        className="relative z-10 flex items-center justify-center"
+        style={{
+          maxWidth: '94%',
+          maxHeight: '94%',
+          width: '94%',
+          height: '94%',
+          padding: shape === 'circle' || shape === 'double-circle' ? 2 : 3,
+          boxSizing: 'border-box',
+        }}
+      >
         {editing ? (
           <input
             ref={inputRef}
@@ -338,15 +349,26 @@ export function MindmapNode({ id, data, selected, width, height }: NodeProps) {
             onChange={(e) => setDraft(e.target.value)}
             onBlur={commitLabel}
             onKeyDown={handleKeyDown}
-            className="w-full bg-transparent text-center text-xs font-medium outline-none"
-            style={{ color: text }}
+            className="w-full max-w-full bg-transparent text-center font-medium outline-none"
+            style={{
+              color: text,
+              fontSize: isHub ? 14 : 12,
+              lineHeight: 1.15,
+              padding: 0,
+            }}
             autoFocus
             aria-label="Topic label"
           />
         ) : (
           <span
-            className="break-words text-center text-[11px] font-medium leading-snug select-none"
-            style={{ color: text }}
+            className="break-words text-center font-medium select-none"
+            style={{
+              color: text,
+              fontSize: isHub ? 14 : 12,
+              lineHeight: 1.15,
+              maxWidth: '100%',
+              padding: 0,
+            }}
           >
             {nodeData.label}
           </span>

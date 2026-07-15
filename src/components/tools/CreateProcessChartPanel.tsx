@@ -15,6 +15,7 @@ import {
   Plus,
   RefreshCw,
   Trash2,
+  X,
 } from 'lucide-react'
 import { useCanvasStore } from '@/stores/canvasStore'
 import { useAuthStore } from '@/stores/authStore'
@@ -172,6 +173,21 @@ export function CreateProcessChartPanel() {
     import('@/lib/processFlowSnapshot').ProcessFlowSnapshot | null
   >(null)
   const prevEditingId = useRef<string | null>(null)
+  /**
+   * Snapshot of the canvas card when Edit started — Cancel restores this
+   * (live editor writes are discarded).
+   */
+  type EditBaseline = {
+    id: string
+    title: string
+    mermaidSource: string
+    mermaidKind: MermaidDiagramKind
+    mermaidDirection: MermaidFlowDirection
+    processFlow: import('@/lib/processFlowSnapshot').ProcessFlowSnapshot | null
+  }
+  const editBaselineRef = useRef<EditBaseline | null>(null)
+  /** When true, unmount cleanup must not flush editor → card. */
+  const skipUnmountFlushRef = useRef(false)
 
   // Edit-mode card → load into interactive editor (explicit Edit button only)
   useEffect(() => {
@@ -188,6 +204,7 @@ export function CreateProcessChartPanel() {
     }
 
     prevEditingId.current = editingProcessChartId
+    skipUnmountFlushRef.current = false
     // Canvas must not stay selected — Delete would remove the card
     select(null)
 
@@ -205,9 +222,19 @@ export function CreateProcessChartPanel() {
     setSource(src)
     setDirection(chart.mermaidDirection ?? detectFlowDirection(src) ?? 'TD')
     const snap = chart.processFlow
-    setEditorProcessFlow(
-      snap && isProcessFlowSnapshot(snap) ? structuredClone(snap) : null,
-    )
+    const flowClone =
+      snap && isProcessFlowSnapshot(snap) ? structuredClone(snap) : null
+    setEditorProcessFlow(flowClone)
+    // Baseline for Cancel — capture pre-edit card truth
+    editBaselineRef.current = {
+      id: chart.id,
+      title: chart.title || 'Process chart',
+      mermaidSource: src,
+      mermaidKind: isProcessPanelKind(k) ? k : 'flowchart',
+      mermaidDirection:
+        chart.mermaidDirection ?? detectFlowDirection(src) ?? 'TD',
+      processFlow: flowClone,
+    }
     setReloadToken((t) => t + 1)
     setActiveLibId(null)
     flash(`Editing “${chart.title || 'Process chart'}”`)
@@ -257,6 +284,8 @@ export function CreateProcessChartPanel() {
     if (editingProcessChartId && mermaid) {
       handleEditorSnapshot(mermaid, flow)
     }
+    editBaselineRef.current = null
+    skipUnmountFlushRef.current = false
     endEditProcessChart()
     prevEditingId.current = null
     flash('Saved · left edit mode')
@@ -266,6 +295,53 @@ export function CreateProcessChartPanel() {
     endEditProcessChart,
     flash,
   ])
+
+  /** Discard all edits since Edit was clicked and leave edit mode. */
+  const cancelEditing = useCallback(() => {
+    const baseline = editBaselineRef.current
+    const id = editingProcessChartId ?? baseline?.id
+    if (id && baseline && baseline.id === id) {
+      // Restore card to pre-edit snapshot (undo live auto-saves).
+      // Must fully replace processFlow (undefined merge would keep a mid-edit snap).
+      useCanvasStore.setState((s) => ({
+        dirty: true,
+        items: s.items.map((i) => {
+          if (i.id !== id) return i
+          const next: typeof i = {
+            ...i,
+            title: baseline.title,
+            mermaidSource: baseline.mermaidSource,
+            mermaidKind: baseline.mermaidKind,
+            mermaidDirection: baseline.mermaidDirection,
+          }
+          if (
+            baseline.processFlow &&
+            isProcessFlowSnapshot(baseline.processFlow)
+          ) {
+            next.processFlow = structuredClone(baseline.processFlow)
+          } else {
+            delete next.processFlow
+          }
+          return next
+        }),
+      }))
+      // Put editor UI back to baseline so a remount doesn't re-flush edits
+      setTitle(baseline.title)
+      setSource(baseline.mermaidSource)
+      setKind(baseline.mermaidKind)
+      setDirection(baseline.mermaidDirection)
+      setEditorProcessFlow(
+        baseline.processFlow
+          ? structuredClone(baseline.processFlow)
+          : null,
+      )
+    }
+    skipUnmountFlushRef.current = true
+    editBaselineRef.current = null
+    endEditProcessChart()
+    prevEditingId.current = null
+    flash('Cancelled · changes discarded')
+  }, [editingProcessChartId, endEditProcessChart, flash])
 
   // Persist title edits while in edit mode (without waiting for a graph change)
   useEffect(() => {
@@ -301,7 +377,8 @@ export function CreateProcessChartPanel() {
       }
 
       // Real leave: flush card snapshot then exit edit mode
-      if (id) {
+      // (skip after Cancel — baseline already restored)
+      if (id && !skipUnmountFlushRef.current) {
         const mermaid = getVisualEditorMermaidSource().trim()
         const flow = getVisualEditorProcessFlow()
         if (mermaid) {
@@ -320,7 +397,12 @@ export function CreateProcessChartPanel() {
         if (ui.editingProcessChartId === id) {
           ui.endEditProcessChart()
         }
+      } else if (id && skipUnmountFlushRef.current) {
+        if (ui.editingProcessChartId === id) {
+          ui.endEditProcessChart()
+        }
       }
+      skipUnmountFlushRef.current = false
       // Drop RF graph + undo stacks so Process panel unmount doesn't keep
       // large node/edge history in the global flow store.
       useFlowStore.setState({
@@ -625,9 +707,19 @@ export function CreateProcessChartPanel() {
             </span>
             <button
               type="button"
+              onClick={cancelEditing}
+              className="shrink-0 rounded border border-zinc-600/60 px-1.5 py-0.5 text-[10px] font-medium text-zinc-300 hover:bg-zinc-800/80"
+              data-testid="process-cancel-editing"
+              title="Discard changes since Edit and leave"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
               onClick={finishEditing}
               className="shrink-0 rounded border border-emerald-500/40 px-1.5 py-0.5 text-[10px] font-medium text-emerald-100 hover:bg-emerald-500/20"
               data-testid="process-done-editing"
+              title="Keep changes and leave edit mode"
             >
               Done
             </button>
@@ -833,6 +925,16 @@ export function CreateProcessChartPanel() {
         <div className="flex gap-1.5">
           {editingProcessChartId ? (
             <>
+              <button
+                type="button"
+                onClick={cancelEditing}
+                className="inline-flex flex-1 items-center justify-center gap-1 rounded-md border border-zinc-700 px-2 py-2 text-xs font-medium text-zinc-300 hover:bg-zinc-900"
+                data-testid="process-cancel-editing-footer"
+                title="Discard changes since Edit"
+              >
+                <X className="h-3.5 w-3.5" />
+                Cancel
+              </button>
               <button
                 type="button"
                 onClick={saveEditingCard}
