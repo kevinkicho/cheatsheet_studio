@@ -383,12 +383,15 @@ export function naturalTopicPack(
       ...r,
       cw: Math.min(r.cw, w),
     }))
-    // Dense free-flow (n-gon strength): hole-fill + gravity, not row shelves
+    // Multi-order free-flow tetris (same engine as in-panel auto-layout).
+    // Do NOT default to shelf — shelf often wins the waste score with a
+    // full-width first row + sparse second row (weird 6.1 Algebra packing)
+    // while free-flow looks denser and matches “Auto-layout inside panel”.
     const densePos = placeTopicRegionsDense(
       rects.map((r, i) => ({ index: i, cw: r.cw, ch: r.ch })),
       w,
       0,
-      { sortByHeight: true, readingFlow: false },
+      { multiOrder: true, readingFlow: false },
     )
     let usedCw = 1
     let usedCh = 1
@@ -400,12 +403,19 @@ export function naturalTopicPack(
       usedCh = Math.max(usedCh, p.r + r.ch)
     })
     usedCw = Math.min(w, usedCw)
-    const score = scorePack(rects, pos, usedCw, usedCh)
-    if (!best || score < best.score) {
-      best = { rects, pos, contentCw: usedCw, contentCh: usedCh, score }
+    const denseScore = scorePack(rects, pos, usedCw, usedCh)
+    if (!best || denseScore < best.score) {
+      best = {
+        rects,
+        pos,
+        contentCw: usedCw,
+        contentCh: usedCh,
+        score: denseScore,
+      }
     }
 
-    // Shelf alternative (catalog order) — keep if denser for this width
+    // Shelf only if *clearly* better (was stealing wins on ~equal scores and
+    // leaving left-aligned sparse rows that in-panel free-flow then fixed).
     const shelf = measureShelfPack(rects, w)
     const shelfScore = scorePack(
       rects,
@@ -413,13 +423,15 @@ export function naturalTopicPack(
       shelf.usedCw,
       shelf.usedCh,
     )
-    if (shelfScore < (best?.score ?? Infinity)) {
-      best = {
-        rects,
-        pos: shelf.pos,
-        contentCw: shelf.usedCw,
-        contentCh: shelf.usedCh,
-        score: shelfScore,
+    if (shelfScore < denseScore * 0.92) {
+      if (!best || shelfScore < best.score) {
+        best = {
+          rects,
+          pos: shelf.pos,
+          contentCw: shelf.usedCw,
+          contentCh: shelf.usedCh,
+          score: shelfScore,
+        }
       }
     }
   }

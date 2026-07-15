@@ -39,6 +39,7 @@ import {
 } from './shelf'
 import {
   densifyPlacedGroups,
+  repackLeafInteriors,
   ensureLeafTitleClearance,
   resolveLeafGroupCollisions,
   gravityCompactGroups,
@@ -717,7 +718,9 @@ export function packCheatsheetLayout(
     return { ...it, y }
   })
 
-  // Close voids per leaf group (single pass — second pass was costly).
+  // Close voids per leaf group, then force multi-order free-flow interiors
+  // (same engine as “Auto-layout inside panel”) so full-sheet pack doesn't
+  // leave sparse shelf rows that only in-panel fixed (e.g. 6.1 Algebra).
   if (usePanels && (options.folders?.length ?? 0) > 0) {
     result = densifyPlacedGroups(result, options.folders ?? [], deepLevel, {
       grid,
@@ -725,6 +728,12 @@ export function packCheatsheetLayout(
       contentTop: packTop,
       contentRight: packRight,
       pageCols,
+      gapCells: 0,
+    })
+    result = repackLeafInteriors(result, options.folders ?? [], deepLevel, {
+      grid,
+      contentLeft: packLeft,
+      contentRight: packRight,
       gapCells: 0,
     })
   }
