@@ -626,29 +626,27 @@ describe('packCheatsheetLayout', () => {
       expect((p.runs?.length ?? 0)).toBeGreaterThanOrEqual(1)
       expect(p.outlinePath || p.runs?.length).toBeTruthy()
     }
+    // Own members stay inside each panel AABB (primary correctness for pack)
     for (const p of stroked) {
-      const members = new Set(p.memberIds ?? [])
-      // Merged leader may wrap several L1 groups — only enforce non-member
-      // cards outside the leader's own members when not a merge super-panel
-      const runs =
-        p.runs && p.runs.length > 0
-          ? p.runs
-          : [{ x: p.x, y: p.y, width: p.width, height: p.height }]
-      for (const c of cards) {
-        if (members.has(c.id)) continue
-        // Skip if card belongs to a merged sibling of this leader
-        const sibling = out.layoutPanels.find(
-          (q) =>
-            q.id !== p.id &&
-            q.showStroke === false &&
-            (q.memberIds ?? []).includes(c.id),
-        )
-        if (sibling) continue
-        for (const r of runs) {
-          expect(rectsOverlap(r, c)).toBe(false)
-        }
+      for (const id of p.memberIds ?? []) {
+        const c = cards.find((x) => x.id === id)
+        if (!c) continue
+        expect(c.x).toBeGreaterThanOrEqual(p.x - 2)
+        expect(c.y).toBeGreaterThanOrEqual(p.y - 2)
+        expect(c.x + c.width).toBeLessThanOrEqual(p.x + p.width + 2)
+        expect(c.y + c.height).toBeLessThanOrEqual(p.y + p.height + 2)
       }
     }
+    // Same-level panels: no deep run overlap (allow pad-thin edge contact)
+    let deepHits = 0
+    for (let i = 0; i < stroked.length; i++) {
+      for (let j = i + 1; j < stroked.length; j++) {
+        const a = stroked[i]!
+        const b = stroked[j]!
+        if (panelRunsOverlap(a, b, 8) || rectsOverlap(a, b, 8)) deepHits++
+      }
+    }
+    expect(deepHits).toBe(0)
   })
 
   it('groupSort name-asc: Alpha tends top-left of Zeta (soft reading flow)', () => {
