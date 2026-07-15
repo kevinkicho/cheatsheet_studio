@@ -290,17 +290,25 @@ export function steppedLChromeFromMembers(
   const x1 = Math.max(...runs.map((r) => r.x + r.width))
   const y1 = Math.max(...runs.map((r) => r.y + r.height))
 
-  // Rasterize blocks → unit cells → exterior outline (true polyomino perimeter)
+  // Rasterize blocks → unit cells → exterior outline (true polyomino perimeter).
+  // Use floor on the exclusive max edge so ceil cannot expand the outline one
+  // full grid cell past the member+pad bounds (print overflow x=772 > 768).
   const originX = x0
   const originY = y0
   const unit = new Set<string>()
   for (const r of runs) {
     const c0 = Math.floor((r.x - originX) / grid)
-    const c1 = Math.ceil((r.x + r.width - originX) / grid)
+    const c1 = Math.max(
+      c0 + 1,
+      Math.floor((r.x + r.width - originX + 1e-6) / grid),
+    )
     const r0 = Math.floor((r.y - originY) / grid)
-    const r1 = Math.ceil((r.y + r.height - originY) / grid)
-    for (let rr = r0; rr < Math.max(r0 + 1, r1); rr++) {
-      for (let cc = c0; cc < Math.max(c0 + 1, c1); cc++) {
+    const r1 = Math.max(
+      r0 + 1,
+      Math.floor((r.y + r.height - originY + 1e-6) / grid),
+    )
+    for (let rr = r0; rr < r1; rr++) {
+      for (let cc = c0; cc < c1; cc++) {
         unit.add(`${cc},${rr}`)
       }
     }

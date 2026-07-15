@@ -18,6 +18,7 @@ import {
   fillPolyominoHoles,
   closePolyomino,
   polyominoExteriorPathD,
+  steppedLChromeFromMembers,
 } from './polyomino'
 import { cellsToOrthogonalRuns } from './freeGrid'
 import {
@@ -741,6 +742,98 @@ export function rebuildMultiChildOuters(
   return next
 }
 
+/** Clamp a single run into the content box. */
+function clampRunToBox(
+  r: { x: number; y: number; width: number; height: number },
+  left: number,
+  right: number,
+  top?: number,
+): { x: number; y: number; width: number; height: number } {
+  let rx = r.x
+  let ry = r.y
+  let rw = r.width
+  let rh = r.height
+  if (rx < left) {
+    rw -= left - rx
+    rx = left
+  }
+  if (rx + rw > right) {
+    rw = Math.max(8, right - rx)
+  }
+  if (top != null && ry < top) {
+    rh -= top - ry
+    ry = top
+  }
+  return {
+    x: Math.round(rx),
+    y: Math.round(ry),
+    width: Math.max(8, Math.round(rw)),
+    height: Math.max(8, Math.round(rh)),
+  }
+}
+
+/**
+ * Rebuild exterior outline from clamped runs. Never reuse a pre-clamp
+ * outlinePath — n-gon rasterization + pad routinely put vertices past the
+ * content box (screenshot 235248, outline x=772 > right=768).
+ */
+function outlineFromClampedRuns(
+  runs: Array<{ x: number; y: number; width: number; height: number }>,
+  shape: LayoutPanel['shape'],
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+): string {
+  if (!runs.length) {
+    return rectPerimeterPathD(x, y, width, height)
+  }
+  if (shape !== 'polygon' || runs.length === 1) {
+    return rectPerimeterPathD(x, y, width, height)
+  }
+  // Re-derive stepped perimeter from already-clamped runs (pad=0)
+  const chrome = steppedLChromeFromMembers(runs, {
+    pad: 0,
+    titleBand: 0,
+    grid: ORGANIZE_GRID,
+  })
+  // Final safety: clamp any residual path vertices into the AABB (+1px stroke)
+  return clampPathDToRect(
+    chrome.outlinePath || rectPerimeterPathD(x, y, width, height),
+    x,
+    y,
+    width,
+    height,
+  )
+}
+
+/** Clamp M/L path coordinates into a rectangle (inclusive right/bottom). */
+export function clampPathDToRect(
+  d: string,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+): string {
+  if (!d) return d
+  const x0 = x
+  const y0 = y
+  const x1 = x + width
+  const y1 = y + height
+  // Match pairs: command letter + two numbers, or just numbers in sequence
+  return d.replace(
+    /(-?\d+\.?\d*)\s+(-?\d+\.?\d*)/g,
+    (_m, xs: string, ys: string) => {
+      let px = Number(xs)
+      let py = Number(ys)
+      if (!Number.isFinite(px) || !Number.isFinite(py)) return `${xs} ${ys}`
+      px = Math.min(x1, Math.max(x0, px))
+      py = Math.min(y1, Math.max(y0, py))
+      return `${Math.round(px)} ${Math.round(py)}`
+    },
+  )
+}
+
 /** Hard clamp panel chrome into the printable content box (left/right/top). */
 export function clampPanelsToContentBox(
   panels: LayoutPanel[],
@@ -766,48 +859,166 @@ export function clampPanelsToContentBox(
       height -= top - y
       y = top
     }
-    const runs = p.runs?.map((r) => {
-      let rx = r.x
-      let ry = r.y
-      let rw = r.width
-      let rh = r.height
-      if (rx < left) {
-        rw -= left - rx
-        rx = left
-      }
-      if (rx + rw > right) {
-        rw = Math.max(8, right - rx)
-      }
-      if (top != null && ry < top) {
-        rh -= top - ry
-        ry = top
-      }
-      return {
-        ...r,
-        x: Math.round(rx),
-        y: Math.round(ry),
-        width: Math.max(8, Math.round(rw)),
-        height: Math.max(8, Math.round(rh)),
-      }
+    x = Math.round(x)
+    y = Math.round(y)
+    width = Math.max(8, Math.round(width))
+    height = Math.max(8, Math.round(height))
+
+    const rawRuns =
+      p.runs && p.runs.length > 0
+        ? p.runs
+        : [{ x: p.x, y: p.y, width: p.width, height: p.height }]
+    let runs = rawRuns
+      .map((r) => clampRunToBox(r, left, right, top))
+      // Also clip runs to the panel AABB so stepped chrome cannot stick out
+      .map((r) => {
+        const rx0 = Math.max(r.x, x)
+        const ry0 = Math.max(r.y, y)
+        const rx1 = Math.min(r.x + r.width, x + width)
+        const ry1 = Math.min(r.y + r.height, y + height)
+        if (rx1 - rx0 < 4 || ry1 - ry0 < 4) {
+          return { x, y, width, height }
+        }
+        return {
+          x: Math.round(rx0),
+          y: Math.round(ry0),
+          width: Math.max(8, Math.round(rx1 - rx0)),
+          height: Math.max(8, Math.round(ry1 - ry0)),
+        }
+      })
+    // Drop exact duplicate runs
+    const seen = new Set<string>()
+    runs = runs.filter((r) => {
+      const k = `${r.x},${r.y},${r.width},${r.height}`
+      if (seen.has(k)) return false
+      seen.add(k)
+      return true
     })
-    const shaved =
-      width < p.width - 0.5 ||
-      (top != null && y > p.y + 0.5) ||
-      height < p.height - 0.5
-    const outlinePath =
-      p.shape === 'rect' || !p.outlinePath || shaved
-        ? rectPerimeterPathD(x, y, Math.max(8, width), Math.max(8, height))
-        : p.outlinePath
+    if (runs.length === 0) {
+      runs = [{ x, y, width, height }]
+    }
+
+    const outlinePath = outlineFromClampedRuns(
+      runs,
+      p.shape,
+      x,
+      y,
+      width,
+      height,
+    )
+
     return {
       ...p,
-      x: Math.round(x),
-      y: Math.round(y),
-      width: Math.max(8, Math.round(width)),
-      height: Math.max(8, Math.round(height)),
+      x,
+      y,
+      width,
+      height,
       runs,
       outlinePath,
     }
   })
+}
+
+/**
+ * Clip every child panel's runs/AABB into its stroked parent so n-gon L2/L3
+ * never paints outside L1 (screenshot 235248).
+ */
+export function clipNestedPanelRunsToParents(
+  panels: LayoutPanel[],
+): LayoutPanel[] {
+  if (panels.length <= 1) return panels
+  const next = panels.map((p) => ({ ...p }))
+  const isChildOf = (parent: LayoutPanel, child: LayoutPanel) => {
+    if (!parent.memberIds?.length || !child.memberIds?.length) return false
+    if ((child.hierarchyLevel ?? 1) <= (parent.hierarchyLevel ?? 1)) return false
+    const set = new Set(parent.memberIds)
+    return child.memberIds.every((id) => set.has(id))
+  }
+  for (let i = 0; i < next.length; i++) {
+    const child = next[i]!
+    if (child.showStroke === false) continue
+    const parents = next.filter(
+      (p) =>
+        p.showStroke !== false &&
+        (p.hierarchyLevel ?? 1) < (child.hierarchyLevel ?? 1) &&
+        isChildOf(p, child),
+    )
+    if (parents.length === 0) continue
+    // Tightest parent (deepest)
+    const parent = parents.sort(
+      (a, b) => (b.hierarchyLevel ?? 1) - (a.hierarchyLevel ?? 1),
+    )[0]!
+    const inset = 1
+    const pl = parent.x + inset
+    const pt = parent.y + inset
+    const pr = parent.x + parent.width - inset
+    const pb = parent.y + parent.height - inset
+    if (!(pr > pl && pb > pt)) continue
+
+    let x = child.x
+    let y = child.y
+    let width = child.width
+    let height = child.height
+    if (x < pl) {
+      width -= pl - x
+      x = pl
+    }
+    if (y < pt) {
+      height -= pt - y
+      y = pt
+    }
+    if (x + width > pr) width = Math.max(8, pr - x)
+    if (y + height > pb) height = Math.max(8, pb - y)
+    x = Math.round(x)
+    y = Math.round(y)
+    width = Math.max(8, Math.round(width))
+    height = Math.max(8, Math.round(height))
+
+    const runs = (
+      child.runs?.length
+        ? child.runs
+        : [{ x: child.x, y: child.y, width: child.width, height: child.height }]
+    )
+      .map((r) => {
+        const rx0 = Math.max(r.x, x, pl)
+        const ry0 = Math.max(r.y, y, pt)
+        const rx1 = Math.min(r.x + r.width, x + width, pr)
+        const ry1 = Math.min(r.y + r.height, y + height, pb)
+        if (rx1 - rx0 < 4 || ry1 - ry0 < 4) return null
+        return {
+          x: Math.round(rx0),
+          y: Math.round(ry0),
+          width: Math.max(8, Math.round(rx1 - rx0)),
+          height: Math.max(8, Math.round(ry1 - ry0)),
+        }
+      })
+      .filter(Boolean) as Array<{
+      x: number
+      y: number
+      width: number
+      height: number
+    }>
+
+    const finalRuns =
+      runs.length > 0 ? runs : [{ x, y, width, height }]
+    next[i] = {
+      ...child,
+      x,
+      y,
+      width,
+      height,
+      runs: finalRuns,
+      outlinePath: outlineFromClampedRuns(
+        finalRuns,
+        child.shape,
+        x,
+        y,
+        width,
+        height,
+      ),
+    }
+  }
+  return next
 }
 
 export function mergeAdjacentOutermostPanels(

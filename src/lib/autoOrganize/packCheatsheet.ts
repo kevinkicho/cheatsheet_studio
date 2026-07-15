@@ -58,6 +58,7 @@ import {
   nestContainPanels,
   rebuildMultiChildOuters,
   clampPanelsToContentBox,
+  clipNestedPanelRunsToParents,
 } from './panels'
 
 export function packCheatsheetLayout(
@@ -978,8 +979,11 @@ export function packCheatsheetLayout(
         grid,
       })
     }
-    // Final hard clamp LAST — nestContain / rebuild must not leave chrome
-    // in the top or side print margins (screenshot 214641).
+    // Clip L2/L3 n-gon runs into L1 so stepped chrome cannot paint outside
+    // the parent frame (screenshot 235248).
+    layoutPanels = clipNestedPanelRunsToParents(layoutPanels)
+    // Final hard clamp LAST — rebuild outlines from clamped runs so n-gon
+    // path vertices never sit past the content box (outline x=772 > 768).
     layoutPanels = clampPanelsToContentBox(layoutPanels, {
       left: box.left,
       right: box.left + box.width,

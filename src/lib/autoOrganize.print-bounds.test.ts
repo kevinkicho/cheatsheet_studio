@@ -75,6 +75,7 @@ describe('printable area bounds', () => {
           }
         }
       }
+      let outlineOut = 0
       for (const p of panels) {
         if (
           p.x < left - 1 ||
@@ -102,11 +103,36 @@ describe('printable area bounds', () => {
             }
           }
         }
+        // n-gon outlinePath vertices must also stay in the content box
+        // (AABB clamp alone left strokes at x=772 when right=768).
+        if (p.outlinePath) {
+          const nums = [...p.outlinePath.matchAll(/-?\d+\.?\d*/g)].map((m) =>
+            Number(m[0]),
+          )
+          for (let i = 0; i + 1 < nums.length; i += 2) {
+            const ox = nums[i]!
+            const oy = nums[i + 1]!
+            if (
+              ox < left - 2 ||
+              ox > right + 2 ||
+              (top != null && oy < top - 2)
+            ) {
+              outlineOut++
+              if (samples.length < 14) {
+                samples.push(
+                  `outline ${p.title} pt=(${ox},${oy}) box=${left}..${right}`,
+                )
+              }
+              break
+            }
+          }
+        }
       }
       // eslint-disable-next-line no-console
       console.log(shape, {
         cardOut,
         panelOut,
+        outlineOut,
         left,
         right,
         top,
@@ -120,6 +146,7 @@ describe('printable area bounds', () => {
       })
       expect(cardOut).toBe(0)
       expect(panelOut).toBe(0)
+      expect(outlineOut).toBe(0)
     })
   }
 })
