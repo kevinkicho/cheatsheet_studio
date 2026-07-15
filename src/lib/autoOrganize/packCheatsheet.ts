@@ -8,7 +8,6 @@ import {
   MIN_READABLE_TITLE_FONT,
   normalizePanelGroupLevels,
   normalizeLevelSubset,
-  normalizeNgonLevels,
   type CheatsheetLayoutOptions,
   type GroupChrome,
   normalizeGroupChrome,
@@ -40,32 +39,8 @@ import {
   placeTopicRegionsDense,
   placePlansHierarchical,
 } from './shelf'
-import {
-  densifyPlacedGroups,
-  repackLeafInteriors,
-  ensureLeafTitleClearance,
-  resolveLeafGroupCollisions,
-  gravityCompactGroups,
-  repackGroupsInParents,
-  separateFolderClusters,
-  resolveCardOverlaps,
-  separateLeafCardsByGap,
-  resolveSameLevelPanelCollisions,
-  enforcePanelLayoutInvariants,
-} from './densify'
-import {
-  resolveMultipageStraddles,
-  insertPageGutters,
-} from './multipage'
-import {
-  buildNestedHierarchyPanels,
-  buildLayoutPanelsFromMembers,
-  mergeAdjacentOutermostPanels,
-  nestContainPanels,
-  rebuildMultiChildOuters,
-  clampPanelsToContentBox,
-  clipNestedPanelRunsToParents,
-} from './panels'
+import { refinePlacedCards } from './packCheatsheet/postPlace'
+import { finalizeLayoutPanels } from './packCheatsheet/finalizePanels'
 
 export function packCheatsheetLayout(
   items: CanvasItem[],
@@ -708,194 +683,42 @@ export function packCheatsheetLayout(
     return { ...it, y }
   })
 
-  // Close voids per leaf group, then force multi-order free-flow interiors
-  // (same engine as “Auto-layout inside panel”) so full-sheet pack doesn't
-  // leave sparse shelf rows that only in-panel fixed (e.g. 6.1 Algebra).
-  if (usePanels && (options.folders?.length ?? 0) > 0) {
-    result = densifyPlacedGroups(result, options.folders ?? [], deepLevel, {
-      grid,
-      contentLeft: packLeft,
-      contentTop: packTop,
-      contentRight: packRight,
-      pageCols,
-      gapCells: blockGapCells,
-    })
-    result = repackLeafInteriors(result, options.folders ?? [], deepLevel, {
-      grid,
-      contentLeft: packLeft,
-      contentRight: packRight,
-      gapCells: blockGapCells,
-    })
-  }
-
-  // Thin title-chip band only (don't push groups by large bands)
-  if (usePanels && multiLevelHierarchy) {
-    result = ensureLeafTitleClearance(
-      result,
-      options.folders ?? [],
-      deepLevel,
-      Math.max(18, PANEL_TITLE_BAND_PX),
-      grid,
-    )
-  }
-
-  // Residual same-folder card overlaps
-  result = resolveCardOverlaps(result, {
+  // Densify / hierarchical re-pack / pixel gaps / multipage seams
+  result = refinePlacedCards(result, {
     grid,
-    contentRight: packRight,
+    packLeft,
+    packTop,
+    packRight,
+    pageCols,
+    folders: options.folders ?? [],
+    usePanels,
+    multiLevelHierarchy,
+    deepLevel,
+    shallowLevel,
+    leafLevelsStroke,
+    outerLevelsStroke,
+    blockGapCells,
+    blockGapPx,
+    leafGapCells,
+    l1GapPx,
+    l2ContentClearPx,
+    interTopicChromePx,
+    outerTitleCells,
+    panelPad,
+    panelTitleBandPx: PANEL_TITLE_BAND_PX,
+    multiPage,
+    box: {
+      top: box.top,
+      height: box.height,
+      pageHeight: box.pageHeight,
+      margins: { top: box.margins.top },
+      dissolved: box.dissolved,
+    },
   })
-
-  // Only separate true leaf AABB overlaps (minGap = user L2 frame gap + pad)
-  if (usePanels && leafLevelsStroke && (options.folders?.length ?? 0) > 0) {
-    result = resolveLeafGroupCollisions(
-      result,
-      options.folders ?? [],
-      deepLevel,
-      {
-        grid,
-        // Content clearance so stroked L2 frames can sit ~l2Gap apart after pad
-        minGapPx: Math.max(0, l2ContentClearPx),
-        parentLevel: shallowLevel,
-      },
-    )
-  }
-
-  // Authoritative hierarchical tetris: re-pack every L2/L3 block inside its
-  // L1 into a tight rectangle, then stack L1 topics.
-  //
-  // parentGap is ONLY inter-frame air + pad — L1 title is already reserved
-  // via titleCells *inside* each parent (do not double-count title here).
-  if (usePanels && multiLevelHierarchy && (options.folders?.length ?? 0) > 0) {
-    const interParentGapPx = Math.max(
-      0,
-      l1GapPx + (outerLevelsStroke ? panelPad * 2 : 0),
-    )
-    result = repackGroupsInParents(
-      result,
-      options.folders ?? [],
-      deepLevel,
-      shallowLevel,
-      {
-        grid,
-        contentLeft: packLeft,
-        contentTop: packTop,
-        contentRight: packRight,
-        gapCells: leafGapCells,
-        parentGapPx: interParentGapPx,
-        titleCells: outerTitleCells,
-      },
-    )
-  } else if (usePanels && (options.folders?.length ?? 0) > 0) {
-    // Single-level: gravity with L1 gap (+ pad when stroked)
-    result = gravityCompactGroups(result, options.folders ?? [], deepLevel, {
-      grid,
-      gapPx: Math.max(
-        0,
-        l1GapPx + (outerLevelsStroke ? panelPad * 2 : 0),
-      ),
-      contentLeft: packLeft,
-      contentTop: packTop,
-      contentRight: packRight,
-    })
-  }
-
-  // Stack L1 topics: titleCells inside next parent; min gap = L1 frame air
-  if (usePanels && (options.folders?.length ?? 0) > 0) {
-    const stackGap = multiLevelHierarchy
-      ? Math.max(0, l1GapPx + (outerLevelsStroke ? panelPad * 2 : 0))
-      : interTopicChromePx
-    result = separateFolderClusters(
-      result,
-      options.folders ?? [],
-      shallowLevel,
-      {
-        grid,
-        minGapPx: stackGap,
-      },
-    )
-  }
-
-  // Pixel-exact block gap AFTER hierarchical repositions (or they wipe air)
-  if ((options.folders?.length ?? 0) > 0 && blockGapPx > 0) {
-    result = separateLeafCardsByGap(
-      result,
-      options.folders ?? [],
-      deepLevel,
-      {
-        grid,
-        minGapPx: blockGapPx,
-        contentRight: packRight,
-      },
-    )
-  }
-
-  // Final hard clamp of cards into the chrome-inset pack band.
-  {
-    result = result.map((it) => {
-      if (it.hidden) return it
-      let x = it.x
-      let y = it.y
-      let w = it.width
-      let h = it.height
-      if (x < packLeft) {
-        w -= packLeft - x
-        x = packLeft
-      }
-      if (x + w > packRight) {
-        x = Math.max(packLeft, packRight - w)
-        if (x + w > packRight) w = Math.max(grid, packRight - x)
-      }
-      if (y < packTop) y = packTop
-      return {
-        ...it,
-        x: Math.round(x),
-        y: Math.round(y),
-        width: Math.max(grid, Math.round(w)),
-        height: Math.max(grid, Math.round(h)),
-      }
-    })
-  }
-
-  // Multipage seams:
-  // - Dissolved: one continuous pack band (no inter-page gutters) — max space.
-  // - Normal: continuous bands → insert gutters → board cleanup.
-  if (multiPage && box.dissolved) {
-    // Content already packs into dissolved height; only keep items in band
-    result = resolveMultipageStraddles(result, {
-      pageHeight: box.height,
-      marginTop: box.top,
-      contentHeight: box.height,
-      grid,
-      mode: 'continuous',
-    })
-  } else if (multiPage) {
-    result = resolveMultipageStraddles(result, {
-      pageHeight: box.height,
-      marginTop: box.top,
-      contentHeight: box.height,
-      grid,
-      mode: 'continuous',
-    })
-    result = insertPageGutters(result, {
-      pageHeight: box.pageHeight,
-      marginTop: box.margins.top,
-      contentHeight: box.height,
-    })
-    result = resolveMultipageStraddles(result, {
-      pageHeight: box.pageHeight,
-      marginTop: box.margins.top,
-      contentHeight: box.height,
-      grid,
-      mode: 'board',
-    })
-  }
 
   const byId = new Map(result.map((p) => [p.id, p]))
   const headingIds = new Set(
     plans.map((p) => p.heading?.id).filter((id): id is string => Boolean(id)),
-  )
-  const folderName = new Map(
-    (options.folders ?? []).map((f) => [f.id, f.name ?? f.id]),
   )
 
   const bothNestedMerge = useLabels && usePanels && multiLevelHierarchy
@@ -924,143 +747,31 @@ export function packCheatsheetLayout(
   const syntheticLabels = result.filter((r) => r.id.startsWith('__label_'))
   // Drop prior synthetic labels from earlier packs so re-layout stays clean
   const withoutOldSynth = mergedBase.filter((i) => !i.id.startsWith('__label_'))
-  const merged = [...withoutOldSynth, ...syntheticLabels]
+  let merged = [...withoutOldSynth, ...syntheticLabels]
 
   // ── 7) Layout panels — nested hierarchy + rect AABB or n-gon card runs ─
   let layoutPanels: LayoutPanel[] = []
   if (usePanels) {
-    const folders = options.folders ?? []
-    const borderLevels = normalizeLevelSubset(
-      options.panelBorderLevels,
+    const finalized = finalizeLayoutPanels(result, merged, plans, {
+      grid,
+      panelPad,
+      panelShape,
+      usePolyomino,
+      useLabels,
+      multiLevelHierarchy,
       panelGroupLevels,
-      /* defaultOuterOnly */ true,
-    )
-    const ngonLevels =
-      panelShape === 'polygon'
-        ? normalizeNgonLevels(
-            options.panelNgonLevels,
-            borderLevels,
-            panelGroupLevels,
-          )
-        : []
-    // Prefer hierarchy builder (supports multi-select nested L1⊃L2⊃L3)
-    layoutPanels = buildNestedHierarchyPanels({
-      placed: result,
-      folders,
-      levels: panelGroupLevels,
-      panelPad,
-      panelShape: usePolyomino ? 'polygon' : 'rect',
-      borderLevels,
-      ngonLevels,
-      folderName,
-      titleBandPx: PANEL_TITLE_BAND_PX,
-      grid,
+      panelBorderLevels: options.panelBorderLevels,
+      panelNgonLevels: options.panelNgonLevels,
+      folders: options.folders ?? [],
+      l1GapPx,
+      l2GapPx,
+      panelTitleBandPx: PANEL_TITLE_BAND_PX,
       contentLeft: box.left,
       contentRight: box.left + box.width,
       contentTop: box.top,
     })
-    // Fallback when no folderIds on cards (heading-only splits)
-    if (layoutPanels.length === 0) {
-      layoutPanels = buildLayoutPanelsFromMembers({
-        plans,
-        placed: result,
-        panelPad,
-        panelShape: usePolyomino ? 'polygon' : 'rect',
-        folderName,
-        useLabels,
-        titleBandPx: PANEL_TITLE_BAND_PX,
-        grid,
-      })
-    }
-    // Adjacent outermost (L1) panels merge strokes → one consecutive outline
-    if (layoutPanels.length > 1) {
-      layoutPanels = mergeAdjacentOutermostPanels(layoutPanels, {
-        grid,
-        panelPad,
-      })
-    }
-    // Same-level sibling frames must not paint over each other (export SVG
-    // double-borders). Rebuild chrome with reduced pad — nested L1⊃L2 is ok.
-    layoutPanels = resolveSameLevelPanelCollisions(layoutPanels, {
-      grid,
-      panelPad,
-      placed: result,
-      contentLeft: box.left,
-      contentRight: box.left + box.width,
-      multiLevel: multiLevelHierarchy,
-      outerLevel: shallowLevel,
-    })
-    // Guarantee every panel covers its cards (never shrink under members)
-    layoutPanels = nestContainPanels(layoutPanels, {
-      insetPx: multiLevelHierarchy ? Math.max(2, panelPad) : 0,
-      contentLeft: box.left,
-      contentRight: box.left + box.width,
-      contentTop: box.top,
-      placed: result,
-      panelPad,
-    })
-    // Only rebuild multi-child outers as stepped chrome when L1 itself is n-gon.
-    // Forcing stepped L1 for all multi-child produced snaking “weird boxes”
-    // (screenshot 214119) when n-gon was only selected for L2/L3.
-    const outerIsNgon =
-      panelShape === 'polygon' &&
-      normalizeNgonLevels(
-        options.panelNgonLevels,
-        borderLevels,
-        panelGroupLevels,
-      ).includes(shallowLevel)
-    if (multiLevelHierarchy && outerIsNgon) {
-      layoutPanels = rebuildMultiChildOuters(layoutPanels, {
-        panelPad,
-        titleBandPx: PANEL_TITLE_BAND_PX,
-        contentLeft: box.left,
-        contentRight: box.left + box.width,
-        contentTop: box.top,
-        grid,
-      })
-    }
-    // Hard invariants: same-level panels never overlap; title bands never
-    // covered by cards or nested panel headers; L1/L2 stroke gaps honored.
-    // (Run before clip so L2 n-gon rebuild fully encloses cards first.)
-    {
-      const fixed = enforcePanelLayoutInvariants(merged, layoutPanels, {
-        grid,
-        panelPad,
-        contentLeft: box.left,
-        contentRight: box.left + box.width,
-        contentTop: box.top,
-        // Pixel stroke-to-stroke gaps (panel rebuild path — free-flow is cell-quantized)
-        minGapPx: Math.max(0, l1GapPx),
-        l1GapPx: Math.max(0, l1GapPx),
-        l2GapPx: Math.max(0, l2GapPx),
-      })
-      // Replace card positions in merged (panel members only move)
-      const movedById = new Map(fixed.items.map((i) => [i.id, i]))
-      for (let i = 0; i < merged.length; i++) {
-        const n = movedById.get(merged[i]!.id)
-        if (n) merged[i] = n
-      }
-      layoutPanels = fixed.panels
-    }
-    // Grow parents to cover rebuilt children (n-gon leaf may have grown pad)
-    layoutPanels = nestContainPanels(layoutPanels, {
-      insetPx: multiLevelHierarchy ? Math.max(2, panelPad) : 0,
-      contentLeft: box.left,
-      contentRight: box.left + box.width,
-      contentTop: box.top,
-      placed: merged,
-      panelPad,
-    })
-    // Soft clip: only trim paint that sticks outside parent — do not shrink
-    // L2 below its member cards (031956 overflow was clip-before-enforce).
-    layoutPanels = clipNestedPanelRunsToParents(layoutPanels)
-    // Final hard clamp LAST — rebuild outlines from clamped runs so n-gon
-    // path vertices never sit past the content box (outline x=772 > 768).
-    layoutPanels = clampPanelsToContentBox(layoutPanels, {
-      left: box.left,
-      right: box.left + box.width,
-      top: box.top,
-    })
+    merged = finalized.items
+    layoutPanels = finalized.layoutPanels
   }
 
   const bottom2 = merged.reduce(
