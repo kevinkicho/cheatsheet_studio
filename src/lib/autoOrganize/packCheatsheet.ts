@@ -444,46 +444,55 @@ export function packCheatsheetLayout(
   }
 
   // n-gon = hard tetris (minimal free-flow gap); rect = rectangular tetris
-  // with user gap. Inter-topic clearance must fit: bottom pad + next title
-  // band + top pad + user gap — otherwise the next L1 title strip paints over
-  // the previous topic's cards (polygon multi-topic overlap regression).
+  // with user gap.
+  //
+  // IMPORTANT: L1 title clearance is ONLY for stacking whole L1 topics — never
+  // as the gap between L2 leaves inside one L1. Using interTopicChrome as
+  // innerLeafGapCells made n-gon leave ~48px voids between every subsection.
   const hardTetris = usePolyomino
   const L1_TITLE_CLEAR_PX = 26
+  // Between L1 topics: pad + title + user gap (cards of next L1 below prev)
   const interTopicChromePx = usePanels
     ? panelPad * 2 +
       (outerLevelsStroke ? L1_TITLE_CLEAR_PX : 0) +
       Math.max(0, gapPx)
     : Math.max(0, gapPx)
-  const chromeClearCells = usePanels
-    ? Math.max(1, Math.ceil(interTopicChromePx / grid))
-    : 0
+  // Between leaf (L2) clusters: bottom pad + next L2 title band + top pad.
+  // titleBand=16 → pad=4 needs exactly 1 cell (24px); do NOT use L1 title here.
+  const L2_TITLE_PX = leafLevelsStroke ? 16 : 0
+  const leafChromePx =
+    usePanels && leafLevelsStroke
+      ? panelPad * 2 + L2_TITLE_PX + Math.max(0, gapPx)
+      : Math.max(0, gapPx)
   const leafGapCells = hardTetris
-    ? Math.max(
-        0,
-        leafLevelsStroke && panelPad > 0
-          ? Math.max(1, Math.ceil((panelPad * 2 + Math.max(0, gapPx)) / grid))
-          : 0,
-      )
+    ? leafLevelsStroke
+      ? Math.max(1, Math.ceil((panelPad * 2 + L2_TITLE_PX) / grid))
+      : 0
     : Math.max(
         pxToCells(gapPx),
-        usePanels && leafLevelsStroke && panelPad > 0
-          ? Math.max(1, Math.ceil((panelPad * 2 + Math.max(0, gapPx)) / grid))
+        usePanels && leafLevelsStroke
+          ? Math.max(1, Math.ceil(leafChromePx / grid))
           : 0,
       )
+  // Outer free-flow gap (before repack): hard tetris stays tight
   const outerGapCells = hardTetris
-    ? chromeClearCells
-    : Math.max(pxToCells(gapPx), chromeClearCells)
+    ? outerLevelsStroke && panelPad > 0
+      ? 1
+      : 0
+    : Math.max(
+        pxToCells(gapPx),
+        usePanels
+          ? Math.max(1, Math.ceil(interTopicChromePx / grid))
+          : 0,
+      )
 
-  // L1 exclusive chip + nested L2 chip under it (~24+16) so cards never sit
-  // under the visible header stack (LayoutPanelsLayer places L2 under L1+24).
+  // L1 exclusive band: chip + nested top-row L2 chip room when multi-level
+  // (~42). Each L2 also reserves its own local titleBand in panel chrome.
   const outerTitleCells = useHierarchicalPlace
     ? Math.max(
-        2,
+        1,
         Math.ceil(
-          (28 +
-            (leafLevelsStroke ? 18 : 0) +
-            panelPad) /
-            grid,
+          ((leafLevelsStroke ? 42 : 28) + panelPad) / grid,
         ),
       )
     : 0
@@ -759,13 +768,18 @@ export function packCheatsheetLayout(
   // parentGap is ONLY inter-frame air + pad — L1 title is already reserved
   // via titleCells *inside* each parent (do not double-count title here).
   if (usePanels && multiLevelHierarchy && (options.folders?.length ?? 0) > 0) {
+    // Between L1 parents: pad + gap only — title band is titleCells *inside*
+    // the next parent (do not also charge L1 title here or gaps explode).
     const interParentGapPx = Math.max(
       gapPx,
       outerLevelsStroke ? panelPad * 2 + Math.max(0, gapPx) : gapPx,
     )
+    // Between L2 leaves inside L1: pad + L2 title — never full L1 inter-topic
     const innerLeafGapCells = hardTetris
-      ? chromeClearCells
-      : Math.max(0, leafLevelsStroke && panelPad > 0 ? 1 : 0)
+      ? leafLevelsStroke
+        ? Math.max(1, Math.ceil((panelPad * 2 + L2_TITLE_PX) / grid))
+        : 0
+      : Math.max(0, leafLevelsStroke ? leafGapCells : 0)
     result = repackGroupsInParents(
       result,
       options.folders ?? [],
@@ -782,26 +796,32 @@ export function packCheatsheetLayout(
       },
     )
   } else if (usePanels && (options.folders?.length ?? 0) > 0) {
-    // Single-level panels: gravity, then separate so title bands don't invade
+    // Single-level: gravity with tight gap (title reserved separately)
     result = gravityCompactGroups(result, options.folders ?? [], deepLevel, {
       grid,
-      gapPx: Math.max(interTopicChromePx, panelPad * 2 + Math.max(0, gapPx)),
+      gapPx: hardTetris
+        ? Math.max(0, panelPad * 2)
+        : Math.max(0, gapPx + (panelPad > 0 ? panelPad * 2 : 0)),
       contentLeft: packLeft,
       contentTop: packTop,
       contentRight: packRight,
     })
   }
 
-  // Stack parent (or single-level) clusters so title+pad never paint over the
-  // previous topic's cards.
+  // Stack L1 topics: need room for next L1 title above its cards.
+  // repack already placed titleCells inside each parent — only enforce
+  // residual interleave (min gap = pad + user gap, not full double-title).
   if (usePanels && (options.folders?.length ?? 0) > 0) {
+    const stackGap = multiLevelHierarchy
+      ? Math.max(gapPx, panelPad * 2 + Math.max(0, gapPx))
+      : interTopicChromePx
     result = separateFolderClusters(
       result,
       options.folders ?? [],
       shallowLevel,
       {
         grid,
-        minGapPx: interTopicChromePx,
+        minGapPx: stackGap,
       },
     )
   }

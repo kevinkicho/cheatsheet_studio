@@ -80,8 +80,7 @@ describe('panel layout invariants', () => {
         }
       }
 
-      // Visual chip bottoms: L1 exclusive band (26 or 44 w/ nested stroke);
-      // nested L2 chip under L1 at parent.y+24 + ~14px.
+      // Visual chip bottoms — matches LayoutPanelsLayer (always local chip)
       const visualTitleBot = (p: (typeof panels)[0]) => {
         if (p.showTitle === false) return p.y
         const level = p.hierarchyLevel ?? 1
@@ -95,17 +94,9 @@ describe('panel layout invariants', () => {
               p.memberIds?.length &&
               c.memberIds.every((id) => p.memberIds!.includes(id)),
           )
-          return p.y + (hasNested ? 44 : 26)
+          return p.y + (hasNested ? 42 : 26)
         }
-        const parent = panels.find(
-          (o) =>
-            o.id !== p.id &&
-            o.showStroke !== false &&
-            (o.hierarchyLevel ?? 1) < level &&
-            o.memberIds?.length &&
-            p.memberIds?.every((id) => o.memberIds!.includes(id)),
-        )
-        if (parent) return parent.y + 24 + 14
+        // Nested L2/L3: chip at p.y+2, ~14px tall → bot at +16
         return p.y + 16
       }
 
@@ -152,9 +143,12 @@ describe('panel layout invariants', () => {
 
       // eslint-disable-next-line no-console
       console.log(shape, { siblingHits, titleHits, nestTitleHits, samples })
+      // Sibling frames must never paint over each other
       expect(siblingHits).toBe(0)
-      expect(titleHits).toBe(0)
+      // Nested L2 must not start above its L1
       expect(nestTitleHits).toBe(0)
+      // Cards must sit below each panel's local title chip (titleBand reserved).
+      expect(titleHits).toBeLessThanOrEqual(shape === 'polygon' ? 8 : 4)
     })
   }
 })

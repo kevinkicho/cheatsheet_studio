@@ -57,7 +57,7 @@ export function nestContainPanels(
     const mem = (p.memberIds ?? [])
       .map((id) => byId.get(id))
       .filter((m): m is CanvasItem => Boolean(m) && !m.hidden)
-    // Match buildNestedHierarchyPanels exclusive title bands
+    // Match buildNestedHierarchyPanels / exclusiveTitleBandPx
     const titleExtra =
       p.showTitle === false
         ? 0
@@ -72,19 +72,9 @@ export function nestContainPanels(
                   p.memberIds?.length &&
                   c.memberIds.every((id) => p.memberIds!.includes(id)),
               )
-              return hasNested ? 44 : 26
+              return hasNested ? 42 : 26
             })()
-          : (() => {
-              const hasOuter = next.some(
-                (o) =>
-                  o.id !== p.id &&
-                  o.showStroke !== false &&
-                  (o.hierarchyLevel ?? 1) < (p.hierarchyLevel ?? 1) &&
-                  o.memberIds?.length &&
-                  p.memberIds?.every((id) => o.memberIds!.includes(id)),
-              )
-              return hasOuter ? 0 : 18
-            })()
+          : 16
 
     const clampBox = (
       x0: number,

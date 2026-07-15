@@ -25,9 +25,20 @@ export function hasOuterStrokedParent(
   )
 }
 
+/** Nested L2/L3 local chip strip (matches LayoutPanelsLayer chip at y+2 + ~14). */
+export const NESTED_TITLE_BAND_PX = 16
+/** L1 chip only. */
+export const L1_TITLE_BAND_PX = 26
+/** L1 + room so top-row nested L2 chip sits under L1 chip, not on it. */
+export const L1_NESTED_TITLE_BAND_PX = 42
+
 /**
  * Exclusive title strip height for chrome (must match buildNestedHierarchyPanels).
- * Nested L2/L3 under multi: 0 — chip paints under L1 header in the UI layer.
+ *
+ * Each stroked panel owns its own chip band above its cards:
+ *   L1 multi with nested L2 stroke → ~42
+ *   L1 alone → ~26
+ *   Nested L2/L3 → ~16 (local chip — never stack all under L1; 014705)
  */
 export function exclusiveTitleBandPx(
   p: LayoutPanel,
@@ -35,7 +46,17 @@ export function exclusiveTitleBandPx(
 ): number {
   if (p.showTitle === false || p.showStroke === false) return 0
   const level = p.hierarchyLevel ?? 1
-  if (level <= 1) return 26
-  if (hasOuterStrokedParent(p, all)) return 0
-  return 18
+  if (level <= 1) {
+    const hasNestedStroke = all.some(
+      (c) =>
+        c.id !== p.id &&
+        c.showStroke !== false &&
+        (c.hierarchyLevel ?? 1) > 1 &&
+        c.memberIds?.length &&
+        p.memberIds?.length &&
+        c.memberIds.every((id) => p.memberIds!.includes(id)),
+    )
+    return hasNestedStroke ? L1_NESTED_TITLE_BAND_PX : L1_TITLE_BAND_PX
+  }
+  return NESTED_TITLE_BAND_PX
 }

@@ -838,7 +838,7 @@ export function resolveSameLevelPanelCollisions(
   const multi = opts.multiLevel === true
   const outerLevel = opts.outerLevel ?? 1
   const L1_CHIP = 22
-  const L2_CHIP = 18
+  const L2_CHIP = 16
   let next = panels.slice()
   const padOf = new Map<string, number>(
     panels.map((p) => [p.id, padBudget]),
@@ -856,8 +856,11 @@ export function resolveSameLevelPanelCollisions(
   const titleBandFor = (p: LayoutPanel): number => {
     if (p.showTitle === false) return 0
     const level = p.hierarchyLevel ?? 1
-    if (multi && level === outerLevel) return L1_CHIP + 4
-    if (multi && level > outerLevel) return 0
+    if (multi && level === outerLevel) {
+      // Room for L1 chip + top-row nested L2 chip (~42)
+      return L1_CHIP + 4 + L2_CHIP
+    }
+    if (multi && level > outerLevel) return L2_CHIP
     return 16
   }
 
@@ -977,57 +980,22 @@ export function enforcePanelLayoutInvariants(
   const right = opts?.contentRight
   const top = opts?.contentTop
 
-  const hasOuterParent = (p: LayoutPanel, all: LayoutPanel[]) => {
-    if ((p.hierarchyLevel ?? 1) <= 1) return false
-    if (!p.memberIds?.length) return false
-    return all.some(
-      (o) =>
-        o.id !== p.id &&
-        o.showStroke !== false &&
-        (o.hierarchyLevel ?? 1) < (p.hierarchyLevel ?? 1) &&
-        o.memberIds?.length &&
-        p.memberIds!.every((id) => o.memberIds!.includes(id)),
-    )
-  }
-
-  const findOuterParent = (p: LayoutPanel, all: LayoutPanel[]) => {
-    let best: LayoutPanel | undefined
-    for (const o of all) {
-      if (o.id === p.id || o.showStroke === false) continue
-      if ((o.hierarchyLevel ?? 1) >= (p.hierarchyLevel ?? 1)) continue
-      if (!o.memberIds?.length || !p.memberIds?.length) continue
-      if (!p.memberIds.every((id) => o.memberIds!.includes(id))) continue
-      if (
-        !best ||
-        (o.hierarchyLevel ?? 1) > (best.hierarchyLevel ?? 1)
-      ) {
-        best = o
-      }
-    }
-    return best
-  }
-
   /**
    * Bottom of the *visible* title chip — matches LayoutPanelsLayer.
    * Cards must sit strictly below this Y.
    */
   const visualTitleBottom = (p: LayoutPanel, all: LayoutPanel[]): number => {
     if (p.showTitle === false || p.showStroke === false) return p.y
+    // Match LayoutPanelsLayer: chip always on this panel's top edge.
     const level = p.hierarchyLevel ?? 1
-    // L1: exclusive chrome band (includes nested L2 chip room when present)
     if (level <= 1) return p.y + exclusiveBand(p, all)
-    const parent = findOuterParent(p, all)
-    if (parent) {
-      // Nested L2 chip fixed under L1 header (see LayoutPanelsLayer)
-      return parent.y + 24 + 14
-    }
-    return p.y + 18
+    // Nested L2/L3: local chip (~14px tall at y+2)
+    return p.y + 2 + 14
   }
 
   const exclusiveBand = (p: LayoutPanel, all: LayoutPanel[]): number => {
     if (p.showTitle === false || p.showStroke === false) return 0
     if ((p.hierarchyLevel ?? 1) <= 1) {
-      // Match buildNestedHierarchyPanels multi L1: room for L1+L2 chips
       const hasNestedStroke = all.some(
         (c) =>
           c.id !== p.id &&
@@ -1037,10 +1005,10 @@ export function enforcePanelLayoutInvariants(
           p.memberIds?.length &&
           c.memberIds.every((id) => p.memberIds!.includes(id)),
       )
-      return hasNestedStroke ? 44 : 26
+      return hasNestedStroke ? 42 : 26
     }
-    if (hasOuterParent(p, all)) return 0
-    return 18
+    // Nested L2/L3: local chip strip (even under outer parent)
+    return 16
   }
 
   const isNestedPair = (a: LayoutPanel, b: LayoutPanel) => {
@@ -1203,21 +1171,24 @@ export function enforcePanelLayoutInvariants(
             Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x)
           const padA = padOf.get(a.id) ?? padBudget
           const padB = padOf.get(b.id) ?? padBudget
+          // Prefer vertical separation over pad-shrink (pad-shrink left cards
+          // flush on the stroke — contain-cards flushBorder).
+          const needY = a.y + a.height + minGap - b.y
+          if (needY > 0.5 && b.memberIds?.length && yOverlap > 0) {
+            const dy = Math.ceil(needY / grid) * grid
+            dyCluster.set(b.id, Math.max(dyCluster.get(b.id) ?? 0, dy))
+            any = true
+            continue
+          }
+          // Thin side-pad collision only: trim pad but never below 2px
           if (
             xOverlap > 0 &&
             yOverlap > 0 &&
             xOverlap <= padA + padB + minGap + 2 &&
-            (padA > 0 || padB > 0)
+            (padA > 2 || padB > 2)
           ) {
-            padOf.set(a.id, Math.max(0, padA - 2))
-            padOf.set(b.id, Math.max(0, padB - 2))
-            any = true
-            continue
-          }
-          const needY = a.y + a.height + minGap - b.y
-          if (needY > 0.5 && b.memberIds?.length) {
-            const dy = Math.ceil(needY / grid) * grid
-            dyCluster.set(b.id, Math.max(dyCluster.get(b.id) ?? 0, dy))
+            padOf.set(a.id, Math.max(2, padA - 2))
+            padOf.set(b.id, Math.max(2, padB - 2))
             any = true
           }
         }

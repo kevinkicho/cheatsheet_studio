@@ -479,26 +479,11 @@ export function LayoutPanelsLayer({
                 : null
             const ox = dx + (parentDrag?.dx ?? 0)
             const oy = dy + (parentDrag?.dy ?? 0)
-            // L1: top of exclusive header. L2: under parent L1 chip, above cards.
+            // L1/L2/L3: chip on this panel's own top edge (never stack nested
+            // chips under L1 — that garbled all L2 titles into one row, 014705).
             const isOuter = p.showStroke !== false && level <= 1
-            const parentL1 =
-              !isOuter && panels
-                ? panels.find(
-                    (o) =>
-                      o.showStroke !== false &&
-                      (o.hierarchyLevel ?? 1) <= 1 &&
-                      o.memberIds?.length &&
-                      p.memberIds?.length &&
-                      p.memberIds.every((id) => o.memberIds!.includes(id)),
-                  )
-                : undefined
             const titleLeft = p.x + ox + (isOuter ? 6 : 8)
-            // Nested L2/L3 chips always sit under the L1 header row — never at
-            // L2.y+2 when the frame hugs cards (that painted chips on blocks).
-            let titleTop = p.y + oy + (isOuter ? 3 : 2)
-            if (parentL1) {
-              titleTop = parentL1.y + oy + 24
-            }
+            const titleTop = p.y + oy + (isOuter ? 3 : 2)
             const maxW = Math.max(48, p.width - (isOuter ? 14 : 16))
             const fontSize = isOuter ? 10 : 8
             return (

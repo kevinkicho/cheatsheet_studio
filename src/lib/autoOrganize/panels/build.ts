@@ -200,27 +200,24 @@ export function buildNestedHierarchyPanels(args: {
     // not from inflating outer pad — that caused huge right/bottom empty chrome).
     const pad = showStroke ? Math.max(0, panelPad) : 0
     /**
-     * Exclusive title stack (multi-level):
-     *   L1 frame: L1 chip + gap + L2 chip band above cards
-     *   L2 frame: L2 chip only above cards
-     * So L1.y < L2.y and chips never stack on the same band.
+     * Exclusive title stack (multi-level) — each frame owns its chip:
+     *   L1: L1 chip (+ room so top-row L2 chip sits under it, not on it)
+     *   L2/L3: local chip above that panel's cards
+     * Never paint every L2 chip at L1.y+24 (screenshot 014705 garble).
      */
     const L1_CHIP = 22
-    const L2_CHIP = 18
-    // Multi-level L1 must reserve room for: L1 chip + nested L2 chip painted
-    // under it (LayoutPanelsLayer: L2 titleTop = L1.y+24). Without L2_CHIP in
-    // this band, L2 chips sit on the first card row.
-    // Nested L2 chrome itself uses titleBand 0 (chip is in L1's exclusive zone).
-    const deeperStroke = multi &&
-      effectiveLevels.some(
-        (L) => L > effectiveMinL && borderSet.has(L),
-      )
+    // Local L2 chip ≈14px at y+2 → band 16 clears cards; keeps leaf gap at
+    // 1 grid cell for pad=4 (2*pad+16=24) so hard-tetris stays dense.
+    const L2_CHIP = 16
+    const deeperStroke =
+      multi &&
+      effectiveLevels.some((L) => L > effectiveMinL && borderSet.has(L))
     const titleBand = isOutermost
       ? multi
-        ? L1_CHIP + 4 + (deeperStroke ? L2_CHIP : 0) // ~44
+        ? L1_CHIP + 4 + (deeperStroke ? L2_CHIP : 0) // ~42 with nested, else ~26
         : Math.max(16, titleBandPx)
       : multi
-        ? 0
+        ? L2_CHIP // local L2/L3 chip band
         : L2_CHIP
 
     const groups = new Map<string, CanvasItem[]>()

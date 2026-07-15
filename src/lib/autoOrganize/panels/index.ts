@@ -25,4 +25,7 @@ export {
   isPanelChildOf,
   hasOuterStrokedParent,
   exclusiveTitleBandPx,
+  NESTED_TITLE_BAND_PX,
+  L1_TITLE_BAND_PX,
+  L1_NESTED_TITLE_BAND_PX,
 } from './hierarchy'
