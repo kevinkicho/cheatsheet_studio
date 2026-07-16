@@ -31,7 +31,61 @@ export function estimateLibraryCardSize(lib: LibraryItem): {
       height: Math.min(480, Math.max(100, rows * 28 + 48)),
     }
   }
-  if (lib.type === 'figure') return { width: 240, height: 220 }
+  if (lib.type === 'figure' || lib.type === 'plot') {
+    return { width: 240, height: 220 }
+  }
+  if (lib.type === 'definition') {
+    const bodyLen = (lib.body ?? '').length
+    return {
+      width: Math.min(360, Math.max(200, 180 + Math.min(bodyLen, 120))),
+      height: Math.min(220, Math.max(88, 64 + Math.ceil(bodyLen / 40) * 18)),
+    }
+  }
+  if (lib.type === 'list') {
+    const n = Math.max(lib.listItems?.length ?? 1, 1)
+    return {
+      width: 260,
+      height: Math.min(320, Math.max(80, 40 + n * 28)),
+    }
+  }
+  if (lib.type === 'callout') {
+    const bodyLen = (lib.body ?? '').length
+    return {
+      width: Math.min(340, Math.max(200, 160 + Math.min(bodyLen, 100))),
+      height: Math.min(200, Math.max(72, 56 + Math.ceil(bodyLen / 50) * 16)),
+    }
+  }
+  if (lib.type === 'code') {
+    const lines = Math.max((lib.code ?? '').split('\n').length, 1)
+    const maxLine = Math.max(
+      ...(lib.code ?? '')
+        .split('\n')
+        .map((l) => l.length),
+      12,
+    )
+    return {
+      width: Math.min(420, Math.max(200, maxLine * 7 + 40)),
+      height: Math.min(360, Math.max(72, 36 + lines * 18)),
+    }
+  }
+  if (lib.type === 'constant') {
+    return { width: 260, height: 80 }
+  }
+  if (lib.type === 'identity-set') {
+    const n = Math.max(lib.identities?.length ?? 1, 1)
+    return {
+      width: 300,
+      height: Math.min(280, Math.max(72, 36 + n * 36)),
+    }
+  }
+  if (lib.type === 'matrix') {
+    const rows = lib.matrixRows?.length ?? 2
+    const cols = lib.matrixRows?.[0]?.length ?? 2
+    return {
+      width: Math.min(360, Math.max(160, cols * 48 + 48)),
+      height: Math.min(280, Math.max(80, rows * 36 + 40)),
+    }
+  }
   // Equations — tight default; autoFit snugs further after KaTeX measures
   return { width: 240, height: 72 }
 }

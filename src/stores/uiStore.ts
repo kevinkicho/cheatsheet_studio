@@ -8,7 +8,19 @@ export type CanvasTool = 'select' | 'pan'
 /** Bottom / full library presentation. */
 export type LibraryLayout = 'cards' | 'list'
 /** Type filter for library panels (`all` = no type restriction). */
-export type LibraryTypeFilter = 'all' | 'equation' | 'table' | 'figure'
+export type LibraryTypeFilter =
+  | 'all'
+  | 'equation'
+  | 'table'
+  | 'figure'
+  | 'definition'
+  | 'list'
+  | 'callout'
+  | 'code'
+  | 'constant'
+  | 'identity-set'
+  | 'plot'
+  | 'matrix'
 
 const ZOOM_MIN = 0.25
 const ZOOM_MAX = 2.5
@@ -263,6 +275,14 @@ export const useUiStore = create<UiState>()(
           rawType === 'equation' ||
           rawType === 'table' ||
           rawType === 'figure' ||
+          rawType === 'definition' ||
+          rawType === 'list' ||
+          rawType === 'callout' ||
+          rawType === 'code' ||
+          rawType === 'constant' ||
+          rawType === 'identity-set' ||
+          rawType === 'plot' ||
+          rawType === 'matrix' ||
           rawType === 'all'
             ? rawType
             : equationsOnly

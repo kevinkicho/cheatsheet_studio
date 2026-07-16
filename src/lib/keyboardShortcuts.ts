@@ -7,6 +7,8 @@ export type ShortcutActions = {
   undo: () => void
   redo: () => void
   removeItems: (ids: string[]) => void
+  /** Remove layout panel frames only (cards stay). */
+  removeLayoutPanels?: (ids: string[]) => void
   select: (id: string | null) => void
   /** Select all visible canvas cards (Ctrl/Cmd+A). */
   selectAll: () => void
@@ -18,6 +20,8 @@ export type ShortcutActions = {
   pastLength: number
   futureLength: number
   selectedIds: string[]
+  /** Selected layout panel ids (Delete removes frames when no cards selected). */
+  selectedPanelIds?: string[]
 }
 
 export type ShortcutResult =
@@ -115,12 +119,18 @@ export function handleCanvasKeyDown(
     return { handled: false }
   }
 
-  if (
-    (e.key === 'Delete' || e.key === 'Backspace') &&
-    actions.selectedIds.length > 0
-  ) {
-    actions.removeItems(actions.selectedIds)
-    return { handled: true, action: 'delete' }
+  if (e.key === 'Delete' || e.key === 'Backspace') {
+    // Cards take priority when both are selected (collection multi-select).
+    // Panels alone: delete the frame only (cards remain on the sheet).
+    if (actions.selectedIds.length > 0) {
+      actions.removeItems(actions.selectedIds)
+      return { handled: true, action: 'delete' }
+    }
+    const panelIds = actions.selectedPanelIds ?? []
+    if (panelIds.length > 0 && actions.removeLayoutPanels) {
+      actions.removeLayoutPanels(panelIds)
+      return { handled: true, action: 'delete-panels' }
+    }
   }
 
   if (e.key === 'Escape') {

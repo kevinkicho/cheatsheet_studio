@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { transformRgbaPixels } from '@/lib/exportCapture'
+import {
+  clampRasterScale,
+  MAX_SAFE_CANVAS_PIXELS,
+  transformRgbaPixels,
+} from '@/lib/exportCapture'
 import { resolveExportPageIndices } from '@/lib/runSheetExport'
 
 describe('transformRgbaPixels', () => {
@@ -40,5 +44,37 @@ describe('resolveExportPageIndices', () => {
 
   it('returns empty when nothing valid selected', () => {
     expect(resolveExportPageIndices(2, [5, 6])).toEqual([])
+  })
+})
+
+describe('clampRasterScale', () => {
+  it('keeps scale when under budget', () => {
+    // letter-ish 816×1056 at 1.25 ≈ 1.35MP
+    expect(clampRasterScale(816, 1056, 1.25)).toBeCloseTo(1.25, 5)
+  })
+
+  it('reduces scale when over budget', () => {
+    const s = clampRasterScale(2000, 2000, 4, 1_000_000)
+    expect(s * s * 2000 * 2000).toBeLessThanOrEqual(1_000_000 * 1.01)
+    expect(s).toBeLessThan(4)
+    expect(s).toBeGreaterThanOrEqual(0.5)
+  })
+
+  it('respects MAX_SAFE_CANVAS_PIXELS default', () => {
+    const s = clampRasterScale(4000, 4000, 3)
+    expect(4000 * 4000 * s * s).toBeLessThanOrEqual(MAX_SAFE_CANVAS_PIXELS * 1.01)
+  })
+})
+
+describe('downscaleCanvasToBudget', () => {
+  it('returns same canvas when under budget', async () => {
+    const { downscaleCanvasToBudget } = await import('@/lib/exportCapture')
+    // jsdom may lack full canvas — create minimal
+    const c = document.createElement('canvas')
+    c.width = 100
+    c.height = 100
+    const out = downscaleCanvasToBudget(c, 1_000_000)
+    expect(out.width).toBe(100)
+    expect(out.height).toBe(100)
   })
 })

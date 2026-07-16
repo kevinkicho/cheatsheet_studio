@@ -9,6 +9,7 @@ function actions(partial: Partial<ShortcutActions> = {}): ShortcutActions & {
     undo: ReturnType<typeof vi.fn>
     redo: ReturnType<typeof vi.fn>
     removeItems: ReturnType<typeof vi.fn>
+    removeLayoutPanels: ReturnType<typeof vi.fn>
     select: ReturnType<typeof vi.fn>
     setCanvasTool: ReturnType<typeof vi.fn>
   }
@@ -17,6 +18,7 @@ function actions(partial: Partial<ShortcutActions> = {}): ShortcutActions & {
     undo: vi.fn(),
     redo: vi.fn(),
     removeItems: vi.fn(),
+    removeLayoutPanels: vi.fn(),
     select: vi.fn(),
     selectAll: vi.fn(),
     setCanvasTool: vi.fn(),
@@ -25,12 +27,14 @@ function actions(partial: Partial<ShortcutActions> = {}): ShortcutActions & {
     undo: calls.undo,
     redo: calls.redo,
     removeItems: calls.removeItems,
+    removeLayoutPanels: calls.removeLayoutPanels,
     select: calls.select,
     selectAll: calls.selectAll,
     setCanvasTool: calls.setCanvasTool,
     pastLength: 1,
     futureLength: 1,
     selectedIds: ['a'],
+    selectedPanelIds: [],
     ...partial,
     calls,
   }
@@ -142,8 +146,34 @@ describe('handleCanvasKeyDown', () => {
   })
 
   it('does not delete when nothing selected', () => {
-    const a = actions({ selectedIds: [] })
+    const a = actions({ selectedIds: [], selectedPanelIds: [] })
     expect(handleCanvasKeyDown(key('Delete'), a).handled).toBe(false)
+  })
+
+  it('Delete removes layout panels when only panels selected', () => {
+    const a = actions({
+      selectedIds: [],
+      selectedPanelIds: ['p1', 'p2'],
+    })
+    expect(handleCanvasKeyDown(key('Delete'), a)).toEqual({
+      handled: true,
+      action: 'delete-panels',
+    })
+    expect(a.calls.removeLayoutPanels).toHaveBeenCalledWith(['p1', 'p2'])
+    expect(a.calls.removeItems).not.toHaveBeenCalled()
+  })
+
+  it('Delete prefers cards over panels when both selected', () => {
+    const a = actions({
+      selectedIds: ['c1'],
+      selectedPanelIds: ['p1'],
+    })
+    expect(handleCanvasKeyDown(key('Delete'), a)).toEqual({
+      handled: true,
+      action: 'delete',
+    })
+    expect(a.calls.removeItems).toHaveBeenCalledWith(['c1'])
+    expect(a.calls.removeLayoutPanels).not.toHaveBeenCalled()
   })
 
   it('Escape clears selection', () => {

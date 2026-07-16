@@ -10,10 +10,12 @@ import {
 import { Maximize2, Minimize2, Minus, Plus } from 'lucide-react'
 import {
   computePrintPageOrigins,
+  dissolvedOuterPageSize,
   multiPageLayoutBounds,
   normalizePrintPageLayout,
   resolvePagePixels,
 } from '@/lib/printSizes'
+import { DEFAULT_MARGINS } from '@/types'
 import { isFigureLike } from '@/lib/cardDefaults'
 import type { CanvasItem, SheetCanvas } from '@/types'
 
@@ -86,6 +88,11 @@ export function CanvasMinimap({
   const pageCount = Math.max(1, canvas.printPageCount ?? 1)
   const layout = normalizePrintPageLayout(canvas.printPageLayout)
   const showPrint = canvas.showPrintArea !== false
+  const dissolve = canvas.dissolvePrintArea === true
+  const margins = { ...DEFAULT_MARGINS, ...(canvas.margins ?? {}) }
+  // Match main canvas: dissolve abuts tiles (gap 0)
+  const pageGap =
+    dissolve && layout !== 'free' && pageCount > 1 ? 0 : undefined
 
   const bounds = useMemo(
     () =>
@@ -94,8 +101,9 @@ export function CanvasMinimap({
         pageCount,
         layout,
         canvas.printPagePositions,
+        pageGap,
       ),
-    [page, pageCount, layout, canvas.printPagePositions],
+    [page, pageCount, layout, canvas.printPagePositions, pageGap],
   )
 
   const origins = useMemo(
@@ -105,9 +113,15 @@ export function CanvasMinimap({
         pageCount,
         layout,
         canvas.printPagePositions,
+        pageGap ?? undefined,
       ),
-    [page, pageCount, layout, canvas.printPagePositions],
+    [page, pageCount, layout, canvas.printPagePositions, pageGap],
   )
+
+  const dissolvedOuter = useMemo(() => {
+    if (!dissolve || pageCount <= 1 || layout === 'free') return null
+    return dissolvedOuterPageSize(page, pageCount, layout)
+  }, [dissolve, pageCount, layout, page])
 
   const worldW = Math.max(canvas.width || 1, bounds.maxX, page.width, 1)
   const worldH = Math.max(canvas.height || 1, bounds.maxY, page.height, 1)
@@ -449,21 +463,89 @@ export function CanvasMinimap({
         onPointerCancel={onPointerUp}
         onWheel={onWheel}
       >
-        {/* Print pages */}
+        {/* Print area — dissolved: one super-page + outer margins only */}
         {showPrint &&
+          dissolvedOuter &&
+          (() => {
+            const o0 = origins[0] ?? { x: 0, y: 0 }
+            const outer = worldToMap(o0.x, o0.y)
+            const content = worldToMap(
+              o0.x + margins.left,
+              o0.y + margins.top,
+            )
+            return (
+              <>
+                <div
+                  key="mm-dissolved-outer"
+                  className="pointer-events-none absolute box-border border border-dashed border-indigo-400/50 bg-indigo-500/[0.04]"
+                  data-testid="minimap-dissolved-outer"
+                  style={{
+                    left: outer.x,
+                    top: outer.y,
+                    width: Math.max(2, dissolvedOuter.outerW * scale),
+                    height: Math.max(2, dissolvedOuter.outerH * scale),
+                  }}
+                />
+                <div
+                  key="mm-dissolved-content"
+                  className="pointer-events-none absolute box-border border border-dashed border-emerald-400/55 bg-emerald-500/[0.06]"
+                  data-testid="minimap-dissolved-content"
+                  style={{
+                    left: content.x,
+                    top: content.y,
+                    width: Math.max(
+                      2,
+                      (dissolvedOuter.outerW -
+                        margins.left -
+                        margins.right) *
+                        scale,
+                    ),
+                    height: Math.max(
+                      2,
+                      (dissolvedOuter.outerH -
+                        margins.top -
+                        margins.bottom) *
+                        scale,
+                    ),
+                  }}
+                />
+              </>
+            )
+          })()}
+        {showPrint &&
+          !dissolvedOuter &&
           origins.map((o, i) => {
             const p = worldToMap(o.x, o.y)
+            const mLeft = margins.left
+            const mTop = margins.top
+            const content = worldToMap(o.x + mLeft, o.y + mTop)
             return (
-              <div
-                key={`mm-pg-${i}`}
-                className="pointer-events-none absolute box-border border border-dashed border-indigo-400/45 bg-indigo-500/[0.04]"
-                style={{
-                  left: p.x,
-                  top: p.y,
-                  width: Math.max(2, page.width * scale),
-                  height: Math.max(2, page.height * scale),
-                }}
-              />
+              <div key={`mm-pg-${i}`}>
+                <div
+                  className="pointer-events-none absolute box-border border border-dashed border-indigo-400/45 bg-indigo-500/[0.04]"
+                  style={{
+                    left: p.x,
+                    top: p.y,
+                    width: Math.max(2, page.width * scale),
+                    height: Math.max(2, page.height * scale),
+                  }}
+                />
+                <div
+                  className="pointer-events-none absolute box-border border border-dashed border-emerald-400/40"
+                  style={{
+                    left: content.x,
+                    top: content.y,
+                    width: Math.max(
+                      1,
+                      (page.width - margins.left - margins.right) * scale,
+                    ),
+                    height: Math.max(
+                      1,
+                      (page.height - margins.top - margins.bottom) * scale,
+                    ),
+                  }}
+                />
+              </div>
             )
           })}
 

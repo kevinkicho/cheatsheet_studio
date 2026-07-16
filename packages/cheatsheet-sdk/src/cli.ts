@@ -159,13 +159,22 @@ async function run() {
     if (cmd === 'blocks' || cmd === 'catalog-search') {
       const query = argValue(args, '--query') ?? (args[1]?.startsWith('-') ? '' : args[1] ?? '')
       const typeRaw = argValue(args, '--type')
+      const knownTypes = new Set([
+        'equation',
+        'table',
+        'figure',
+        'definition',
+        'list',
+        'callout',
+        'code',
+        'constant',
+        'identity-set',
+        'plot',
+        'matrix',
+        'process',
+      ])
       const type =
-        typeRaw === 'equation' ||
-        typeRaw === 'table' ||
-        typeRaw === 'figure' ||
-        typeRaw === 'process'
-          ? typeRaw
-          : 'all'
+        typeRaw && knownTypes.has(typeRaw) ? (typeRaw as import('./catalog').CatalogBlockType) : 'all'
       const kindRaw = argValue(args, '--kind')
       const processKind =
         kindRaw === 'flowchart' || kindRaw === 'mindmap' ? kindRaw : 'all'
@@ -189,7 +198,9 @@ async function run() {
         return
       }
       if (hits.length === 0) {
-        console.log('No blocks match. Try --type equation|table|figure|process')
+        console.log(
+          'No blocks match. Try --type equation|table|figure|definition|list|callout|code|constant|identity-set|plot|matrix|process',
+        )
         return
       }
       for (const h of hits) {
@@ -341,8 +352,22 @@ async function run() {
       const statsOnly = args.includes('--stats')
       const subjects = argValues(args, '--subject')
       const typesRaw = argValues(args, '--type')
-      const types = typesRaw.filter((t): t is 'equation' | 'table' | 'figure' | 'process' =>
-        ['equation', 'table', 'figure', 'process'].includes(t),
+      const typeAllow = [
+        'equation',
+        'table',
+        'figure',
+        'definition',
+        'list',
+        'callout',
+        'code',
+        'constant',
+        'identity-set',
+        'plot',
+        'matrix',
+        'process',
+      ] as const
+      const types = typesRaw.filter((t): t is (typeof typeAllow)[number] =>
+        (typeAllow as readonly string[]).includes(t),
       )
       const limitRaw = argValue(args, '--limit')
       const limit = limitRaw ? Math.max(1, parseInt(limitRaw, 10) || 0) : undefined

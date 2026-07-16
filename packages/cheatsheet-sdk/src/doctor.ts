@@ -55,14 +55,17 @@ export async function runDoctor(): Promise<DoctorReport> {
   // Catalog (equations/tables/figures + process blocks)
   try {
     const cat = await loadSeedCatalog()
-    const nEq = cat.filter((i) => i.type === 'equation').length
-    const nTable = cat.filter((i) => i.type === 'table').length
-    const nFig = cat.filter((i) => i.type === 'figure').length
-    const nProc = cat.filter((i) => i.type === 'process').length
+    const byType: Record<string, number> = {}
+    for (const i of cat) byType[i.type] = (byType[i.type] ?? 0) + 1
+    const nProc = byType.process ?? 0
+    const summary = Object.entries(byType)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([t, n]) => `${t} ${n}`)
+      .join(', ')
     checks.push({
       name: 'seed-catalog',
       ok: cat.length > 0 && nProc > 0,
-      detail: `${cat.length} blocks (equation ${nEq}, table ${nTable}, figure ${nFig}, process ${nProc})`,
+      detail: `${cat.length} blocks (${summary})`,
     })
   } catch (e) {
     checks.push({

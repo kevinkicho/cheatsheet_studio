@@ -9,18 +9,25 @@ import {
 import {
   ArrowDown,
   ArrowUp,
+  BookOpen,
   ChevronDown,
   ChevronRight,
   ChevronsDown,
   ChevronsUp,
+  Code2,
   Eye,
   EyeOff,
   FolderPlus,
   GitBranch,
+  Grid3x3,
   ImageIcon,
+  LineChart,
+  List,
   Lock,
   LockOpen,
+  MessageSquare,
   Pencil,
+  Pi,
   Search,
   Sigma,
   Table2,
@@ -61,6 +68,9 @@ export function LayersPanel() {
   const select = useCanvasStore((s) => s.select)
   const toggleSelect = useCanvasStore((s) => s.toggleSelect)
   const setSelectedIds = useCanvasStore((s) => s.setSelectedIds)
+  const selectCollectionWithPanel = useCanvasStore(
+    (s) => s.selectCollectionWithPanel,
+  )
   const requestFocusCanvasItem = useUiStore((s) => s.requestFocusCanvasItem)
   const canvasShowHiddenItems = useUiStore((s) => s.canvasShowHiddenItems)
   const toggleCanvasShowHiddenItems = useUiStore(
@@ -218,7 +228,14 @@ export function LayersPanel() {
   }
 
   const selectFolderContents = (folderId: string | null) => {
-    setSelectedIds(itemsInFolderTree(folderId).map((i) => i.id))
+    // Sheet root: cards only (no collection panel)
+    if (folderId == null) {
+      setSelectedIds(itemsInFolderTree(null).map((i) => i.id))
+      return
+    }
+    // Collection: select all cards in the tree + panel frame (create if needed)
+    // so left sidebar opens Panel properties / Auto-layout inside panel.
+    selectCollectionWithPanel(folderId)
   }
 
   const startRename = (f: OutlinerFolder) => {
@@ -1174,6 +1191,14 @@ function OutlinerRow({
 function typeIcon(item: CanvasItem) {
   if (item.type === 'process-chart' || item.mermaidSource) return GitBranch
   if (item.type === 'table' || item.tableMarkdown) return Table2
+  if (item.type === 'definition') return BookOpen
+  if (item.type === 'list') return List
+  if (item.type === 'callout') return MessageSquare
+  if (item.type === 'code') return Code2
+  if (item.type === 'constant') return Pi
+  if (item.type === 'identity-set') return Sigma
+  if (item.type === 'matrix') return Grid3x3
+  if (item.type === 'plot') return LineChart
   if (
     item.type === 'figure' ||
     item.type === 'custom-image' ||
@@ -1188,6 +1213,14 @@ function typeColor(item: CanvasItem) {
   if (item.type === 'process-chart' || item.mermaidSource)
     return 'text-[#c4b5fd]'
   if (item.type === 'table' || item.tableMarkdown) return 'text-[#7ec8e3]'
+  if (item.type === 'definition') return 'text-[#f9a8d4]'
+  if (item.type === 'list') return 'text-[#93c5fd]'
+  if (item.type === 'callout') return 'text-[#fcd34d]'
+  if (item.type === 'code') return 'text-[#a3e635]'
+  if (item.type === 'constant') return 'text-[#67e8f9]'
+  if (item.type === 'identity-set') return 'text-[#c4b5fd]'
+  if (item.type === 'matrix') return 'text-[#fda4af]'
+  if (item.type === 'plot') return 'text-[#6ee7b7]'
   if (
     item.type === 'figure' ||
     item.type === 'custom-image' ||

@@ -71,10 +71,27 @@ export function estimateIdealBlockSize(
   if (isProcessItem(it)) {
     const src = it.mermaidSource ?? ''
     const lines = Math.max(3, src.split('\n').filter(Boolean).length)
-    if (isMindProcess(it)) {
+    // Prefer free-form snapshot footprint when present (user-resized mindmap)
+    const pf = it.processFlow
+    if (
+      pf &&
+      typeof pf === 'object' &&
+      typeof (pf as { width?: number }).width === 'number' &&
+      typeof (pf as { height?: number }).height === 'number'
+    ) {
+      const pw = Math.max(160, (pf as { width: number }).width)
+      const ph = Math.max(120, (pf as { height: number }).height)
+      // Keep readable on the sheet — don't crush below ~half natural size
       return {
-        w: Math.min(maxW, 200),
-        h: Math.min(220, Math.max(160, 120 + lines * 8)) + titleH,
+        w: Math.min(maxW, Math.max(280, Math.round(pw * 0.85))),
+        h: Math.max(min.h, Math.max(200, Math.round(ph * 0.85))) + titleH,
+      }
+    }
+    if (isMindProcess(it)) {
+      // Mind maps need a wide box; old 200×220 crushed radial trees
+      return {
+        w: Math.min(maxW, Math.max(320, Math.round(maxW * 0.45))),
+        h: Math.min(360, Math.max(240, 140 + lines * 10)) + titleH,
       }
     }
     if (isLrProcess(it)) {
@@ -84,8 +101,8 @@ export function estimateIdealBlockSize(
       }
     }
     return {
-      w: Math.min(maxW, 160),
-      h: Math.min(260, Math.max(140, 100 + lines * 12)) + titleH,
+      w: Math.min(maxW, 240),
+      h: Math.min(300, Math.max(160, 100 + lines * 12)) + titleH,
     }
   }
 
@@ -99,8 +116,48 @@ export function estimateIdealBlockSize(
     }
   }
 
-  if (it.imageUrl || it.type === 'figure') {
+  if (it.imageUrl || it.type === 'figure' || it.type === 'plot') {
     return { w: Math.min(maxW, 140), h: Math.max(min.h, 100 + titleH) }
+  }
+
+  if (it.type === 'definition' || it.type === 'callout') {
+    const bodyLen = (it.body ?? '').length + (it.term ?? '').length
+    return {
+      w: Math.min(maxW, Math.max(min.w, 120 + Math.min(bodyLen, 80))),
+      h: Math.max(min.h, 48 + Math.ceil(bodyLen / 40) * 12 + titleH),
+    }
+  }
+  if (it.type === 'list') {
+    const n = Math.max(it.listItems?.length ?? 1, 1)
+    return {
+      w: Math.min(maxW, 150),
+      h: Math.max(min.h, 28 + n * 16 + titleH),
+    }
+  }
+  if (it.type === 'code') {
+    const lines = Math.max((it.code ?? '').split('\n').length, 1)
+    return {
+      w: Math.min(maxW, 180),
+      h: Math.max(min.h, 28 + lines * 14 + titleH),
+    }
+  }
+  if (it.type === 'constant') {
+    return { w: Math.min(maxW, 150), h: Math.max(min.h, 36 + titleH) }
+  }
+  if (it.type === 'identity-set') {
+    const n = Math.max(it.identities?.length ?? 1, 1)
+    return {
+      w: Math.min(maxW, 170),
+      h: Math.max(min.h, 24 + n * 22 + titleH),
+    }
+  }
+  if (it.type === 'matrix') {
+    const rows = it.matrixRows?.length ?? 2
+    const cols = it.matrixRows?.[0]?.length ?? 2
+    return {
+      w: Math.min(maxW, Math.max(min.w, 48 + cols * 28)),
+      h: Math.max(min.h, 32 + rows * 22 + titleH),
+    }
   }
 
   // Equation — snug to latex (short FV / Continuous stay compact like export 19)

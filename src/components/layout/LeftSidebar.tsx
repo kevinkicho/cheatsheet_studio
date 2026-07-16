@@ -23,7 +23,7 @@ export function LeftSidebar() {
               : 'Title, auto layout, grid · click a panel to edit it'}
         </p>
       </div>
-      <div className="min-h-0 flex-1 overflow-hidden">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         <PropertiesPanel />
       </div>
     </div>

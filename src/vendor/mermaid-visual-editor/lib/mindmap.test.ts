@@ -12,6 +12,7 @@ import {
   measureMindmapNodeSize,
   straightMindmapPath,
   wrapMindmapLabel,
+  wrapMindmapLabelLines,
 } from './mindmap'
 import { MERMAID_MINDMAP_EXAMPLE } from '@/lib/mermaidTemplates'
 import type { FlowEdgeData, FlowNodeData } from './store'
@@ -325,6 +326,26 @@ describe('mindmap parse/serialize', () => {
     expect(dO2).toBeGreaterThan(dO)
     // The two kids are distinct (not piled on one slot)
     expect(Math.hypot(p.o1!.x - p.o2!.x, p.o1!.y - p.o2!.y)).toBeGreaterThan(40)
+  })
+
+  it('wrapMindmapLabelLines never breaks mid-word (Popularisation)', () => {
+    // maxChars 13 is shorter than "Popularisation" (14) — old code sliced to
+    // "Popularisatio" + "n" (screenshot 014741).
+    const lines = wrapMindmapLabelLines('Popularisation', 13)
+    expect(lines).toEqual(['Popularisation'])
+    expect(lines.every((l) => !l.match(/populatio$/i))).toBe(true)
+
+    const multi = wrapMindmapLabelLines('Long history of Popularisation', 12)
+    // May wrap at spaces; "Popularisation" stays whole
+    expect(multi.join(' ')).toContain('Popularisation')
+    expect(multi.some((l) => l === 'Popularisation' || l.endsWith('Popularisation'))).toBe(
+      true,
+    )
+    for (const l of multi) {
+      expect(l.includes('Popularisatio') && !l.includes('Popularisation')).toBe(
+        false,
+      )
+    }
   })
 
   it('official example: 3 top-level topics around root', () => {

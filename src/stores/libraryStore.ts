@@ -2,6 +2,18 @@ import { create } from 'zustand'
 import { collection, getDocs, orderBy, query } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { SEED_LIBRARY } from '@/data/seedLibrary'
+import { inferLibraryType } from '@/lib/cardKinds'
+import { hasProseMath } from '@/lib/proseMath'
+import {
+  loadCatalogFromRtdb,
+  publishCatalogToRtdb,
+} from '@/lib/catalogRtdb'
+import type { CatalogMeta, CatalogSource } from '@/lib/catalogTypes'
+import {
+  buildTopicInventory,
+  countsBySubject,
+  thinTopics,
+} from '@/lib/catalogInventory'
 import type { LibraryItem, Subject } from '@/types'
 
 /**
@@ -20,11 +32,16 @@ function isSvgUrl(url: string | undefined): boolean {
 function preferSeedVector(cloud: LibraryItem): LibraryItem {
   const seed = SEED_BY_ID.get(cloud.id)
   if (!seed) return cloud
-  if (cloud.type === 'figure' || seed.type === 'figure') {
+  if (
+    cloud.type === 'figure' ||
+    seed.type === 'figure' ||
+    cloud.type === 'plot' ||
+    seed.type === 'plot'
+  ) {
     if (isSvgUrl(seed.imageUrl) && !isSvgUrl(cloud.imageUrl)) {
       return {
         ...cloud,
-        type: 'figure',
+        type: seed.type === 'plot' || cloud.type === 'plot' ? 'plot' : 'figure',
         imageUrl: seed.imageUrl,
         latex: undefined,
         tableMarkdown: undefined,
@@ -50,69 +67,174 @@ function preferSeedVector(cloud: LibraryItem): LibraryItem {
       imageUrl: undefined,
     }
   }
+  // Prefer seed definition body when cloud still has plain (no $math$) prose
+  // but seed was upgraded with KaTeX delimiters.
+  if (
+    (cloud.type === 'definition' || seed.type === 'definition') &&
+    seed.body?.trim() &&
+    hasProseMath(seed.body) &&
+    !hasProseMath(cloud.body ?? '')
+  ) {
+    return {
+      ...cloud,
+      type: 'definition',
+      body: seed.body,
+      term: cloud.term?.trim() ? cloud.term : seed.term,
+    }
+  }
   return cloud
+}
+
+function mapFirestoreDoc(
+  id: string,
+  data: Record<string, unknown>,
+): LibraryItem {
+  const type = inferLibraryType(data as Partial<LibraryItem>)
+  const cloud = {
+    id,
+    type,
+    title: (data.title as string) ?? 'Untitled',
+    subject: (data.subject as LibraryItem['subject']) ?? 'mathematics',
+    topic: (data.topic as string) ?? 'General',
+    tags: Array.isArray(data.tags) ? (data.tags as string[]) : [],
+    latex: data.latex as string | undefined,
+    tableMarkdown: data.tableMarkdown as string | undefined,
+    imageUrl: data.imageUrl as string | undefined,
+    imagePath: data.imagePath as string | undefined,
+    description: data.description as string | undefined,
+    source: data.source as string | undefined,
+    isSystem: (data.isSystem as boolean) ?? false,
+    createdBy: data.createdBy as string | undefined,
+    term: data.term as string | undefined,
+    body: data.body as string | undefined,
+    listItems: Array.isArray(data.listItems)
+      ? (data.listItems as string[])
+      : undefined,
+    listOrdered: data.listOrdered as boolean | undefined,
+    calloutVariant: data.calloutVariant as
+      | LibraryItem['calloutVariant']
+      | undefined,
+    code: data.code as string | undefined,
+    codeLanguage: data.codeLanguage as string | undefined,
+    symbol: data.symbol as string | undefined,
+    value: data.value as string | undefined,
+    unit: data.unit as string | undefined,
+    identities: Array.isArray(data.identities)
+      ? (data.identities as string[])
+      : undefined,
+    matrixRows: Array.isArray(data.matrixRows)
+      ? (data.matrixRows as string[][])
+      : undefined,
+  } as LibraryItem
+  return preferSeedVector(cloud)
 }
 
 interface LibraryState {
   items: LibraryItem[]
   loading: boolean
-  source: 'seed' | 'firestore'
-  load: () => Promise<void>
+  source: CatalogSource
+  catalogMeta: CatalogMeta | null
+  lastError: string | null
+  load: () => Promise<{ source: CatalogSource; count: number }>
+  /** Replace in-memory catalog and optionally publish bulk to RTDB. */
+  setItems: (
+    items: LibraryItem[],
+    opts?: { publishRtdb?: boolean; note?: string; model?: string },
+  ) => Promise<void>
   getById: (id: string) => LibraryItem | undefined
   bySubject: (subject: Subject) => LibraryItem[]
   topicsFor: (subject: Subject) => string[]
+  inventory: () => ReturnType<typeof buildTopicInventory>
+  thin: (minCount?: number) => ReturnType<typeof thinTopics>
 }
 
 export const useLibraryStore = create<LibraryState>((set, get) => ({
   items: SEED_LIBRARY,
   loading: false,
   source: 'seed',
+  catalogMeta: null,
+  lastError: null,
 
   load: async () => {
-    set({ loading: true })
+    set({ loading: true, lastError: null })
+
+    // 1) Prefer RTDB bulk snapshot (single download)
+    try {
+      const bulk = await loadCatalogFromRtdb()
+      if (bulk && bulk.items.length > 0) {
+        const items = bulk.items.map((it) => preferSeedVector(it))
+        set({
+          items,
+          source: 'rtdb',
+          catalogMeta: bulk.meta,
+          loading: false,
+        })
+        return { source: 'rtdb' as const, count: items.length }
+      }
+    } catch (e) {
+      console.warn('[libraryStore] RTDB load', e)
+    }
+
+    // 2) Firestore document collection (legacy / seed script)
     try {
       const q = query(collection(db, 'libraryItems'), orderBy('title'))
       const snap = await getDocs(q)
       if (!snap.empty) {
-        const items = snap.docs.map((d) => {
-          const data = d.data() as Record<string, unknown>
-          const latex = data.latex as string | undefined
-          const tableMarkdown = data.tableMarkdown as string | undefined
-          let imageUrl = data.imageUrl as string | undefined
-          let type = data.type as LibraryItem['type'] | undefined
-          // Infer type for older cloud docs missing `type`
-          if (!type) {
-            if (latex) type = 'equation'
-            else if (tableMarkdown) type = 'table'
-            else if (imageUrl) type = 'figure'
-            else type = 'equation'
-          }
-          const cloud = {
-            id: d.id,
-            type,
-            title: (data.title as string) ?? 'Untitled',
-            subject: (data.subject as LibraryItem['subject']) ?? 'mathematics',
-            topic: (data.topic as string) ?? 'General',
-            tags: Array.isArray(data.tags) ? (data.tags as string[]) : [],
-            latex,
-            tableMarkdown,
-            imageUrl,
-            imagePath: data.imagePath as string | undefined,
-            description: data.description as string | undefined,
-            source: data.source as string | undefined,
-            isSystem: (data.isSystem as boolean) ?? false,
-            createdBy: data.createdBy as string | undefined,
-          } as LibraryItem
-          // Affirmative: never serve raster diagrams when seed has SVG for this id
-          return preferSeedVector(cloud)
+        const items = snap.docs.map((d) =>
+          mapFirestoreDoc(d.id, d.data() as Record<string, unknown>),
+        )
+        set({
+          items,
+          source: 'firestore',
+          catalogMeta: {
+            version: 1,
+            updatedAt: Date.now(),
+            itemCount: items.length,
+            source: 'firestore',
+            bySubject: countsBySubject(items),
+          },
+          loading: false,
         })
-        set({ items, source: 'firestore', loading: false })
-        return
+        return { source: 'firestore' as const, count: items.length }
       }
-    } catch {
-      // Offline / rules not ready — fall back to seed (always vector)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      set({ lastError: msg })
     }
-    set({ items: SEED_LIBRARY, source: 'seed', loading: false })
+
+    // 3) Bundled seed
+    set({
+      items: SEED_LIBRARY,
+      source: 'seed',
+      catalogMeta: {
+        version: 0,
+        updatedAt: Date.now(),
+        itemCount: SEED_LIBRARY.length,
+        source: 'seed',
+        bySubject: countsBySubject(SEED_LIBRARY),
+        note: 'Bundled seed (offline / empty cloud)',
+      },
+      loading: false,
+    })
+    return { source: 'seed' as const, count: SEED_LIBRARY.length }
+  },
+
+  setItems: async (items, opts) => {
+    set({ items, lastError: null })
+    if (opts?.publishRtdb) {
+      try {
+        const meta = await publishCatalogToRtdb(items, {
+          note: opts.note,
+          model: opts.model,
+          source: 'enrich',
+        })
+        set({ source: 'rtdb', catalogMeta: meta })
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        set({ lastError: msg })
+        throw e
+      }
+    }
   },
 
   getById: (id) => get().items.find((i) => i.id === id),
@@ -127,4 +249,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     )
     return Array.from(topics).sort()
   },
+
+  inventory: () => buildTopicInventory(get().items),
+  thin: (minCount = 4) => thinTopics(get().items, minCount),
 }))

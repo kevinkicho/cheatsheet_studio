@@ -28,6 +28,7 @@ import {
 import {
   clampPrintPageCount,
   computePrintPageOrigins,
+  dissolvedOuterPageSize,
   formatPageSizeLabel,
   getPrintPageSize,
   multiPageLayoutBounds,
@@ -145,16 +146,18 @@ export function MainCanvas() {
   const printPageCount = clampPrintPageCount(canvas.printPageCount ?? 1)
   const printPageLayout = normalizePrintPageLayout(canvas.printPageLayout)
   const dissolvePrintArea = canvas.dissolvePrintArea === true
-  // Dissolved vertical/horizontal stacks tile with no stack gap so the board
-  // matches continuous pack coordinates (max printable band).
+  // Dissolved multipage: abut pages (gap 0) for vertical / horizontal / grid
+  // so board coords match continuous pack space (outer margins only).
   const printPageOrigins =
     dissolvePrintArea &&
     printPageCount > 1 &&
-    (printPageLayout === 'vertical' || printPageLayout === 'horizontal')
-      ? Array.from({ length: printPageCount }, (_, i) =>
-          printPageLayout === 'horizontal'
-            ? { x: i * printPage.width, y: 0 }
-            : { x: 0, y: i * printPage.height },
+    printPageLayout !== 'free'
+      ? computePrintPageOrigins(
+          printPage,
+          printPageCount,
+          printPageLayout,
+          canvas.printPagePositions,
+          /* gap */ 0,
         )
       : computePrintPageOrigins(
           printPage,
@@ -242,10 +245,23 @@ export function MainCanvas() {
     if (!el) return false
     if (el.closest('[data-canvas-item]')) return false
     if (el.closest('[data-print-page-handle]')) return false
-    // Layout panel title chips / stroke hits are not "background", but allow
-    // marquee on empty board (panel fills use pointer-events:none).
-    if (el.closest('[data-layout-panel-title], [data-layout-panel-hit], [data-layout-panel-outline]'))
+    // Layout panels (title, stroke, selected frame, resize grips) are objects —
+    // never treat as empty board. Old bug: after panel resize the synthetic
+    // click landed on the grip; isBackground → select(null) dropped the panel.
+    if (
+      el.closest(
+        [
+          '[data-layout-panel]',
+          '[data-layout-panel-title]',
+          '[data-layout-panel-hit]',
+          '[data-layout-panel-outline]',
+          '[data-layout-panel-resize-frame]',
+          '[data-panel-resize-handle]',
+        ].join(', '),
+      )
+    ) {
       return false
+    }
     if (el.closest('button, input, textarea, a, [role="button"]')) return false
     return true
   }
@@ -320,28 +336,48 @@ export function MainCanvas() {
     [],
   )
 
+  const beginPan = (
+    e: ReactPointerEvent<HTMLDivElement>,
+    vp: HTMLDivElement,
+  ) => {
+    e.preventDefault()
+    panRef.current = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      scrollLeft: vp.scrollLeft,
+      scrollTop: vp.scrollTop,
+      didMove: false,
+    }
+    marqueeRef.current = null
+    setMarquee(null)
+    try {
+      vp.setPointerCapture(e.pointerId)
+    } catch {
+      /* ignore */
+    }
+    setIsPanning(true)
+  }
+
   const onViewportPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (e.button !== 0) return
-    if (!isBackgroundTarget(e.target)) return
     const vp = viewportRef.current
     if (!vp) return
+
+    // —— Middle mouse (wheel click): pan from anywhere on the board ——
+    // Works over cards/empty space; cards ignore non-left buttons so this bubbles.
+    if (e.button === 1) {
+      beginPan(e, vp)
+      return
+    }
+
+    if (e.button !== 0) return
+    if (!isBackgroundTarget(e.target)) return
 
     // —— Pan tool, or temporary pan: Shift + left-drag on empty board ——
     // (Shift+click multi-select on cards is unchanged in CanvasItemView.)
     const temporaryPan = canvasTool === 'select' && e.shiftKey
     if (canvasTool === 'pan' || temporaryPan) {
-      panRef.current = {
-        pointerId: e.pointerId,
-        startX: e.clientX,
-        startY: e.clientY,
-        scrollLeft: vp.scrollLeft,
-        scrollTop: vp.scrollTop,
-        didMove: false,
-      }
-      marqueeRef.current = null
-      setMarquee(null)
-      vp.setPointerCapture(e.pointerId)
-      setIsPanning(true)
+      beginPan(e, vp)
       return
     }
 
@@ -366,6 +402,17 @@ export function MainCanvas() {
     // Pan
     const pan = panRef.current
     if (pan && pan.pointerId === e.pointerId) {
+      // Missed pointerup → don't stick-pan forever
+      if (e.buttons === 0) {
+        try {
+          vp.releasePointerCapture(e.pointerId)
+        } catch {
+          /* ignore */
+        }
+        panRef.current = null
+        setIsPanning(false)
+        return
+      }
       const dx = e.clientX - pan.startX
       const dy = e.clientY - pan.startY
       if (Math.abs(dx) > 2 || Math.abs(dy) > 2) pan.didMove = true
@@ -550,6 +597,9 @@ export function MainCanvas() {
       printPageCount,
       printPageLayout,
       canvas.printPagePositions,
+      dissolvePrintArea && printPageLayout !== 'free' && printPageCount > 1
+        ? 0
+        : undefined,
     )
     const fitW = Math.max(bounds.width, 40)
     const fitH = Math.max(bounds.height, 40)
@@ -577,6 +627,7 @@ export function MainCanvas() {
     printPage,
     printPageCount,
     printPageLayout,
+    dissolvePrintArea,
     setCanvasZoom,
   ])
 
@@ -664,6 +715,25 @@ export function MainCanvas() {
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keyup', onKeyUp)
       window.removeEventListener('blur', onBlur)
+    }
+  }, [])
+
+  // Block browser “auto-scroll” mode on middle-click inside the canvas
+  useEffect(() => {
+    const vp = viewportRef.current
+    if (!vp) return
+    const blockMiddleAutoScroll = (e: MouseEvent) => {
+      if (e.button === 1) e.preventDefault()
+    }
+    // auxclick fires on middle release in some browsers
+    const blockAux = (e: MouseEvent) => {
+      if (e.button === 1) e.preventDefault()
+    }
+    vp.addEventListener('mousedown', blockMiddleAutoScroll)
+    vp.addEventListener('auxclick', blockAux)
+    return () => {
+      vp.removeEventListener('mousedown', blockMiddleAutoScroll)
+      vp.removeEventListener('auxclick', blockAux)
     }
   }, [])
 
@@ -780,9 +850,11 @@ export function MainCanvas() {
     gridExtent,
   })
 
-  // Pan tool always grabs; Select + Shift is temporary pan (empty board)
+  // Pan tool / Shift+empty / middle-mouse drag → grab cursor
   const panCursor =
-    canvasTool === 'pan' || (canvasTool === 'select' && shiftHeld)
+    isPanning ||
+    canvasTool === 'pan' ||
+    (canvasTool === 'select' && shiftHeld)
   const cursorClass = panCursor
     ? isPanning
       ? 'cursor-grabbing select-none'
@@ -836,21 +908,21 @@ export function MainCanvas() {
             */}
             {showPrint &&
               (() => {
-                // Dissolved vertical/horizontal: one continuous frame, no inter-page borders
+                // Dissolved multipage: one super-page frame; only outer margins
+                // (inter-page gutters gone for vertical / horizontal / grid).
                 const stackDissolve =
                   dissolvePrintArea &&
                   printPageCount > 1 &&
-                  (printPageLayout === 'vertical' ||
-                    printPageLayout === 'horizontal')
+                  printPageLayout !== 'free'
                 if (stackDissolve) {
                   const origin0 = printPageOrigins[0] ?? { x: 0, y: 0 }
-                  const vertical = printPageLayout === 'vertical'
-                  const outerW = vertical
-                    ? printPage.width
-                    : printPageCount * printPage.width
-                  const outerH = vertical
-                    ? printPageCount * printPage.height
-                    : printPage.height
+                  const outer = dissolvedOuterPageSize(
+                    printPage,
+                    printPageCount,
+                    printPageLayout,
+                  )
+                  const outerW = outer.outerW
+                  const outerH = outer.outerH
                   const contentW = Math.max(
                     0,
                     outerW - margins.left - margins.right,
@@ -859,6 +931,10 @@ export function MainCanvas() {
                     0,
                     outerH - margins.top - margins.bottom,
                   )
+                  const layoutHint =
+                    outer.cols > 1 || outer.rows > 1
+                      ? ` · ${outer.cols}×${outer.rows}`
+                      : ''
                   return (
                     <div key="print-dissolved-chrome">
                       <div
@@ -889,7 +965,7 @@ export function MainCanvas() {
                         }}
                       >
                         <span className="mr-0.5 text-emerald-300">
-                          Dissolved · {printPageCount} pages
+                          Dissolved · {printPageCount} pages{layoutHint}
                         </span>
                         {formatPageSizeLabel(
                           canvas.printSizeId ?? 'letter',
@@ -898,8 +974,8 @@ export function MainCanvas() {
                         · {outerW}×{outerH}
                         <span className="text-zinc-500">
                           {' '}
-                          · m {margins.top}/{margins.right}/{margins.bottom}/
-                          {margins.left}
+                          · outer m {margins.top}/{margins.right}/
+                          {margins.bottom}/{margins.left}
                         </span>
                       </div>
                     </div>
@@ -1030,46 +1106,38 @@ export function MainCanvas() {
             {usePerPageGrid &&
               (dissolvePrintArea &&
               printPageCount > 1 &&
-              (printPageLayout === 'vertical' ||
-                printPageLayout === 'horizontal') ? (
-                // One continuous grid over the dissolved printable band
+              printPageLayout !== 'free' ? (
+                // One continuous grid over the dissolved super-page band
+                (() => {
+                  const outer = dissolvedOuterPageSize(
+                    printPage,
+                    printPageCount,
+                    printPageLayout,
+                  )
+                  const o0 = printPageOrigins[0] ?? { x: 0, y: 0 }
+                  const printable = gridExtent === 'printable'
+                  return (
                 <CanvasGridLayer
-                  key={`grid-dissolved-${gridExtent}-${gridSpacing}-${gridOpacity}`}
+                  key={`grid-dissolved-${gridExtent}-${gridSpacing}-${gridOpacity}-${printPageLayout}`}
                   left={
-                    gridExtent === 'printable'
-                      ? (printPageOrigins[0]?.x ?? 0) + margins.left
-                      : (printPageOrigins[0]?.x ?? 0)
+                    printable ? o0.x + margins.left : o0.x
                   }
                   top={
-                    gridExtent === 'printable'
-                      ? (printPageOrigins[0]?.y ?? 0) + margins.top
-                      : (printPageOrigins[0]?.y ?? 0)
+                    printable ? o0.y + margins.top : o0.y
                   }
                   width={
-                    printPageLayout === 'horizontal'
-                      ? printPageCount * printPage.width -
-                        (gridExtent === 'printable'
-                          ? margins.left + margins.right
-                          : 0)
-                      : printPage.width -
-                        (gridExtent === 'printable'
-                          ? margins.left + margins.right
-                          : 0)
+                    outer.outerW -
+                    (printable ? margins.left + margins.right : 0)
                   }
                   height={
-                    printPageLayout === 'vertical'
-                      ? printPageCount * printPage.height -
-                        (gridExtent === 'printable'
-                          ? margins.top + margins.bottom
-                          : 0)
-                      : printPage.height -
-                        (gridExtent === 'printable'
-                          ? margins.top + margins.bottom
-                          : 0)
+                    outer.outerH -
+                    (printable ? margins.top + margins.bottom : 0)
                   }
                   spacing={gridSpacing}
                   opacity={gridOpacity}
                 />
+                  )
+                })()
               ) : (
                 printPageOrigins.map((origin, pageIndex) => {
                   const rect = resolvePageGridRect(
@@ -1187,14 +1255,14 @@ export function MainCanvas() {
             data-testid="canvas-toolbar"
           >
             <ToolBtn
-              title="Select (V) — click cards, drag empty to marquee · Shift+drag empty to pan · Ctrl+drag marquee adds"
+              title="Select (V) — click cards, drag empty to marquee · Middle-drag or Shift+drag empty to pan · Ctrl+drag marquee adds"
               active={canvasTool === 'select'}
               onClick={() => setCanvasTool('select')}
             >
               <MousePointer2 className="h-3.5 w-3.5" />
             </ToolBtn>
             <ToolBtn
-              title="Pan (H) — drag to move the viewport (or hold Shift + left-drag in Select)"
+              title="Pan (H) — drag to move the view · middle-mouse drag anywhere · or Shift+drag empty in Select"
               active={canvasTool === 'pan'}
               onClick={() => setCanvasTool('pan')}
             >

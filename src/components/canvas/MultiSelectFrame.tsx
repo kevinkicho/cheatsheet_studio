@@ -8,12 +8,12 @@ import {
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import { useCanvasStore } from '@/stores/canvasStore'
 import {
-  HANDLE_HIT_PX,
   HANDLE_LAYOUT,
   HANDLE_VISUAL_PX,
   RESIZE_CURSOR,
   applyHandleToRect,
   boundsOfItems,
+  handleHitPx,
   mapItemsToNewBounds,
   type ItemRect,
   type ResizeHandle,
@@ -273,8 +273,9 @@ export function MultiSelectFrame({
 
   if (!bounds || selected.length < 2) return null
 
-  // Sit above multi-boosted cards (item.z + 10k) and print chrome
-  const frameZ = Math.max(maxItemZ + 10_000 + 1_000, 100_000)
+  // Sit above multi-boosted cards (CARD_STACK_BASE + z + float) and print chrome
+  const frameZ = Math.max(maxItemZ + 100 + 10_000 + 1_000, 100_000)
+  const gripHit = handleHitPx(zoom)
 
   return (
     <div
@@ -310,8 +311,8 @@ export function MultiSelectFrame({
             data-resize-handle={id}
             className={`${className} z-20 flex items-center justify-center`}
             style={{
-              width: HANDLE_HIT_PX,
-              height: HANDLE_HIT_PX,
+              width: gripHit,
+              height: gripHit,
               cursor: RESIZE_CURSOR[id],
               touchAction: 'none',
             }}

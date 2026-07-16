@@ -1,6 +1,20 @@
 {
   "rules": {
-    ".read": false,
-    ".write": false
+    "catalog": {
+      "v1": {
+        ".read": "auth != null",
+        ".write": "auth != null",
+        "itemsJson": {
+          ".validate": "newData.isString() && newData.val().length < 9000000"
+        },
+        "meta": {
+          ".validate": "newData.hasChildren(['version', 'updatedAt', 'itemCount'])"
+        }
+      }
+    },
+    "$other": {
+      ".read": false,
+      ".write": false
+    }
   }
 }

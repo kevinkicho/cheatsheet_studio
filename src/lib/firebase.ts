@@ -1,5 +1,10 @@
 import { initializeApp } from 'firebase/app'
 import { connectAuthEmulator, getAuth, GoogleAuthProvider } from 'firebase/auth'
+import {
+  connectDatabaseEmulator,
+  getDatabase,
+  type Database,
+} from 'firebase/database'
 import { connectFirestoreEmulator, getFirestore } from 'firebase/firestore'
 import { connectStorageEmulator, getStorage } from 'firebase/storage'
 
@@ -21,22 +26,39 @@ const demoConfig = {
   storageBucket: 'demo-cheatsheet.appspot.com',
   messagingSenderId: '123456789012',
   appId: '1:123456789012:web:demo',
+  databaseURL: 'http://127.0.0.1:9000?ns=demo-cheatsheet',
 }
+
+/** Trim env strings; empty → undefined (avoids BOM/space-only values). */
+function envTrim(key: string): string | undefined {
+  const v = import.meta.env[key] as string | undefined
+  if (typeof v !== 'string') return undefined
+  const t = v.trim()
+  return t.length ? t : undefined
+}
+
+const projectId = envTrim('VITE_FIREBASE_PROJECT_ID')
 
 const envConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY as string | undefined,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN as string | undefined,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID as string | undefined,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET as
-    | string
-    | undefined,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID as
-    | string
-    | undefined,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID as string | undefined,
+  apiKey: envTrim('VITE_FIREBASE_API_KEY'),
+  authDomain: envTrim('VITE_FIREBASE_AUTH_DOMAIN'),
+  projectId,
+  storageBucket: envTrim('VITE_FIREBASE_STORAGE_BUCKET'),
+  messagingSenderId: envTrim('VITE_FIREBASE_MESSAGING_SENDER_ID'),
+  appId: envTrim('VITE_FIREBASE_APP_ID'),
+  databaseURL:
+    envTrim('VITE_FIREBASE_DATABASE_URL') ||
+    (projectId
+      ? `https://${projectId}-default-rtdb.firebaseio.com`
+      : undefined),
 }
 
-const hasEnvConfig = Boolean(envConfig.apiKey && envConfig.projectId)
+const hasEnvConfig = Boolean(
+  envConfig.apiKey &&
+    envConfig.projectId &&
+    envConfig.apiKey !== 'demo-api-key' &&
+    envConfig.apiKey.startsWith('AIza'),
+)
 
 /**
  * When env keys are missing (CI unit tests, fresh clone without .env), use the
@@ -64,6 +86,26 @@ export const app = initializeApp(firebaseConfig)
 export const auth = getAuth(app)
 export const db = getFirestore(app)
 export const storage = getStorage(app)
+
+/**
+ * Realtime Database for bulk catalog snapshot (`catalog/v1`).
+ * Null when databaseURL is missing (tests / demo without RTDB).
+ */
+export const rtdb: Database | null = (() => {
+  const url =
+    (firebaseConfig as { databaseURL?: string }).databaseURL ||
+    (envConfig.databaseURL as string | undefined)
+  if (!url && !useEmulators) return null
+  try {
+    return getDatabase(
+      app,
+      url || `https://${firebaseConfig.projectId}-default-rtdb.firebaseio.com`,
+    )
+  } catch (e) {
+    console.warn('[firebase] RTDB unavailable', e)
+    return null
+  }
+})()
 
 export const googleProvider = new GoogleAuthProvider()
 googleProvider.setCustomParameters({ prompt: 'select_account' })
@@ -95,6 +137,19 @@ export function connectFirebaseEmulatorsIfNeeded() {
   const storagePort = Number(
     import.meta.env.VITE_FIREBASE_STORAGE_EMULATOR_PORT || 9199,
   )
+
+  const rtdbHost =
+    import.meta.env.VITE_FIREBASE_DATABASE_EMULATOR_HOST || '127.0.0.1'
+  const rtdbPort = Number(
+    import.meta.env.VITE_FIREBASE_DATABASE_EMULATOR_PORT || 9000,
+  )
+  if (rtdb) {
+    try {
+      connectDatabaseEmulator(rtdb, rtdbHost, rtdbPort)
+    } catch {
+      /* already connected */
+    }
+  }
 
   // Auth emulator is enough for signed-in UI E2E (no Java).
   // Firestore/Storage emulators need Java — connect only when ports are intended

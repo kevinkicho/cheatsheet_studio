@@ -22,6 +22,11 @@ import {
   resolvePageGridRect,
 } from '@/lib/gridCoverage'
 import type { PageRect } from '@/lib/exportPdf'
+import {
+  accentToSolidColor,
+  panelFillOpacity,
+  panelWantsSoftFill,
+} from '@/lib/panelChromePaint'
 
 /** Match main canvas default board fill when canvas.background is missing. */
 const DEFAULT_BOARD_BG = '#0f1115'
@@ -252,13 +257,19 @@ export function PdfExportPages({
                 the next folder on the same multipage strip (export ≠ preview). */}
             {(c.layoutPanels ?? [])
               .filter((p) => panelHasMembersOnPage(p, items))
-              .map((p) => (
-                <ExportLayoutPanel
-                  key={p.id}
-                  panel={clipPanelToPage(p, page)}
-                  pageOrigin={{ x: page.x, y: page.y }}
-                />
-              ))}
+              .map((p) => {
+                const pagePanels = (c.layoutPanels ?? [])
+                  .filter((q) => panelHasMembersOnPage(q, items))
+                  .map((q) => clipPanelToPage(q, page))
+                return (
+                  <ExportLayoutPanel
+                    key={p.id}
+                    panel={clipPanelToPage(p, page)}
+                    allPanels={pagePanels}
+                    pageOrigin={{ x: page.x, y: page.y }}
+                  />
+                )
+              })}
 
             {items.map((it) => (
               <ExportCard
@@ -365,18 +376,15 @@ function clipPanelToPage(p: LayoutPanel, page: PageRect): LayoutPanel {
 
 function ExportLayoutPanel({
   panel,
+  allPanels,
   pageOrigin,
 }: {
   panel: LayoutPanel
+  allPanels: LayoutPanel[]
   pageOrigin: { x: number; y: number }
 }) {
   const accent = panel.accent ?? 'rgba(99, 102, 241, 0.55)'
   const isPoly = (panel.shape ?? 'rect') === 'polygon'
-  const fill = /rgba?\(/i.test(accent)
-    ? accent.replace(/[\d.]+\s*\)$/, isPoly ? '0.04)' : '0.07)')
-    : isPoly
-      ? 'rgba(99, 102, 241, 0.04)'
-      : 'rgba(99, 102, 241, 0.06)'
   const runs =
     panel.runs && panel.runs.length > 0
       ? panel.runs
@@ -386,6 +394,10 @@ function ExportLayoutPanel({
   const ox = pageOrigin.x
   const oy = pageOrigin.y
   const level = panel.hierarchyLevel ?? 1
+  // Match canvas: leaf soft-fill only; opaque runs under group opacity
+  const softFill = panelWantsSoftFill(panel, allPanels)
+  const fillSolid = accentToSolidColor(accent)
+  const fillOpacity = panelFillOpacity(level, panel.shape)
 
   // Title-chip-only panels (L2 / merged siblings): nothing to paint here
   if (!drawStroke) {
@@ -403,8 +415,15 @@ function ExportLayoutPanel({
       data-layout-panel-shape={panel.shape ?? 'rect'}
       data-layout-panel-stroke="1"
     >
-      {useOutline ? (
-        <>
+      {softFill ? (
+        <div
+          data-export-layout-panel-soft-fill={panel.id}
+          style={{
+            opacity: fillOpacity,
+            zIndex: 0,
+            pointerEvents: 'none',
+          }}
+        >
           {runs.map((r, i) => (
             <div
               key={`${panel.id}-fill-${i}`}
@@ -416,39 +435,41 @@ function ExportLayoutPanel({
                 height: r.height,
                 boxSizing: 'border-box',
                 border: 'none',
-                background: fill,
-                zIndex: 0,
-                pointerEvents: 'none',
+                borderRadius:
+                  !isPoly && level <= 1 ? 8 : !isPoly ? 5 : 0,
+                background: fillSolid,
               }}
             />
           ))}
-          <svg
-            data-export-layout-panel-outline={panel.id}
-            width={panel.width + 4}
-            height={panel.height + 4}
-            viewBox={`${panel.x - 2} ${panel.y - 2} ${panel.width + 4} ${panel.height + 4}`}
-            style={{
-              position: 'absolute',
-              left: panel.x - ox - 2,
-              top: panel.y - oy - 2,
-              width: panel.width + 4,
-              height: panel.height + 4,
-              overflow: 'visible',
-              zIndex: 1,
-              pointerEvents: 'none',
-            }}
-          >
-            <path
-              d={panel.outlinePath}
-              fill="transparent"
-              stroke={accent}
-              strokeWidth={2}
-              strokeLinejoin="miter"
-              strokeLinecap="square"
-              vectorEffect="non-scaling-stroke"
-            />
-          </svg>
-        </>
+        </div>
+      ) : null}
+      {useOutline ? (
+        <svg
+          data-export-layout-panel-outline={panel.id}
+          width={panel.width + 4}
+          height={panel.height + 4}
+          viewBox={`${panel.x - 2} ${panel.y - 2} ${panel.width + 4} ${panel.height + 4}`}
+          style={{
+            position: 'absolute',
+            left: panel.x - ox - 2,
+            top: panel.y - oy - 2,
+            width: panel.width + 4,
+            height: panel.height + 4,
+            overflow: 'visible',
+            zIndex: 1,
+            pointerEvents: 'none',
+          }}
+        >
+          <path
+            d={panel.outlinePath}
+            fill="transparent"
+            stroke={accent}
+            strokeWidth={2}
+            strokeLinejoin="miter"
+            strokeLinecap="square"
+            vectorEffect="non-scaling-stroke"
+          />
+        </svg>
       ) : (
         runs.map((r, i) => (
           <div
@@ -463,8 +484,8 @@ function ExportLayoutPanel({
               // Match LayoutPanelsLayer stroke weight (L1=2, L2=1.5)
               border: `${level <= 1 ? 2 : 1.5}px solid ${accent}`,
               borderRadius: level <= 1 ? 8 : 5,
-              background: fill,
-              zIndex: 0,
+              background: 'transparent',
+              zIndex: 1,
               pointerEvents: 'none',
             }}
           />

@@ -184,6 +184,75 @@ export function gridColumnCount(pageCount: number): number {
   return Math.ceil(Math.sqrt(n))
 }
 
+/** Row count for grid layout given column count. */
+export function gridRowCount(pageCount: number, cols?: number): number {
+  const n = clampPrintPageCount(pageCount)
+  if (n <= 1) return 1
+  const c = cols ?? gridColumnCount(n)
+  return Math.max(1, Math.ceil(n / c))
+}
+
+/**
+ * Outer pixel size of a multi-page arrangement with **zero inter-page gap**
+ * (dissolve mode): pages abutted into one super-page rectangle.
+ *
+ * - vertical: 1 × N
+ * - horizontal: N × 1
+ * - grid: near-square cols × rows (e.g. 6 → 3×2)
+ * - free: treated as vertical stack for packing (free positions ignored)
+ */
+export function dissolvedOuterPageSize(
+  page: { width: number; height: number },
+  pageCount: number,
+  layout: PrintPageLayout = DEFAULT_PRINT_PAGE_LAYOUT,
+): {
+  outerW: number
+  outerH: number
+  cols: number
+  rows: number
+  layout: PrintPageLayout
+} {
+  const n = clampPrintPageCount(pageCount)
+  const mode = normalizePrintPageLayout(layout)
+  if (n <= 1) {
+    return {
+      outerW: page.width,
+      outerH: page.height,
+      cols: 1,
+      rows: 1,
+      layout: mode,
+    }
+  }
+  if (mode === 'horizontal') {
+    return {
+      outerW: n * page.width,
+      outerH: page.height,
+      cols: n,
+      rows: 1,
+      layout: mode,
+    }
+  }
+  if (mode === 'grid') {
+    const cols = gridColumnCount(n)
+    const rows = gridRowCount(n, cols)
+    return {
+      outerW: cols * page.width,
+      outerH: rows * page.height,
+      cols,
+      rows,
+      layout: mode,
+    }
+  }
+  // vertical + free (pack as vertical dissolve)
+  return {
+    outerW: page.width,
+    outerH: n * page.height,
+    cols: 1,
+    rows: n,
+    layout: mode === 'free' ? 'vertical' : mode,
+  }
+}
+
 /**
  * Auto layout origins (ignores free positions). Used when seeding free mode
  * or when layout is not free.

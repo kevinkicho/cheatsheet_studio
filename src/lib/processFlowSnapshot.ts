@@ -27,8 +27,8 @@ import {
 import { getLiveEdgePaint } from '@/vendor/mermaid-visual-editor/lib/liveEdgePaint'
 import {
   MINDMAP_FONT_SIZE,
+  mindmapLabelLayout,
   straightMindmapPath,
-  wrapMindmapLabelLines,
 } from '@/vendor/mermaid-visual-editor/lib/mindmap'
 import { fitLabelFontPx } from '@/vendor/mermaid-visual-editor/lib/fitNodeLabel'
 
@@ -100,23 +100,79 @@ const STUDIO = {
   bg: '#12141a',
 } as const
 
+/** Coerce RF style/size fields (number or "220px") to positive px. */
+function asPx(v: unknown): number | undefined {
+  if (typeof v === 'number' && Number.isFinite(v) && v > 0) return v
+  if (typeof v === 'string') {
+    const n = parseFloat(v)
+    if (Number.isFinite(n) && n > 0) return n
+  }
+  return undefined
+}
+
+/**
+ * Resolve node box after free-transform resize.
+ *
+ * RF exposes size in three places that can disagree after NodeResizer:
+ * - `style.width/height` — sometimes lags or stays square
+ * - `width/height` — RF node props (what MindmapNode paints)
+ * - `measured` — DOM measure (can lag one frame)
+ *
+ * Screenshot 015231: editor showed tall ellipse "New topic", canvas stayed
+ * circle — capture preferred stale square `style` over live non-square dims.
+ *
+ * Strategy:
+ * - If style and live (node|measured) disagree on **aspect ratio**, use live
+ *   (matches editor paint for circle→ellipse morphs).
+ * - If aspects agree, use the **larger area** (uniform enlarge over stale small).
+ */
 function nodeSize(n: Node<FlowNodeData>): { w: number; h: number } {
-  // Prefer RF measured sizes so card boxes match the interactive editor
   const measured = (
     n as Node<FlowNodeData> & {
       measured?: { width?: number; height?: number }
     }
   ).measured
-  const w =
-    (typeof measured?.width === 'number' ? measured.width : undefined) ??
-    (typeof n.width === 'number' ? n.width : undefined) ??
-    (typeof n.style?.width === 'number' ? n.style.width : undefined) ??
-    140
-  const h =
-    (typeof measured?.height === 'number' ? measured.height : undefined) ??
-    (typeof n.height === 'number' ? n.height : undefined) ??
-    (typeof n.style?.height === 'number' ? n.style.height : undefined) ??
-    48
+  const styleW = asPx(n.style?.width)
+  const styleH = asPx(n.style?.height)
+  const nodeW = asPx(n.width)
+  const nodeH = asPx(n.height)
+  const measuredW = asPx(measured?.width)
+  const measuredH = asPx(measured?.height)
+
+  // Live size = what the interactive editor paints (NodeProps width/height)
+  const liveW = nodeW ?? measuredW
+  const liveH = nodeH ?? measuredH
+  const styleOk = styleW != null && styleH != null
+  const liveOk = liveW != null && liveH != null
+
+  let w: number
+  let h: number
+  if (styleOk && liveOk) {
+    const styleAspect = styleW! / Math.max(1e-6, styleH!)
+    const liveAspect = liveW! / Math.max(1e-6, liveH!)
+    const aspectDiff = Math.abs(Math.log(styleAspect / liveAspect))
+    if (aspectDiff > 0.05) {
+      // Free morph (ellipse vs square) — trust live RF dimensions
+      w = liveW!
+      h = liveH!
+    } else if (styleW! * styleH! >= liveW! * liveH!) {
+      // Same aspect; prefer larger box (uniform scale-up)
+      w = styleW!
+      h = styleH!
+    } else {
+      w = liveW!
+      h = liveH!
+    }
+  } else if (liveOk) {
+    w = liveW!
+    h = liveH!
+  } else if (styleOk) {
+    w = styleW!
+    h = styleH!
+  } else {
+    w = liveW ?? styleW ?? measuredW ?? 140
+    h = liveH ?? styleH ?? measuredH ?? 48
+  }
   return { w: Math.max(32, w), h: Math.max(28, h) }
 }
 
@@ -490,10 +546,15 @@ function shapePath(
     case 'rounded':
       return { rect: true, rx: Math.min(h / 2, w / 2, shape === 'stadium' ? 999 : 8) }
     case 'circle':
-    case 'double-circle':
+    case 'double-circle': {
+      // True ellipse when w≠h (free-transform morph). Do NOT force min(w,h)
+      // square — that made canvas paint a circle after user stretched to oval.
+      const rx = Math.max(1, w / 2)
+      const ry = Math.max(1, h / 2)
       return {
-        d: `M${cx},${y} A${w / 2},${h / 2} 0 1 1 ${cx - 0.01},${y} Z`,
+        d: `M${cx},${y} A${rx},${ry} 0 1 1 ${cx - 0.01},${y} Z`,
       }
+    }
     case 'hexagon': {
       const inset = w * 0.2
       return {
@@ -693,18 +754,30 @@ export function processFlowToSvg(
     }
     const cx = n.x + n.width / 2
     const cy = n.y + n.height / 2
-    // Multi-line label (same wrap heuristic as editor auto-size)
-    const lines = isMm
-      ? wrapMindmapLabelLines(n.label, n.width > 140 ? 16 : 13)
-      : [n.label]
-    // Match interactive editor: scale type to node box (not fixed 14/17px)
-    const nodeFont = fitLabelFontPx(n.label, n.width, n.height, {
-      lines,
-      padX: isMm ? 10 : 8,
-      padY: isMm ? 10 : 6,
-      minPx: isMm ? 12 : 13,
-      maxPx: isMm ? 26 : 32,
-    })
+    // Same layout as MindmapNode (mindmapLabelLayout) so canvas === editor paint
+    let lines: string[]
+    let nodeFont: number
+    if (isMm) {
+      const layout = mindmapLabelLayout(n.label, n.width, n.height)
+      lines = layout.lines
+      nodeFont = fitLabelFontPx(n.label, n.width, n.height, {
+        lines,
+        padX: layout.pad,
+        padY: layout.pad,
+        minPx: layout.minPx,
+        maxPx: layout.maxPx,
+      })
+    } else {
+      lines = [n.label]
+      const boxSide = Math.min(n.width, n.height)
+      nodeFont = fitLabelFontPx(n.label, n.width, n.height, {
+        lines,
+        padX: 8,
+        padY: 6,
+        minPx: 13,
+        maxPx: Math.max(32, Math.floor(boxSide * 0.4)),
+      })
+    }
     const lineH = nodeFont * 1.15
     const startY = cy - ((lines.length - 1) * lineH) / 2
     lines.forEach((line, i) => {

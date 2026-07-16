@@ -23,6 +23,18 @@ const seedItems = SEED_LIBRARY.map((i) => ({
   tableMarkdown: i.tableMarkdown,
   imageUrl: i.imageUrl,
   description: i.description,
+  term: i.term,
+  body: i.body,
+  listItems: i.listItems,
+  listOrdered: i.listOrdered,
+  calloutVariant: i.calloutVariant,
+  code: i.code,
+  codeLanguage: i.codeLanguage,
+  symbol: i.symbol,
+  value: i.value,
+  unit: i.unit,
+  identities: i.identities,
+  matrixRows: i.matrixRows,
 }))
 
 const processItems = PROCESS_BLOCKS.map((b) => ({
@@ -43,20 +55,20 @@ for (const s of seedItems) byId.set(s.id, s)
 for (const p of processItems) byId.set(p.id, p)
 const items = [...byId.values()]
 
+const typeCounts: Record<string, number> = {}
+for (const i of items) {
+  typeCounts[i.type] = (typeCounts[i.type] ?? 0) + 1
+}
+
 mkdirSync(outDir, { recursive: true })
 writeFileSync(
   outPath,
   JSON.stringify(
     {
-      version: 2,
+      version: 3,
       exportedAt: new Date().toISOString(),
       count: items.length,
-      types: {
-        equation: items.filter((i) => i.type === 'equation').length,
-        table: items.filter((i) => i.type === 'table').length,
-        figure: items.filter((i) => i.type === 'figure').length,
-        process: items.filter((i) => i.type === 'process').length,
-      },
+      types: typeCounts,
       items,
     },
     null,
@@ -65,5 +77,5 @@ writeFileSync(
   'utf8',
 )
 console.log(
-  `Wrote ${outPath} (${items.length} items: eq/table/fig + ${processItems.length} process)`,
+  `Wrote ${outPath} (${items.length} items; types: ${JSON.stringify(typeCounts)})`,
 )

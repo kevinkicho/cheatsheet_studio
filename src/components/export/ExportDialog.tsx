@@ -130,6 +130,21 @@ export function ExportDialog({
     }
   }, [format, open, backgroundMode])
 
+  const selectedPages = useMemo(
+    () => pages.filter((p) => selected.has(p.index)),
+    [pages, selected],
+  )
+
+  const multiPage = selectedPages.length > 1
+
+  // Single-page selection: only “All together” makes sense (disable separate)
+  useEffect(() => {
+    if (!open) return
+    if (!multiPage && packageMode === 'separate') {
+      setPackageMode('combined')
+    }
+  }, [open, multiPage, packageMode])
+
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
@@ -148,13 +163,6 @@ export function ExportDialog({
       document.body.style.overflow = prev
     }
   }, [open])
-
-  const selectedPages = useMemo(
-    () => pages.filter((p) => selected.has(p.index)),
-    [pages, selected],
-  )
-
-  const multiPage = selectedPages.length > 1
 
   const previewCanvas = useMemo((): SheetCanvas => {
     return {
@@ -697,7 +705,12 @@ export function ExportDialog({
                             {m.label}
                           </span>
                           <span className="block text-[10px] text-zinc-500">
-                            {m.description}
+                            {(format === 'png' || format === 'jpeg') &&
+                            multiPage
+                              ? m.id === 'combined'
+                                ? 'One long strip (stack vertical) or one big image (page layout)'
+                                : 'One image per page, packed into a single .zip download'
+                              : m.description}
                           </span>
                         </span>
                       </button>

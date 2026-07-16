@@ -55,7 +55,20 @@ import { CARD_DEFAULTS } from '@/lib/cardDefaults'
 const PX_PER_IN = 96
 
 type SizeUnit = 'px' | 'in' | 'cm' | 'mm'
-type CardKind = 'equation' | 'table' | 'figure' | 'process' | 'other'
+type CardKind =
+  | 'equation'
+  | 'table'
+  | 'figure'
+  | 'process'
+  | 'definition'
+  | 'list'
+  | 'callout'
+  | 'code'
+  | 'constant'
+  | 'identity-set'
+  | 'plot'
+  | 'matrix'
+  | 'other'
 type SortKey = 'title' | 'type' | 'x' | 'y' | 'w' | 'h' | 'z'
 
 function countByType(items: CanvasItem[]) {
@@ -73,7 +86,7 @@ function countByType(items: CanvasItem[]) {
     else if (
       it.type === 'equation' ||
       it.type === 'custom-equation' ||
-      it.latex
+      (it.latex && it.type !== 'matrix' && it.type !== 'constant')
     )
       equations += 1
     else other += 1
@@ -92,7 +105,19 @@ function cardKind(it: CanvasItem): CardKind {
   if (it.type === 'process-chart' || it.mermaidSource || it.processFlow)
     return 'process'
   if (it.type === 'table' || it.tableMarkdown) return 'table'
+  if (it.type === 'plot') return 'plot'
   if (isFigureLike(it)) return 'figure'
+  if (
+    it.type === 'definition' ||
+    it.type === 'list' ||
+    it.type === 'callout' ||
+    it.type === 'code' ||
+    it.type === 'constant' ||
+    it.type === 'identity-set' ||
+    it.type === 'matrix'
+  ) {
+    return it.type
+  }
   if (it.type === 'equation' || it.type === 'custom-equation' || it.latex)
     return 'equation'
   return 'other'
@@ -428,6 +453,17 @@ function StatChip({
 
 function cardTypeIcon(kind: CardKind, className = 'h-3.5 w-3.5') {
   switch (kind) {
+    case 'definition':
+    case 'list':
+    case 'callout':
+    case 'code':
+    case 'constant':
+    case 'identity-set':
+    case 'plot':
+    case 'matrix':
+      return (
+        <FunctionSquare className={`${className} shrink-0 text-violet-400/90`} />
+      )
     case 'equation':
       return (
         <FunctionSquare className={`${className} shrink-0 text-sky-400/90`} />
@@ -682,6 +718,14 @@ function CardsTable({
           <option value="equation">Equation</option>
           <option value="table">Table</option>
           <option value="figure">Figure</option>
+          <option value="definition">Definition</option>
+          <option value="list">List</option>
+          <option value="callout">Callout</option>
+          <option value="code">Code</option>
+          <option value="constant">Constant</option>
+          <option value="identity-set">Identity set</option>
+          <option value="plot">Plot</option>
+          <option value="matrix">Matrix</option>
           <option value="process">Process</option>
           <option value="other">Other</option>
         </select>

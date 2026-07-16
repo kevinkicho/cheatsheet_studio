@@ -1,6 +1,7 @@
 import {
   memo,
   useCallback,
+  useEffect,
   useRef,
   useState,
   type MouseEvent,
@@ -9,15 +10,20 @@ import {
 import { useDraggable } from '@dnd-kit/core'
 import { Check, Copy, Heart } from 'lucide-react'
 import type { LibraryItem } from '@/types'
-import { FitContent } from '@/components/math/FitContent'
-import { FigureView } from '@/components/math/FigureView'
-import { LatexView } from '@/components/math/LatexView'
-import { MarkdownTable } from '@/components/math/MarkdownTable'
 import { useUiStore } from '@/stores/uiStore'
+import { LibraryItemPreviewBody, libraryPaintKind } from './LibraryItemPreviewBody'
 import {
   LibraryHoverPreview,
   useLibraryHoverPreview,
 } from './LibraryHoverPreview'
+import {
+  LIBRARY_ZOOM_MAX,
+  LIBRARY_ZOOM_MIN,
+  LIBRARY_ZOOM_STEP,
+  clampLibraryZoom,
+  libraryStageSize,
+  scrollAfterZoomAtPoint,
+} from './libraryPreviewModel'
 
 interface LibraryItemCardProps {
   item: LibraryItem
@@ -26,6 +32,10 @@ interface LibraryItemCardProps {
   labelsOnly?: boolean
   /** When false, no hover tooltip is shown. */
   hoverPreviewEnabled?: boolean
+  /**
+   * Static tile for modals / review — no drag listeners (exact library look).
+   */
+  previewOnly?: boolean
   /** Shared hover-preview controller from parent (preferred — one tooltip at a time). */
   hover?: {
     onEnter: (item: LibraryItem, el: HTMLElement) => void
@@ -42,21 +52,31 @@ function LibraryItemCardInner({
   compact = false,
   labelsOnly = false,
   hoverPreviewEnabled = true,
+  previewOnly = false,
   hover,
 }: LibraryItemCardProps) {
   const cardRef = useRef<HTMLDivElement | null>(null)
+  const contentWellRef = useRef<HTMLDivElement | null>(null)
   const localHover = useLibraryHoverPreview()
-  const useLocal = hoverPreviewEnabled && !hover
+  const useLocal = hoverPreviewEnabled && !hover && !previewOnly
   const [copied, setCopied] = useState(false)
+  /** Hover/focus on tile — enables wheel zoom of content */
+  const [highlighted, setHighlighted] = useState(false)
+  /** Content zoom (1 = default). Wheel while highlighted. */
+  const [contentZoom, setContentZoom] = useState(1)
+  /** Measured viewport of the content well (not % of overflow parent). */
+  const [wellSize, setWellSize] = useState({ w: 160, h: 120 })
   const isFavorite = useUiStore((s) => s.libraryFavoriteIds.includes(item.id))
   const toggleLibraryFavorite = useUiStore((s) => s.toggleLibraryFavorite)
+  const paintKind = libraryPaintKind(item)
 
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: `lib-${item.id}`,
+    id: `lib-preview-${item.id}`,
     data: {
       from: 'library',
       libraryItem: item,
     },
+    disabled: previewOnly,
   })
 
   const setRefs = useCallback(
@@ -91,6 +111,7 @@ function LibraryItemCardInner({
   }
 
   const handleEnter = () => {
+    setHighlighted(true)
     if (!hoverPreviewEnabled || isDragging) return
     const el = cardRef.current
     if (!el) return
@@ -99,6 +120,8 @@ function LibraryItemCardInner({
   }
 
   const handleLeave = () => {
+    setHighlighted(false)
+    setContentZoom(1)
     if (!hoverPreviewEnabled) return
     if (hover) hover.onLeave()
     else localHover.onLeave()
@@ -110,6 +133,51 @@ function LibraryItemCardInner({
     toggleLibraryFavorite(item.id)
   }
 
+  // Measure well in pixels — % heights inside overflow:auto are unreliable
+  useEffect(() => {
+    const el = contentWellRef.current
+    if (!el || labelsOnly) return
+    const ro = new ResizeObserver((entries) => {
+      const cr = entries[0]?.contentRect
+      if (!cr) return
+      const w = Math.max(48, Math.round(cr.width))
+      const h = Math.max(48, Math.round(cr.height))
+      setWellSize((prev) =>
+        prev.w === w && prev.h === h ? prev : { w, h },
+      )
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [labelsOnly])
+
+  // Non-passive wheel: zoom toward the cursor (content under mouse stays put)
+  useEffect(() => {
+    const el = contentWellRef.current
+    if (!el || labelsOnly) return
+    const onWheel = (e: WheelEvent) => {
+      if (!highlighted && !previewOnly) return
+      e.preventDefault()
+      e.stopPropagation()
+      const dir = e.deltaY > 0 ? -1 : 1
+      const step =
+        e.ctrlKey || e.metaKey ? LIBRARY_ZOOM_STEP * 1.4 : LIBRARY_ZOOM_STEP
+      setContentZoom((z) => {
+        const next = clampLibraryZoom(z + dir * step)
+        if (next === z) return z
+        scrollAfterZoomAtPoint(el, z, next, e.clientX, e.clientY)
+        return next
+      })
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [highlighted, labelsOnly, previewOnly])
+
+  const stage = libraryStageSize(wellSize.w, wellSize.h, contentZoom)
+  // Prose: always paint into the well viewport (wrap + auto-fit at zoom=1).
+  // Math/figure: stage grows with zoom so FitContent/SVG can paint larger.
+  const stageW = paintKind === 'prose' ? wellSize.w : stage.w
+  const stageH = paintKind === 'prose' ? wellSize.h : stage.h
+
   return (
     <>
       <div
@@ -118,13 +186,28 @@ function LibraryItemCardInner({
         {...attributes}
         onMouseEnter={handleEnter}
         onMouseLeave={handleLeave}
+        onFocus={() => setHighlighted(true)}
+        onBlur={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+            setHighlighted(false)
+            setContentZoom(1)
+          }
+        }}
         title={
-          item.description
-            ? `${item.title} — ${item.description} (drag onto canvas)`
-            : 'Drag onto the canvas'
+          previewOnly
+            ? item.description
+              ? `${item.title} — ${item.description}`
+              : item.title
+            : item.description
+              ? `${item.title} — ${item.description} (drag onto canvas · scroll to zoom content)`
+              : 'Drag onto canvas · hover + scroll wheel to zoom content'
         }
-        className={`group relative flex touch-none cursor-grab flex-col overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900/80 transition active:cursor-grabbing ${
-          isDragging ? 'opacity-40' : 'hover:border-indigo-500/50'
+        className={`group relative flex touch-none flex-col overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900/80 transition ${
+          previewOnly
+            ? 'cursor-default'
+            : 'cursor-grab active:cursor-grabbing'
+        } ${isDragging ? 'opacity-40' : 'hover:border-indigo-500/50'} ${
+          highlighted && !isDragging ? 'ring-1 ring-indigo-500/40' : ''
         } ${tileClass}`}
       >
         {/* Header: heart (favorites) top-left · title · topic */}
@@ -164,57 +247,40 @@ function LibraryItemCardInner({
 
         {!labelsOnly && (
           /*
-           * Fixed content well under the header. Outer card pad is equal L/R/B.
-           * Inner p-1.5 lives on a WRAPPER (not FitContent) so measure uses the
-           * true content box — padding on FitContent used to oversize scale and
-           * clip right/bottom.
+           * Viewport (measured px) → centered stage (well × zoom).
+           * See libraryPreviewModel.ts — no CSS-scale vs FitContent fights.
            */
-          <div className="pointer-events-none mt-2 min-h-0 flex-1 overflow-hidden rounded-md bg-zinc-950/70 p-1.5">
-            {item.type === 'figure' && item.imageUrl ? (
-              <FitContent
-                mode="scale"
-                fitMethod="transform"
-                align="center"
-                minScale={0.05}
-                maxScale={32}
-                showBadge
-                contentKey={`lib-fig-${item.id}-${item.imageUrl}`}
-                className="h-full w-full"
-              >
-                <FigureView
-                  src={item.imageUrl}
-                  alt={item.title}
-                  fillContainer={false}
-                />
-              </FitContent>
-            ) : (
-              <FitContent
-                mode="scale"
-                // transform: reliable contain (KaTeX fontSize overshoots L/R/B)
-                fitMethod="transform"
-                align="center"
-                minScale={0.08}
-                maxScale={16}
-                baseFontSize={14}
-                showBadge
-                contentKey={`${item.id}-${item.latex ?? ''}-${item.tableMarkdown ?? ''}`}
-                className="h-full w-full"
-              >
-                {(item.type === 'equation' || item.latex) && item.latex && (
-                  <LatexView
-                    latex={item.latex}
-                    className="overflow-visible text-zinc-100 [&_.katex]:text-[1em] [&_.katex-display]:m-0"
-                  />
-                )}
-                {item.type === 'table' && item.tableMarkdown && (
-                  <MarkdownTable
-                    markdown={item.tableMarkdown}
-                    fitContent
-                    className="overflow-visible [&_td]:py-0.5 [&_th]:py-0.5"
-                  />
-                )}
-              </FitContent>
-            )}
+          <div
+            ref={contentWellRef}
+            className={`library-card-content-well relative mt-2 min-h-0 flex-1 overflow-auto rounded-md bg-zinc-950/70 p-1.5 ${
+              highlighted ? 'pointer-events-auto' : 'pointer-events-none'
+            }`}
+            data-content-zoom={contentZoom.toFixed(2)}
+            data-paint-kind={paintKind}
+            data-testid="library-card-zoom-well"
+          >
+            <div
+              className="flex items-center justify-center"
+              style={{
+                minWidth: '100%',
+                minHeight: '100%',
+                // Scrollport grows with stage for math/figures when zoomed.
+                width: Math.max(wellSize.w, stageW),
+                height: Math.max(wellSize.h, stageH),
+              }}
+            >
+              <LibraryItemPreviewBody
+                item={item}
+                contentZoom={contentZoom}
+                stageW={stageW}
+                stageH={stageH}
+              />
+            </div>
+            {contentZoom !== 1 ? (
+              <span className="pointer-events-none absolute bottom-1 left-1 z-10 rounded bg-zinc-950/90 px-1 py-0.5 text-[9px] tabular-nums text-zinc-400">
+                {Math.round(contentZoom * 100)}%
+              </span>
+            ) : null}
           </div>
         )}
 

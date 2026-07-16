@@ -63,11 +63,23 @@ describe('Studio blocks catalog', () => {
     const s = await catalogStats()
     expect(s.equation).toBeGreaterThan(10)
     expect(s.process).toBeGreaterThan(5)
-    expect(s.total).toBe(
-      (s.equation ?? 0) +
-        (s.table ?? 0) +
-        (s.figure ?? 0) +
-        (s.process ?? 0),
+    expect(s.definition).toBeGreaterThan(0)
+    expect(s.constant).toBeGreaterThan(0)
+    expect(s.matrix).toBeGreaterThan(0)
+    expect(s.plot).toBeGreaterThan(0)
+    const sumTypes = Object.entries(s)
+      .filter(([k]) => k !== 'total')
+      .reduce((a, [, n]) => a + (n ?? 0), 0)
+    expect(s.total).toBe(sumTypes)
+  })
+
+  it('addFromCatalog appends definition / constant / matrix', async () => {
+    const sheet = await createSheet({ title: 'Tiers' })
+      .addBlocks(['def-derivative', 'const-c', 'mat-2x2', 'plot-parabola'])
+      .then((b) => b.build())
+    expect(sheet.items).toHaveLength(4)
+    expect(sheet.items.map((i) => i.type).sort()).toEqual(
+      ['constant', 'definition', 'matrix', 'plot'].sort(),
     )
   })
 

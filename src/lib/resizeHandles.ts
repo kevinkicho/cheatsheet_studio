@@ -186,7 +186,41 @@ export const HANDLE_LAYOUT: {
   },
 ]
 
-/** Visible grip size (px). Hit area is larger via CSS min box. */
+/** Visible grip size (px, canvas space). Hit area is larger. */
 export const HANDLE_VISUAL_PX = 10
-/** Min pointer target for comfortable grab (px). */
-export const HANDLE_HIT_PX = 16
+/**
+ * Base pointer target for grips (canvas px at zoom=1).
+ * Prefer handleHitPx(zoom) so screen-space target stays ~22px when zoomed out.
+ */
+export const HANDLE_HIT_PX = 22
+
+/**
+ * Screen-stable hit size for free-transform grips.
+ * Handles live in canvas space (inside the zoomed surface), so a fixed 16px
+ * target becomes ~8px on screen at 50% zoom — hard to grab. Inverse-zoom
+ * keeps ~minScreenPx under the cursor.
+ */
+export function handleHitPx(
+  zoom: number,
+  minScreenPx = 22,
+  maxCanvasPx = 44,
+): number {
+  const z = Number.isFinite(zoom) && zoom > 0.05 ? zoom : 1
+  return Math.min(
+    maxCanvasPx,
+    Math.max(HANDLE_HIT_PX, Math.round(minScreenPx / z)),
+  )
+}
+
+/**
+ * Cards sit above layout-panel title chips (titles use z≈25–40). Without this
+ * base, low zIndex cards render under title chips and feel “unclickable”.
+ */
+export const CARD_STACK_BASE = 100
+
+/**
+ * Float for the active single-selected card so corner grips (half outside the
+ * box) are not stolen by a higher-z neighbor sitting on that corner.
+ * Multi-select uses a similar boost in CanvasItemView / MultiSelectFrame.
+ */
+export const CARD_SELECTED_FLOAT = 10_000

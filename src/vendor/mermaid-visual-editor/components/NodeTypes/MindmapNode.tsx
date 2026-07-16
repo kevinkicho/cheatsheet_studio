@@ -7,7 +7,7 @@
 import { Handle, NodeResizer, Position, type NodeProps } from '@xyflow/react'
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { useFlowStore, type FlowNodeData, type NodeShape } from '../../lib/store'
-import { wrapMindmapLabelLines } from '../../lib/mindmap'
+import { mindmapLabelLayout } from '../../lib/mindmap'
 import { fitLabelFontPx } from '../../lib/fitNodeLabel'
 
 const DEFAULT_SIZE = 96
@@ -206,17 +206,24 @@ export function MindmapNode({ id, data, selected, width, height }: NodeProps) {
           ? ROOT_SIZE
           : DEFAULT_SIZE
 
-  const fontSizePx = useMemo(() => {
+  const labelLayout = useMemo(() => {
     const label = String(nodeData.label ?? '')
-    const lines = wrapMindmapLabelLines(label, w > 140 ? 16 : 13)
-    return fitLabelFontPx(label, w, h, {
-      lines,
-      padX: 10,
-      padY: 10,
-      minPx: isHub ? 13 : 11,
-      maxPx: isHub ? 26 : 22,
+    const layout = mindmapLabelLayout(label, w, h, { isHub })
+    const fontSizePx = fitLabelFontPx(label, w, h, {
+      lines: layout.lines,
+      padX: layout.pad,
+      padY: layout.pad,
+      minPx: layout.minPx,
+      maxPx: layout.maxPx,
     })
+    return {
+      ...layout,
+      fontSizePx,
+      /** Explicit line breaks — do not rely on CSS word-break (mid-word). */
+      displayText: layout.lines.join('\n'),
+    }
   }, [nodeData.label, w, h, isHub])
+  const fontSizePx = labelLayout.fontSizePx
 
   const commitLabel = useCallback(() => {
     const trimmed = draft.trim() || 'Topic'
@@ -260,12 +267,9 @@ export function MindmapNode({ id, data, selected, width, height }: NodeProps) {
 
   const shell = shapeShellStyle(shape, fill, stroke, strokeW, !!selected)
 
-  // Circles keep aspect on resize; squares/clouds freer
-  const keepAspect =
-    shape === 'circle' ||
-    shape === 'double-circle' ||
-    shape === 'bang' ||
-    shape === 'hexagon'
+  // Free-transform: allow circle → ellipse (and back). Locked aspect made
+  // morphs feel broken and/or failed to round-trip to the canvas card.
+  // Bang/hexagon stay free too so all handles match editor ↔ card paint.
 
   return (
     <div
@@ -290,7 +294,7 @@ export function MindmapNode({ id, data, selected, width, height }: NodeProps) {
         minWidth={48}
         minHeight={48}
         isVisible={!!selected || hovered}
-        keepAspectRatio={keepAspect}
+        keepAspectRatio={false}
         onResizeEnd={() => pushHistory()}
         lineStyle={{
           borderColor: 'var(--neu-icon-active, #818cf8)',
@@ -367,7 +371,7 @@ export function MindmapNode({ id, data, selected, width, height }: NodeProps) {
             style={{
               color: text,
               fontSize: fontSizePx,
-              lineHeight: 1.12,
+              lineHeight: 1.15,
               padding: 0,
             }}
             autoFocus
@@ -375,16 +379,20 @@ export function MindmapNode({ id, data, selected, width, height }: NodeProps) {
           />
         ) : (
           <span
-            className="break-words text-center font-medium select-none"
+            className="text-center font-medium select-none"
             style={{
               color: text,
               fontSize: fontSizePx,
-              lineHeight: 1.12,
+              lineHeight: 1.15,
               maxWidth: '100%',
               padding: 0,
+              // Pre-wrapped at spaces only — never mid-word (CSS break-words did that)
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'normal',
+              overflowWrap: 'normal',
             }}
           >
-            {nodeData.label}
+            {labelLayout.displayText}
           </span>
         )}
       </div>

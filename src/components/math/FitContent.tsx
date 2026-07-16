@@ -55,6 +55,12 @@ interface FitContentProps {
    * Do not put card width/height here.
    */
   contentKey?: string | number
+  /**
+   * When true, measure natural height with width clamped to the box
+   * (wrapping prose/lists). Default max-content width made long definitions
+   * measure as one line then shrink to ~20% (illegible on canvas).
+   */
+  wrapToBox?: boolean
 }
 
 function clampScale(n: number, min: number, max: number) {
@@ -80,12 +86,13 @@ export function FitContent({
   paintZoom = 1,
   showBadge = false,
   contentKey,
+  wrapToBox = false,
 }: FitContentProps) {
   const boxRef = useRef<HTMLDivElement>(null)
   const innerRef = useRef<HTMLDivElement>(null)
   /** Cached natural (unscaled) content size. */
   const naturalRef = useRef({ w: 0, h: 0, ready: false })
-  const lastScaleRef = useRef({ sx: 1, sy: 1, pz: 1 })
+  const lastScaleRef = useRef({ sx: 1, sy: 1, pz: 1, bw: 0, bh: 0 })
   const appliedRef = useRef(false)
   const [scale, setScale] = useState(1)
   const [scaleY, setScaleY] = useState(1)
@@ -110,7 +117,7 @@ export function FitContent({
     let moRaf = 0
     let cancelled = false
     naturalRef.current = { w: 0, h: 0, ready: false }
-    lastScaleRef.current = { sx: 1, sy: 1, pz: 1 }
+    lastScaleRef.current = { sx: 1, sy: 1, pz: 1, bw: 0, bh: 0 }
     appliedRef.current = false
 
     const preferTransform =
@@ -125,6 +132,7 @@ export function FitContent({
       const el = innerRef.current
       if (!el) return false
       const base = Math.max(1, baseFontSize)
+      const boxW = Math.max(boxRef.current?.clientWidth ?? 1, 1)
 
       const prev = {
         transform: el.style.transform,
@@ -139,12 +147,22 @@ export function FitContent({
       el.style.transform = 'none'
       el.style.transformOrigin = 'top left'
       el.style.fontSize = `${base}px`
-      el.style.width = 'max-content'
-      el.style.maxWidth = 'none'
+      // Prose: measure wrapped to card width so long bodies don't become
+      // one max-content line that then scales to ~20%.
+      if (wrapToBox) {
+        el.style.width = `${boxW}px`
+        el.style.maxWidth = `${boxW}px`
+      } else {
+        el.style.width = 'max-content'
+        el.style.maxWidth = 'none'
+      }
       el.style.marginLeft = '0'
       el.style.marginTop = '0'
       void el.offsetWidth
 
+      // wrapToBox: height is the natural size that matters (width = box).
+      // Do NOT set nw = boxW for scale math — that forces scale ≤ 1 and leaves
+      // permanent vertical gutters when the card is taller than the prose.
       const nw = Math.max(el.scrollWidth, el.offsetWidth, 1)
       const nh = Math.max(el.scrollHeight, el.offsetHeight, 1)
 
@@ -166,7 +184,38 @@ export function FitContent({
       return true
     }
 
-    const writeScale = (sx: number, sy: number) => {
+    /**
+     * Uniform scale into the box.
+     * wrapToBox prose always fills width by wrapping — scale from height only
+     * so short text can grow (contentFill) instead of sitting in empty gutters.
+     */
+    const fitScaleForBox = (
+      nw: number,
+      nh: number,
+      fitW: number,
+      fitH: number,
+      stretch: boolean,
+    ): { sx: number; sy: number } => {
+      if (stretch) {
+        return {
+          sx: clampScale(fitW / nw, minScale, maxScale),
+          sy: clampScale(fitH / nh, minScale, maxScale),
+        }
+      }
+      if (wrapToBox) {
+        // Height-driven; width is the wrap container
+        const fit = clampScale(fitH / Math.max(nh, 1), minScale, maxScale)
+        return { sx: fit, sy: fit }
+      }
+      const fit = clampScale(
+        Math.min(fitW / nw, fitH / nh),
+        minScale,
+        maxScale,
+      )
+      return { sx: fit, sy: fit }
+    }
+
+    const writeScale = (_sx?: number, _sy?: number) => {
       const el = innerRef.current
       if (!el) return
       const base = Math.max(1, baseFontSize)
@@ -184,26 +233,22 @@ export function FitContent({
       const fitW = Math.max(1, cw - 1)
       const fitH = Math.max(1, ch - 1)
 
-      let outSx = sx
-      let outSy = sy
       // Recompute from natural against the true content box
-      if (!stretch) {
-        const fit = clampScale(
-          Math.min(fitW / nw, fitH / nh),
-          minScale,
-          maxScale,
-        )
-        outSx = fit
-        outSy = fit
-      } else {
-        outSx = clampScale(fitW / nw, minScale, maxScale)
-        outSy = clampScale(fitH / nh, minScale, maxScale)
-      }
+      const fitted = fitScaleForBox(nw, nh, fitW, fitH, stretch)
+      let outSx = fitted.sx
+      let outSy = fitted.sy
 
       el.style.marginLeft = '0'
       el.style.marginTop = '0'
-      el.style.width = 'max-content'
-      el.style.maxWidth = 'none'
+      // Keep wrap width when wrapToBox — max-content would re-widen prose
+      // and reintroduce the ~20% shrink-to-fit bug after measure.
+      if (wrapToBox) {
+        el.style.width = `${cw}px`
+        el.style.maxWidth = `${cw}px`
+      } else {
+        el.style.width = 'max-content'
+        el.style.maxWidth = 'none'
+      }
 
       if (useTransform || stretch) {
         el.style.fontSize = `${base}px`
@@ -214,9 +259,19 @@ export function FitContent({
         el.style.transformOrigin = 'top left'
         setUsingTransform(true)
       } else {
-        // fontSize path (canvas equations) — iterate until visual fits
-        for (let pass = 0; pass < 5; pass++) {
-          const paint = base * outSx * pz
+        /**
+         * fontSize fit — always show full content; grow/shrink with the box.
+         *
+         * wrapToBox (callouts/definitions/lists): pure binary search for the
+         * largest scale that fits after rewrap. Reacts to enlarge AND shrink
+         * (the old “start at 1, grow only if residual” path ignored enlarge).
+         *
+         * Equations/tables: estimate from natural size, shrink if needed, then
+         * optional binary grow for contentFill.
+         */
+        const applyPaint = (s: number) => {
+          const paint =
+            base * Math.max(minScale, Math.min(maxScale, s)) * pz
           if (pz === 1) {
             el.style.transform = 'none'
             el.style.fontSize = `${paint}px`
@@ -226,27 +281,114 @@ export function FitContent({
             el.style.transformOrigin = 'top left'
           }
           void el.offsetWidth
-          const aw = Math.max(el.scrollWidth, el.offsetWidth, 1)
+        }
+        const measureVis = () => {
+          const aw = wrapToBox
+            ? cw
+            : Math.max(el.scrollWidth, el.offsetWidth, 1)
           const ah = Math.max(el.scrollHeight, el.offsetHeight, 1)
-          const visW = pz === 1 ? aw : aw / pz
-          const visH = pz === 1 ? ah : ah / pz
-          if (visW <= fitW + 0.5 && visH <= fitH + 0.5) break
-          const refine = Math.min(fitW / visW, fitH / visH) * 0.98
-          outSx = Math.max(minScale, outSx * refine)
+          return {
+            visW: pz === 1 ? aw : aw / pz,
+            visH: pz === 1 ? ah : ah / pz,
+          }
+        }
+        const fullyFits = (visW: number, visH: number) =>
+          visW <= fitW + 1 && visH <= fitH + 1
+
+        /** Largest scale in [lo, hi] that still fully fits. */
+        const binMaxFit = (lo0: number, hi0: number): number => {
+          let lo = lo0
+          let hi = hi0
+          if (hi < lo) return lo
+          applyPaint(lo)
+          let m = measureVis()
+          if (!fullyFits(m.visW, m.visH)) return lo // even min overflows
+          applyPaint(hi)
+          m = measureVis()
+          if (fullyFits(m.visW, m.visH)) return hi
+          for (let pass = 0; pass < 12; pass++) {
+            const mid = (lo + hi) / 2
+            applyPaint(mid)
+            m = measureVis()
+            if (fullyFits(m.visW, m.visH)) lo = mid
+            else hi = mid
+          }
+          applyPaint(lo)
+          return lo
+        }
+
+        if (wrapToBox) {
+          // Height-driven upper bound from natural measure; search full range
+          // so enlarging the card raises the ceiling and text grows again.
+          const hi = clampScale(
+            Math.max(fitH / Math.max(nh, 1), minScale) * 1.15,
+            minScale,
+            maxScale,
+          )
+          outSx = binMaxFit(minScale, hi)
           outSy = outSx
+        } else {
+          // Equations / tables
+          outSx = clampScale(outSx, minScale, maxScale)
+          outSy = outSx
+          for (let pass = 0; pass < 10; pass++) {
+            applyPaint(outSx)
+            const { visW, visH } = measureVis()
+            if (fullyFits(visW, visH)) break
+            const ratio =
+              Math.min(fitW / Math.max(visW, 1), fitH / Math.max(visH, 1)) *
+              0.97
+            const next = clampScale(outSx * ratio, minScale, maxScale)
+            if (Math.abs(next - outSx) < 0.002) break
+            outSx = next
+            outSy = outSx
+          }
+          if (maxScale > 1.001) {
+            applyPaint(outSx)
+            const { visW, visH } = measureVis()
+            if (
+              fullyFits(visW, visH) &&
+              (visH < fitH * 0.9 || visW < fitW * 0.9)
+            ) {
+              const hi = clampScale(
+                outSx *
+                  Math.min(
+                    fitW / Math.max(visW, 1),
+                    fitH / Math.max(visH, 1),
+                  ),
+                outSx,
+                maxScale,
+              )
+              outSx = binMaxFit(outSx, hi)
+              outSy = outSx
+            }
+          } else {
+            applyPaint(outSx)
+          }
         }
         setUsingTransform(pz !== 1)
       }
 
-      // Center: visual size after scale
-      const laidW = useTransform || stretch
-        ? nw * outSx
-        : Math.max(el.offsetWidth, el.scrollWidth, 1) / (pz === 1 ? 1 : pz)
-      const laidH = useTransform || stretch
-        ? nh * outSy
-        : Math.max(el.offsetHeight, el.scrollHeight, 1) / (pz === 1 ? 1 : pz)
+      // Visual size after paint (for centering gutters)
+      let laidW: number
+      let laidH: number
+      if (useTransform || stretch) {
+        laidW = (wrapToBox ? cw : nw) * outSx
+        laidH = nh * outSy
+      } else if (wrapToBox) {
+        laidW = cw
+        laidH =
+          Math.max(el.offsetHeight, el.scrollHeight, 1) / (pz === 1 ? 1 : pz)
+      } else {
+        laidW =
+          Math.max(el.offsetWidth, el.scrollWidth, 1) / (pz === 1 ? 1 : pz)
+        laidH =
+          Math.max(el.offsetHeight, el.scrollHeight, 1) / (pz === 1 ? 1 : pz)
+      }
 
-      if (align === 'center' && !stretch) {
+      // wrapToBox: top-align so residual space is below (never clip last line
+      // under a centered margin + overflow:hidden). Equations still center.
+      if (align === 'center' && !stretch && !wrapToBox) {
         el.style.marginLeft = `${Math.max(0, (cw - laidW) / 2)}px`
         el.style.marginTop = `${Math.max(0, (ch - laidH) / 2)}px`
       } else {
@@ -254,7 +396,13 @@ export function FitContent({
         el.style.marginTop = '0'
       }
 
-      lastScaleRef.current = { sx: outSx, sy: outSy, pz }
+      lastScaleRef.current = {
+        sx: outSx,
+        sy: outSy,
+        pz,
+        bw: cw,
+        bh: ch,
+      }
       appliedRef.current = true
       return { sx: outSx, sy: outSy }
     }
@@ -271,27 +419,22 @@ export function FitContent({
       const cw = Math.max(b.clientWidth, 1)
       const ch = Math.max(b.clientHeight, 1)
       const stretch = fillMode === 'stretch'
-
-      let sx: number
-      let sy: number
-      if (stretch) {
-        sx = clampScale(cw / nw, minScale, maxScale)
-        sy = clampScale(ch / nh, minScale, maxScale)
-      } else {
-        const fit = clampScale(Math.min(cw / nw, ch / nh), minScale, maxScale)
-        sx = fit
-        sy = fit
-      }
+      const fitW = Math.max(1, cw - 1)
+      const fitH = Math.max(1, ch - 1)
+      const { sx, sy } = fitScaleForBox(nw, nh, fitW, fitH, stretch)
 
       const prev = lastScaleRef.current
+      // wrapToBox: always reflow when the box size changes (enlarge must grow
+      // text). Scale-only early-out used fitted sx which ignored contentFill grow.
+      const boxChanged =
+        Math.abs(prev.bw - cw) > 0.5 || Math.abs(prev.bh - ch) > 0.5
       const same =
         appliedRef.current &&
+        !boxChanged &&
         Math.abs(prev.sx - sx) < 0.002 &&
         Math.abs(prev.sy - sy) < 0.002 &&
         Math.abs(prev.pz - pz) < 0.002
 
-      // Skip work when scale is unchanged — critical during free-transform drag
-      // and hover-tooltip re-renders (avoids KaTeX reflow “twitch”).
       if (same) return
 
       const out = writeScale(sx, sy)
@@ -325,14 +468,15 @@ export function FitContent({
       if (moRaf) cancelAnimationFrame(moRaf)
       moRaf = requestAnimationFrame(() => {
         moRaf = 0
-        // Only remeasure if our own subtree still needs it; box resize uses schedule(false)
         schedule(true)
       })
     }
 
     apply(true)
 
-    const roBox = new ResizeObserver(() => schedule(false))
+    // wrapToBox height depends on width — always remeasure on box resize.
+    // Equations (max-content natural) only need scale-only on resize.
+    const roBox = new ResizeObserver(() => schedule(wrapToBox))
     roBox.observe(box)
 
     // Only watch direct content swaps (async inject), not every text mutation
@@ -380,6 +524,7 @@ export function FitContent({
     baseFontSize,
     paintZoom,
     contentKey,
+    wrapToBox,
   ])
 
   if (mode === 'scroll') {

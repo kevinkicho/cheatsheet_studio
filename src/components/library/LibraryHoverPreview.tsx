@@ -7,10 +7,7 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import type { LibraryItem } from '@/types'
-import { FitContent } from '@/components/math/FitContent'
-import { FigureView } from '@/components/math/FigureView'
-import { LatexView } from '@/components/math/LatexView'
-import { MarkdownTable } from '@/components/math/MarkdownTable'
+import { LibraryItemPreviewBody } from './LibraryItemPreviewBody'
 
 const PREVIEW_W = 380
 const PREVIEW_H = 260
@@ -119,53 +116,11 @@ export function LibraryHoverPreview({
         // Keep tooltip layout self-contained so library tiles never reflow
         data-library-hover-preview
       >
-        {item.type === 'figure' && item.imageUrl ? (
-          <FitContent
-            mode="scale"
-            fitMethod="transform"
-            align="center"
-            minScale={0.05}
-            maxScale={32}
-            showBadge
-            contentKey={`hover-fig-${item.id}-${item.imageUrl}`}
-            className="h-full w-full"
-          >
-            <FigureView
-              src={item.imageUrl}
-              alt={item.title}
-              fillContainer={false}
-            />
-          </FitContent>
-        ) : (
-          <FitContent
-            mode="scale"
-            minScale={0.12}
-            maxScale={16}
-            fitMethod="transform"
-            align="center"
-            baseFontSize={16}
-            showBadge
-            contentKey={`hover-body-${item.id}-${item.latex ?? ''}-${item.tableMarkdown ?? ''}`}
-            className="h-full w-full"
-          >
-            {(item.type === 'equation' || item.latex) && item.latex && (
-              <LatexView
-                latex={item.latex}
-                className="overflow-visible text-zinc-100 [&_.katex]:text-[1.1em] [&_.katex-display]:m-0"
-              />
-            )}
-            {item.type === 'table' && item.tableMarkdown && (
-              <MarkdownTable
-                markdown={item.tableMarkdown}
-                fitContent
-                className="overflow-visible text-sm"
-              />
-            )}
-            {!item.latex && !item.tableMarkdown && !item.imageUrl && (
-              <p className="text-xs text-zinc-500">No preview content</p>
-            )}
-          </FitContent>
-        )}
+        <LibraryItemPreviewBody
+          item={item}
+          stageW={PREVIEW_W - 24}
+          stageH={PREVIEW_H - 24}
+        />
       </div>
     </div>,
     document.body,

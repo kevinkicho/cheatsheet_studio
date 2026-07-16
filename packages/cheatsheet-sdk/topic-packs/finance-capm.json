@@ -11,18 +11,18 @@
       { "type": "heading", "title": "CAPM" },
       {
         "type": "equation",
-        "title": "Expected return",
-        "latex": "E[R_i] = R_f + \\beta_i\\bigl(E[R_m] - R_f\\bigr)"
+        "title": "CAPM expected return",
+        "latex": "\\mathrm{E}[R_{i}] = R_{f} + \\beta_{i}\\bigl(\\mathrm{E}[R_{m}] - R_{f}\\bigr)"
       },
       {
         "type": "equation",
         "title": "Market risk premium",
-        "latex": "\\text{MRP} = E[R_m] - R_f"
+        "latex": "\\mathrm{MRP} = \\mathrm{E}[R_{m}] - R_{f}"
       },
       {
         "type": "table",
         "title": "Symbols",
-        "markdown": "| Symbol | Meaning |\n|--------|--------|\n| R_f | Risk-free rate |\n| \\beta_i | Asset beta vs market |\n| E[R_m] | Expected market return |\n| E[R_i] | Required / expected return |"
+        "markdown": "| Symbol | Meaning |\n|--------|--------|\n| R_f | Risk-free rate |\n| β_i | Asset beta vs market |\n| E[R_m] | Expected market return |\n| E[R_i] | Required / expected return |"
       },
       {
         "type": "process",

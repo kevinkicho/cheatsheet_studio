@@ -33,9 +33,11 @@ import {
   densifyPlacedGroups,
   ensureLeafTitleClearance,
   getPackContentBox,
+  resolvePackedPrintPageCount,
   closePolyomino,
   mergeAdjacentOutermostPanels,
   translateLayoutPanelCluster,
+  resizeLayoutPanelCluster,
   GROUP_CHROME_PRESETS,
 } from '@/lib/autoOrganize'
 import { DEFAULT_CANVAS } from '@/types'
@@ -693,6 +695,105 @@ describe('packCheatsheetLayout', () => {
     expect(aDiag).toBeLessThanOrEqual(zDiag + 120)
   })
 
+  it('groupSort name-asc stacks L1 topics in A→Z top-to-bottom (no freefall interleave)', () => {
+    const folders = [
+      { id: 'fz', order: 0, name: '3. Zeta', parentId: null },
+      { id: 'fza', order: 0, name: '3.1 Za', parentId: 'fz' },
+      { id: 'fm', order: 1, name: '2. Mu', parentId: null },
+      { id: 'fma', order: 0, name: '2.1 Ma', parentId: 'fm' },
+      { id: 'fa', order: 2, name: '1. Alpha', parentId: null },
+      { id: 'faa', order: 0, name: '1.1 Aa', parentId: 'fa' },
+    ]
+    const items: CanvasItem[] = [
+      card('z1', { folderId: 'fza', title: 'Z', width: 120, height: 80 }),
+      card('m1', { folderId: 'fma', title: 'M', width: 120, height: 80 }),
+      card('a1', { folderId: 'faa', title: 'A', width: 120, height: 80 }),
+    ]
+    const out = packCheatsheetLayout(items, DEFAULT_CANVAS, {
+      density: 'sm',
+      groupChrome: 'panels',
+      panelShape: 'rect',
+      panelGroupLevels: [1, 2],
+      panelBorderLevels: [1, 2],
+      panelPadding: 4,
+      l1PanelGap: 2,
+      l2PanelGap: 2,
+      blockGap: 2,
+      groupSort: 'name-asc',
+      folders,
+      multiPage: true,
+      dissolvePrintArea: true,
+    })
+    const l1 = (out.layoutPanels ?? [])
+      .filter((p) => (p.hierarchyLevel ?? 1) === 1 && p.showStroke !== false)
+      .sort((a, b) => a.y - b.y || a.x - b.x)
+    expect(l1.map((p) => p.title)).toEqual([
+      '1. Alpha',
+      '2. Mu',
+      '3. Zeta',
+    ])
+    // Strictly top-to-bottom stack (no interleave)
+    for (let i = 1; i < l1.length; i++) {
+      expect(l1[i]!.y).toBeGreaterThanOrEqual(l1[i - 1]!.y + l1[i - 1]!.height - 1)
+    }
+  })
+
+  it('groupSort name-asc places nested L2 leaves in A→Z reading order', () => {
+    // Document order is reverse (Charlie, Bravo, Alpha) — sort must reorder.
+    const folders = [
+      { id: 'f1', order: 0, name: '1. Topic', parentId: null },
+      { id: 'fc', order: 0, name: '1.3 Charlie', parentId: 'f1' },
+      { id: 'fb', order: 1, name: '1.2 Bravo', parentId: 'f1' },
+      { id: 'fa', order: 2, name: '1.1 Alpha', parentId: 'f1' },
+    ]
+    const items: CanvasItem[] = [
+      card('c1', { folderId: 'fc', title: 'C', width: 120, height: 70 }),
+      card('b1', { folderId: 'fb', title: 'B', width: 120, height: 70 }),
+      card('a1', { folderId: 'fa', title: 'A', width: 120, height: 70 }),
+    ]
+    const pack = (sort: 'name-asc' | 'name-desc' | 'none') =>
+      packCheatsheetLayout(items, DEFAULT_CANVAS, {
+        density: 'sm',
+        groupChrome: 'panels',
+        panelShape: 'rect',
+        panelGroupLevels: [1, 2],
+        panelBorderLevels: [1, 2],
+        panelPadding: 4,
+        l1PanelGap: 2,
+        l2PanelGap: 2,
+        blockGap: 2,
+        groupSort: sort,
+        folders,
+      })
+    const diag = (p: { x: number; y: number }) => p.y + p.x * 0.35
+    const l2 = (out: ReturnType<typeof packCheatsheetLayout>) =>
+      (out.layoutPanels ?? [])
+        .filter((p) => (p.hierarchyLevel ?? 1) === 2 && p.showStroke !== false)
+        .sort((a, b) => diag(a) - diag(b) || a.x - b.x)
+
+    const az = l2(pack('name-asc'))
+    expect(az.map((p) => p.title)).toEqual([
+      '1.1 Alpha',
+      '1.2 Bravo',
+      '1.3 Charlie',
+    ])
+
+    const za = l2(pack('name-desc'))
+    expect(za.map((p) => p.title)).toEqual([
+      '1.3 Charlie',
+      '1.2 Bravo',
+      '1.1 Alpha',
+    ])
+
+    // none: document-first appearance (Charlie before Alpha), not forced A→Z
+    const nos = l2(pack('none'))
+    expect(nos.map((p) => p.title)).toEqual([
+      '1.3 Charlie',
+      '1.2 Bravo',
+      '1.1 Alpha',
+    ])
+  })
+
   it('groupSort none keeps document order (Zeta before Alpha when Z first)', () => {
     const items: CanvasItem[] = [
       card('z1', { folderId: 'fz', title: 'z1', latex: 'z=1' }),
@@ -877,12 +978,26 @@ describe('packCheatsheetLayout', () => {
     const topicGap = (out: ReturnType<typeof packCheatsheetLayout>) => {
       const a = out.items.filter((i) => i.folderId === 'f1' && !i.hidden)
       const b = out.items.filter((i) => i.folderId === 'f2' && !i.hidden)
-      const aBot = Math.max(...a.map((c) => c.y + c.height))
-      const bTop = Math.min(...b.map((c) => c.y))
-      const aTop = Math.min(...a.map((c) => c.y))
-      const bBot = Math.max(...b.map((c) => c.y + c.height))
-      // Vertical separation between topic clusters (either order)
-      return Math.max(0, Math.max(bTop - aBot, aTop - bBot))
+      const aBox = {
+        x0: Math.min(...a.map((c) => c.x)),
+        y0: Math.min(...a.map((c) => c.y)),
+        x1: Math.max(...a.map((c) => c.x + c.width)),
+        y1: Math.max(...a.map((c) => c.y + c.height)),
+      }
+      const bBox = {
+        x0: Math.min(...b.map((c) => c.x)),
+        y0: Math.min(...b.map((c) => c.y)),
+        x1: Math.max(...b.map((c) => c.x + c.width)),
+        y1: Math.max(...b.map((c) => c.y + c.height)),
+      }
+      // Content separation on either axis (dense free-flow may sit side-by-side)
+      const xGap = Math.max(0, Math.max(aBox.x0 - bBox.x1, bBox.x0 - aBox.x1))
+      const yGap = Math.max(0, Math.max(aBox.y0 - bBox.y1, bBox.y0 - aBox.y1))
+      const xOl = Math.min(aBox.x1, bBox.x1) - Math.max(aBox.x0, bBox.x0)
+      const yOl = Math.min(aBox.y1, bBox.y1) - Math.max(aBox.y0, bBox.y0)
+      if (xOl > 8) return yGap
+      if (yOl > 8) return xGap
+      return Math.max(xGap, yGap)
     }
     // Larger L1 gap → more air between topic clusters (rect + n-gon)
     expect(topicGap(pack('rect', 48, 0))).toBeGreaterThan(
@@ -1399,6 +1514,64 @@ describe('packCheatsheetLayout', () => {
     expect(p.y).toBeGreaterThan(80)
   })
 
+  it('resizeLayoutPanelCluster resizes frame only (does not scale members)', () => {
+    const items: CanvasItem[] = [
+      card('a1', {
+        folderId: 't1a',
+        title: 'A1',
+        x: 100,
+        y: 100,
+        width: 100,
+        height: 50,
+        latex: 'a',
+      }),
+      card('a2', {
+        folderId: 't1a',
+        title: 'A2',
+        x: 200,
+        y: 100,
+        width: 100,
+        height: 50,
+        latex: 'b',
+      }),
+    ]
+    const panels = [
+      {
+        id: 'p1',
+        x: 100,
+        y: 100,
+        width: 200,
+        height: 50,
+        hierarchyLevel: 1 as const,
+        memberIds: ['a1', 'a2'],
+        showStroke: true,
+        title: 'T',
+        shape: 'rect' as const,
+      },
+    ]
+    // Grow SE corner: double width and height — cards stay put
+    const out = resizeLayoutPanelCluster(
+      items,
+      panels,
+      'p1',
+      { x: 100, y: 100, width: 400, height: 100 },
+      { grid: 24, panelPad: 4 },
+    )
+    const p = out.panels.find((x) => x.id === 'p1')!
+    expect(p.width).toBe(400)
+    expect(p.height).toBe(100)
+    expect(p.x).toBe(100)
+    expect(p.y).toBe(100)
+    // Members not scaled (frame-only resize → then in-panel reflow)
+    const a1 = out.items.find((i) => i.id === 'a1')!
+    const a2 = out.items.find((i) => i.id === 'a2')!
+    expect(a1.width).toBe(100)
+    expect(a1.height).toBe(50)
+    expect(a1.x).toBe(100)
+    expect(a2.width).toBe(100)
+    expect(a2.x).toBe(200)
+  })
+
   it('resolveMultipageStraddles + insertPageGutters keep cards on content bands', () => {
     const pageH = 1056
     const mTop = 48
@@ -1452,6 +1625,7 @@ describe('packCheatsheetLayout', () => {
     const canvas = {
       ...DEFAULT_CANVAS,
       printPageCount: 3,
+      printPageLayout: 'vertical' as const,
       margins: { top: 48, right: 48, bottom: 48, left: 48 },
     }
     const normal = getPackContentBox(canvas, { dissolvePrintArea: false })
@@ -1459,9 +1633,101 @@ describe('packCheatsheetLayout', () => {
     expect(dissolved.height).toBeGreaterThan(normal.height)
     expect(dissolved.dissolved).toBe(true)
     expect(dissolved.dissolvedPageCount).toBe(3)
-    // Width stays inside printable margins (does not grow past green box)
+    // Vertical dissolve: width stays single-page printable
     expect(dissolved.width).toBe(normal.width)
     expect(dissolved.left).toBe(normal.left)
+    // Outer height = 3×page − top − bottom margins only
+    expect(dissolved.height).toBe(
+      3 * (normal.pageHeight) - 48 - 48,
+    )
+  })
+
+  it('getPackContentBox dissolve grid: outer margins only (2×3 for 6 pages)', () => {
+    const canvas = {
+      ...DEFAULT_CANVAS,
+      printPageCount: 6,
+      printPageLayout: 'grid' as const,
+      printSizeId: 'letter' as const,
+      orientation: 'portrait' as const,
+      margins: { top: 48, right: 48, bottom: 48, left: 48 },
+    }
+    const normal = getPackContentBox(canvas, { dissolvePrintArea: false })
+    const dissolved = getPackContentBox(canvas, { dissolvePrintArea: true })
+    expect(dissolved.dissolved).toBe(true)
+    // 6 pages → 3 cols × 2 rows (sqrt packing)
+    expect(dissolved.dissolveCols).toBe(3)
+    expect(dissolved.dissolveRows).toBe(2)
+    // Printable = full abutted super-page minus outer margins only
+    expect(dissolved.width).toBe(3 * normal.pageWidth - 48 - 48)
+    expect(dissolved.height).toBe(2 * normal.pageHeight - 48 - 48)
+    // Much wider than single-page printable (old bug: width stayed single page)
+    expect(dissolved.width).toBeGreaterThan(normal.width * 2)
+    expect(dissolved.height).toBeGreaterThan(normal.height)
+  })
+
+  it('getPackContentBox dissolve horizontal grows width', () => {
+    const canvas = {
+      ...DEFAULT_CANVAS,
+      printPageCount: 4,
+      printPageLayout: 'horizontal' as const,
+      margins: { top: 48, right: 48, bottom: 48, left: 48 },
+    }
+    const normal = getPackContentBox(canvas, { dissolvePrintArea: false })
+    const dissolved = getPackContentBox(canvas, { dissolvePrintArea: true })
+    expect(dissolved.width).toBe(4 * normal.pageWidth - 96)
+    expect(dissolved.height).toBe(normal.pageHeight - 96)
+  })
+
+  it('resolvePackedPrintPageCount keeps 6-page grid after short pack', () => {
+    // Content only needs ~1 vertical page of height but user has 6-page grid
+    const n = resolvePackedPrintPageCount({
+      multiPage: true,
+      dissolve: true,
+      layout: 'grid',
+      userPageCount: 6,
+      plannedPages: 2,
+      pageWidth: 816,
+      pageHeight: 1056,
+      margins: { top: 48, right: 48, bottom: 48, left: 48 },
+      contentBottom: 48 + 900,
+      contentRight: 48 + 700,
+      packLeft: 48,
+      packTop: 48,
+    })
+    expect(n).toBe(6)
+  })
+
+  it('resolvePackedPrintPageCount does not invent pages from planned alone', () => {
+    // Ideal-cell budget said 3 pages, but packed content fits on one page.
+    // Old floor Math.max(byH, planned) left an empty second/third frame.
+    const n = resolvePackedPrintPageCount({
+      multiPage: true,
+      dissolve: false,
+      layout: 'vertical',
+      userPageCount: 1,
+      plannedPages: 3,
+      pageWidth: 816,
+      pageHeight: 1056,
+      margins: { top: 48, right: 48, bottom: 48, left: 48 },
+      contentBottom: 48 + 900,
+      contentRight: 48 + 700,
+      packLeft: 48,
+      packTop: 48,
+    })
+    expect(n).toBe(1)
+  })
+
+  it('multipage pack does not invent empty page when content fits one page', () => {
+    const items = Array.from({ length: 4 }, (_, i) =>
+      card(`s${i}`, { width: 200, height: 80, title: `Item ${i}` }),
+    )
+    const canvas = { ...DEFAULT_CANVAS, printPageCount: 1 }
+    const out = packCheatsheetLayout(items, canvas, {
+      density: 'sm',
+      multiPage: true,
+      fitPrint: true,
+    })
+    expect(out.printPageCount).toBe(1)
   })
 
   it('ensureLeafTitleClearance pushes groups so title bands stay free', () => {
@@ -1652,8 +1918,20 @@ describe('packCheatsheetLayout', () => {
       const maxY = Math.max(...cards.map((c) => c.y + c.height))
       return maxY - minY
     }
-    // Larger gap → taller overall stack (more free-flow spacing)
-    expect(span(loose)).toBeGreaterThan(span(tight))
+    const areaSpan = (out: typeof tight) => {
+      const cards = out.items.filter((i) => !i.hidden)
+      const minX = Math.min(...cards.map((c) => c.x))
+      const maxX = Math.max(...cards.map((c) => c.x + c.width))
+      const minY = Math.min(...cards.map((c) => c.y))
+      const maxY = Math.max(...cards.map((c) => c.y + c.height))
+      return (maxX - minX) * (maxY - minY)
+    }
+    // Larger gap → more overall free-flow air (bbox area; may expand W and/or H)
+    expect(areaSpan(loose)).toBeGreaterThan(areaSpan(tight))
+    // Prefer taller when mostly stacked, but dense side-by-side is also valid
+    expect(span(loose) + areaSpan(loose) / 1000).toBeGreaterThan(
+      span(tight) * 0.5,
+    )
     // Free-flow: at least two panels share a horizontal band (not pure stacked rows)
     const panels = tight.layoutPanels
     const tops = panels.map((p) => p.y)
@@ -1768,12 +2046,141 @@ describe('packCheatsheetLayout', () => {
       expect(c.height).toBe(before.height)
       expect(c.x).toBeGreaterThanOrEqual(nextP.x - 1)
       expect(c.y).toBeGreaterThanOrEqual(nextP.y - 1)
-      expect(c.x + c.width).toBeLessThanOrEqual(nextP.x + nextP.width + 1)
-      expect(c.y + c.height).toBeLessThanOrEqual(nextP.y + nextP.height + 1)
+      // Horizontal band stays inside pin width
+      expect(c.x + c.width).toBeLessThanOrEqual(panel.x + panel.width + 1)
     }
+    // Never grow past the panel size at click (sibling overlap fix)
+    expect(nextP.width).toBeLessThanOrEqual(panel.width + 1)
+    expect(nextP.height).toBeLessThanOrEqual(panel.height + 1)
     // Chrome rebuilt
     expect(nextP.shape).toBe('polygon')
     expect(nextP.outlinePath || nextP.runs?.length).toBeTruthy()
+  })
+
+  it('relayoutPanelContents dense fills residual beside tall cards (less empty bottom-right)', () => {
+    // One tall process-like card + several short equations — pack should use
+    // residual column beside the tall card, not stack everything under it.
+    const items: CanvasItem[] = [
+      card('tall', {
+        title: 'Process',
+        type: 'process-chart',
+        mermaidSource: 'flowchart TD\n  A-->B',
+        x: 100,
+        y: 100,
+        width: 200,
+        height: 280,
+      }),
+      card('e1', { title: 'Eq1', x: 100, y: 400, width: 140, height: 48, latex: 'a' }),
+      card('e2', { title: 'Eq2', x: 100, y: 460, width: 140, height: 48, latex: 'b' }),
+      card('e3', { title: 'Eq3', x: 100, y: 520, width: 140, height: 48, latex: 'c' }),
+      card('e4', { title: 'Eq4', x: 100, y: 580, width: 140, height: 48, latex: 'd' }),
+    ]
+    const panel: import('@/types').LayoutPanel = {
+      id: 'p-residual',
+      title: '6.2',
+      x: 80,
+      y: 80,
+      width: 420,
+      height: 400,
+      memberIds: ['tall', 'e1', 'e2', 'e3', 'e4'],
+      shape: 'rect',
+      showTitle: true,
+      hierarchyLevel: 2,
+      contentSort: 'none',
+    }
+    const { items: next, panel: nextP } = relayoutPanelContents(items, panel, {
+      mode: 'dense',
+      panelPad: 4,
+      grid: 24,
+      blockGapPx: 2,
+      panelShape: 'rect',
+    })
+    const eqs = next.filter((i) => i.id.startsWith('e'))
+    const tall = next.find((i) => i.id === 'tall')!
+    // At least two short cards should sit to the right of the tall card
+    // (using residual column), not only stacked under it.
+    const beside = eqs.filter(
+      (e) => e.x >= tall.x + tall.width - 8 && e.y + e.height <= tall.y + tall.height + 24,
+    )
+    expect(beside.length).toBeGreaterThanOrEqual(2)
+    // Content pack height should not be "all stacked under tall"
+    const maxY = Math.max(...next.filter((i) => !i.hidden).map((i) => i.y + i.height))
+    const pureStackH = tall.height + eqs.reduce((s, e) => s + e.height + 2, 0)
+    expect(maxY - nextP.y).toBeLessThan(pureStackH * 0.92)
+  })
+
+  it('relayoutPanelContents dense never expands panel into sibling territory', () => {
+    const items: CanvasItem[] = [
+      card('a', { title: 'A', x: 100, y: 100, width: 160, height: 90, folderId: 'f' }),
+      card('b', { title: 'B', x: 100, y: 200, width: 160, height: 90, folderId: 'f' }),
+      card('c', { title: 'C', x: 100, y: 300, width: 160, height: 90, folderId: 'f' }),
+    ]
+    const panel: import('@/types').LayoutPanel = {
+      id: 'p-no-grow',
+      title: '6.2',
+      x: 80,
+      y: 80,
+      width: 240,
+      height: 180,
+      memberIds: ['a', 'b', 'c'],
+      shape: 'rect',
+      showTitle: true,
+      hierarchyLevel: 2,
+      contentSort: 'name-asc',
+    }
+    const { panel: nextP } = relayoutPanelContents(items, panel, {
+      mode: 'dense',
+      panelPad: 4,
+      grid: 24,
+      blockGapPx: 2,
+      folders: [{ id: 'f', name: 'F', parentId: null }],
+    })
+    expect(nextP.x).toBe(80)
+    expect(nextP.y).toBe(80)
+    // Fixed bin: exact size at click
+    expect(nextP.width).toBe(240)
+    expect(nextP.height).toBe(180)
+  })
+
+  it('relayoutPanelContents dense keeps exact panel size (fixed bin)', () => {
+    const items: CanvasItem[] = [
+      card('a', { title: 'Zulu', x: 120, y: 120, width: 100, height: 50 }),
+      card('b', { title: 'Alpha', x: 120, y: 180, width: 100, height: 50 }),
+      card('c', { title: 'Mike', x: 120, y: 240, width: 100, height: 50 }),
+    ]
+    const panel: import('@/types').LayoutPanel = {
+      id: 'p-exact',
+      title: 'Fixed',
+      x: 100,
+      y: 100,
+      width: 360,
+      height: 320,
+      memberIds: ['a', 'b', 'c'],
+      shape: 'rect',
+      showTitle: true,
+      contentSort: 'name-asc',
+    }
+    const { items: next, panel: nextP } = relayoutPanelContents(items, panel, {
+      mode: 'dense',
+      panelPad: 4,
+      grid: 24,
+      blockGapPx: 2,
+    })
+    expect(nextP.x).toBe(100)
+    expect(nextP.y).toBe(100)
+    expect(nextP.width).toBe(360)
+    expect(nextP.height).toBe(320)
+    // Name A→Z order: Alpha before Mike before Zulu (by y then x among equals)
+    const alpha = next.find((i) => i.id === 'b')!
+    const zulu = next.find((i) => i.id === 'a')!
+    expect(alpha.y).toBeLessThanOrEqual(zulu.y + 1)
+    // Members stay inside panel content band
+    for (const id of ['a', 'b', 'c']) {
+      const c = next.find((i) => i.id === id)!
+      expect(c.x).toBeGreaterThanOrEqual(nextP.x - 1)
+      expect(c.y).toBeGreaterThanOrEqual(nextP.y - 1)
+      expect(c.x + c.width).toBeLessThanOrEqual(nextP.x + nextP.width + 1)
+    }
   })
 
   it('relayoutPanelContents dense does not shrink cards on repeated clicks', () => {

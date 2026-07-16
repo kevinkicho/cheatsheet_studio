@@ -258,9 +258,9 @@ export function enforcePanelLayoutInvariants(
   // Enforce stroke-to-stroke min gap (L1/L2 knobs). Previous logic only
   // separated true overlaps and treated minGap as rectsOverlap eps (which
   // does NOT push frames that are merely closer than the user gap).
-  // Scoped mode: only pairs both in the edited cluster (Γëñ3 passes).
-  // Unscoped: full sheet (Γëñ6 passes).
-  const maxSibPasses = scope ? 3 : 6
+  // Scoped in-panel edits can have many L2 siblings (Biology ~12).
+  // Unscoped sheet packs 50+ L2s — need more cascade passes than 6.
+  const maxSibPasses = scope ? 10 : 14
   for (let pass = 0; pass < maxSibPasses; pass++) {
     nextPanels = rebuildAll(nextItems, nextPanels)
     const byIdPanel = new Map(nextPanels.map((p) => [p.id, p]))

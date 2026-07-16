@@ -14,8 +14,10 @@ import {
   PanelRight,
   Redo2,
   Save,
+  Settings2,
   Undo2,
   Upload,
+  User,
 } from 'lucide-react'
 import { useAuthStore } from '@/stores/authStore'
 import { useCanvasStore } from '@/stores/canvasStore'
@@ -64,7 +66,9 @@ export function TopBar({ onImportFeedback }: TopBarProps = {}) {
   const setView = useUiStore((s) => s.setView)
   const importInputRef = useRef<HTMLInputElement>(null)
   const sheetJsonMenuRef = useRef<HTMLDivElement>(null)
+  const userMenuRef = useRef<HTMLDivElement>(null)
   const [sheetJsonOpen, setSheetJsonOpen] = useState(false)
+  const [userMenuOpen, setUserMenuOpen] = useState(false)
 
   const {
     importFile,
@@ -99,6 +103,23 @@ export function TopBar({ onImportFeedback }: TopBarProps = {}) {
       document.removeEventListener('keydown', onKey)
     }
   }, [sheetJsonOpen])
+
+  useEffect(() => {
+    if (!userMenuOpen) return
+    const onDoc = (e: MouseEvent) => {
+      const el = userMenuRef.current
+      if (el && !el.contains(e.target as Node)) setUserMenuOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setUserMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [userMenuOpen])
 
   const importModeLabel =
     importMode === 'replace'
@@ -466,26 +487,201 @@ export function TopBar({ onImportFeedback }: TopBarProps = {}) {
         </button>
 
         {user ? (
-          <button
-            type="button"
-            title={`Sign out (${user.email ?? user.uid})`}
-            onClick={() => void signOut()}
-            className="ml-1 inline-flex items-center gap-1.5 rounded-md border border-zinc-800 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-900"
-          >
-            {user.photoURL ? (
-              <img
-                src={user.photoURL}
-                alt=""
-                className="h-5 w-5 rounded-full"
-                referrerPolicy="no-referrer"
+          <div className="relative ml-1" ref={userMenuRef}>
+            <button
+              type="button"
+              title="Account menu"
+              data-testid="user-menu-button"
+              aria-haspopup="menu"
+              aria-expanded={userMenuOpen}
+              onClick={() => setUserMenuOpen((o) => !o)}
+              className="inline-flex items-center gap-1.5 rounded-md border border-zinc-800 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-900"
+            >
+              {user.photoURL ? (
+                <img
+                  src={user.photoURL}
+                  alt=""
+                  className="h-5 w-5 rounded-full"
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-500/30 text-[10px] font-semibold text-indigo-100">
+                  {(user.displayName ?? user.email ?? '?')
+                    .slice(0, 1)
+                    .toUpperCase()}
+                </span>
+              )}
+              <span className="hidden max-w-[8rem] truncate sm:inline">
+                {user.displayName ?? 'Account'}
+              </span>
+              <ChevronDown
+                className={`h-3 w-3 text-zinc-500 transition ${userMenuOpen ? 'rotate-180' : ''}`}
               />
-            ) : (
-              <LogOut className="h-3.5 w-3.5" />
-            )}
-            <span className="hidden max-w-[8rem] truncate sm:inline">
-              {user.displayName ?? 'Account'}
-            </span>
-          </button>
+            </button>
+            {userMenuOpen ? (
+              <div
+                role="menu"
+                data-testid="user-menu-panel"
+                className="absolute right-0 top-full z-[60] mt-1 w-64 rounded-md border border-zinc-700 bg-zinc-900 py-1 shadow-xl shadow-black/40"
+              >
+                <div className="border-b border-zinc-800 px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    {user.photoURL ? (
+                      <img
+                        src={user.photoURL}
+                        alt=""
+                        className="h-9 w-9 rounded-full"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-indigo-500/25 text-sm font-semibold text-indigo-100">
+                        <User className="h-4 w-4" />
+                      </span>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-xs font-medium text-zinc-100">
+                        {user.displayName ?? 'Signed in'}
+                      </p>
+                      <p
+                        className="truncate text-[10px] text-zinc-500"
+                        title={user.email ?? user.uid}
+                      >
+                        {user.email ?? user.uid}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="mt-1.5 text-[10px] leading-snug text-zinc-600">
+                    Sheets sync to your Firebase account ·{' '}
+                    <span className={statusClass}>{statusLabel}</span>
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  role="menuitem"
+                  data-testid="user-menu-workspace"
+                  onClick={() => {
+                    setView('workspace')
+                    setUserMenuOpen(false)
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-200 hover:bg-zinc-800"
+                >
+                  <LayoutGrid className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
+                  Workspace
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  data-testid="user-menu-sheets"
+                  onClick={() => {
+                    setView('sheets')
+                    setUserMenuOpen(false)
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-200 hover:bg-zinc-800"
+                >
+                  <Layers className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
+                  My Sheets
+                  <span className="ml-auto text-[10px] text-zinc-600">
+                    {sheets.length}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  data-testid="user-menu-library"
+                  onClick={() => {
+                    setView('library')
+                    setUserMenuOpen(false)
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-200 hover:bg-zinc-800"
+                >
+                  <BookOpen className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
+                  Full library
+                </button>
+
+                <div className="my-1 border-t border-zinc-800" />
+
+                <button
+                  type="button"
+                  role="menuitem"
+                  data-testid="user-menu-save"
+                  disabled={saveStatus === 'saving'}
+                  onClick={() => {
+                    if (isLocalSheet || cloudAvailable === false) {
+                      void retryCloudSync(user.uid)
+                    } else {
+                      void saveActiveSheet(user.uid)
+                    }
+                    setUserMenuOpen(false)
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-200 hover:bg-zinc-800 disabled:opacity-40"
+                >
+                  <Save className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
+                  {isLocalSheet ? 'Sync sheet to cloud' : 'Save sheet now'}
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  data-testid="user-menu-new-sheet"
+                  onClick={() => {
+                    void createSheet(user.uid)
+                    setView('workspace')
+                    setUserMenuOpen(false)
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-200 hover:bg-zinc-800"
+                >
+                  <FilePlus2 className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
+                  New sheet
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  data-testid="user-menu-export-json"
+                  onClick={() => {
+                    downloadWorkspaceSheetJson()
+                    setUserMenuOpen(false)
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-200 hover:bg-zinc-800"
+                >
+                  <Download className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
+                  Export sheet JSON
+                </button>
+
+                <div className="my-1 border-t border-zinc-800" />
+
+                <button
+                  type="button"
+                  role="menuitem"
+                  data-testid="user-menu-properties"
+                  onClick={() => {
+                    setView('workspace')
+                    setLeftOpen(true)
+                    setUserMenuOpen(false)
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-200 hover:bg-zinc-800"
+                >
+                  <Settings2 className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
+                  Sheet properties &amp; catalog
+                </button>
+
+                <div className="my-1 border-t border-zinc-800" />
+
+                <button
+                  type="button"
+                  role="menuitem"
+                  data-testid="user-menu-sign-out"
+                  onClick={() => {
+                    setUserMenuOpen(false)
+                    void signOut()
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-rose-300/90 hover:bg-zinc-800"
+                >
+                  <LogOut className="h-3.5 w-3.5 shrink-0" />
+                  Sign out
+                </button>
+              </div>
+            ) : null}
+          </div>
         ) : null}
       </div>
     </header>

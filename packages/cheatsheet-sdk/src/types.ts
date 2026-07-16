@@ -27,10 +27,20 @@ export type MermaidThemeId =
 export type MermaidDiagramKind = 'flowchart' | 'mindmap'
 export type MermaidFlowDirection = 'TD' | 'LR' | 'BT' | 'RL'
 
+export type CalloutVariant = 'note' | 'tip' | 'info' | 'warn' | 'danger'
+
 export type CanvasItemType =
   | 'equation'
   | 'table'
   | 'figure'
+  | 'definition'
+  | 'list'
+  | 'callout'
+  | 'code'
+  | 'constant'
+  | 'identity-set'
+  | 'plot'
+  | 'matrix'
   | 'custom-equation'
   | 'custom-image'
   | 'process-chart'
@@ -111,6 +121,20 @@ export interface CanvasItem {
   tableMarkdown?: string
   imageUrl?: string
   imagePath?: string
+  // Tier 1 prose
+  term?: string
+  body?: string
+  listItems?: string[]
+  listOrdered?: boolean
+  calloutVariant?: CalloutVariant
+  code?: string
+  codeLanguage?: string
+  // Tier 2 STEM
+  symbol?: string
+  value?: string
+  unit?: string
+  identities?: string[]
+  matrixRows?: string[][]
   mermaidSource?: string
   /** Opaque to the SDK when full processFlow is present; app paints it. */
   processFlow?: ProcessFlowSnapshotLite | Record<string, unknown>

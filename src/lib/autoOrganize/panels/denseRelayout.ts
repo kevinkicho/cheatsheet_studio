@@ -1,28 +1,16 @@
 /**
  * In-panel dense auto-layout — hierarchical-first, sheet densify primitives.
  *
- * Root causes fixed here (deeper than prior rewrites):
- *
- * 1. **Hierarchy ignored at seed** — free-flowing ALL L1 cards as one soup
- *    interleaved L2 subsections; densify could not recover clean L2 tiles.
- *    → Pack each L2 leaf first, then pack leaf chrome footprints.
- *
- * 2. **Size restore without re-separation** — densify/repack set
- *    width=min(orig, cw*grid); restoring orig sizes on those coords caused
- *    block overlaps. → Always re-run position-only separation after restore.
- *
- * 3. **Wrong pack budget** — inflated/shrunk band each click.
- *    → Fixed content band from panel at click; hard right wall; hug chrome.
- *
- * 4. **Missing sheet steps** — no resolveLeafGroupCollisions /
- *    separateLeafCardsByGap / repack leaf multi-width.
- *    → Use those densify modules on the hierarchical result.
+ * Two modes:
+ * - **forceFlat** (in-panel Rectangle/N-gon button): MaxRects into the user
+ *   pin box only. No clamp-to-overlap, no grid-snap overlap resolver, no
+ *   hierarchical chrome retile. Frame size stays exact.
+ * - **hierarchical** (default when forceFlat is off): pack L2 leaves then
+ *   footprints, densify/gap polish — sheet parity.
  */
 import type { CanvasItem, LayoutPanel } from '@/types'
 import { gapPxToCells, type PanelGroupLevel } from '../constants'
 import {
-  densifyPlacedGroups,
-  repackLeafInteriors,
   resolveLeafGroupCollisions,
   resolveCardOverlaps,
   separateLeafCardsByGap,
@@ -38,6 +26,7 @@ import {
   L1_TITLE_BAND_PX,
   L1_NESTED_TITLE_BAND_PX,
 } from './hierarchy'
+import { packIntoBox } from './packIntoBox'
 
 export type DenseRelayoutArgs = {
   items: CanvasItem[]
@@ -64,6 +53,13 @@ export type DenseRelayoutArgs = {
   orderedLeaves: LayoutPanel[]
   level: number
   hasNestedStroke: boolean
+  /**
+   * Pack all members as one flat free-flow (ignore nested L2 leaf structure).
+   * Used by in-panel Auto-layout button so residual holes get filled.
+   */
+  forceFlat?: boolean
+  /** Rotate insertion-order seeds so re-clicks can improve residual fill. */
+  packSeed?: number
 }
 
 function exclusiveBand(p: LayoutPanel, all: LayoutPanel[]): number {
@@ -136,9 +132,263 @@ function rebuildChrome(
 }
 
 /**
+ * Pixel skyline free-flow at full card sizes with exact gapPx (sub-cell gaps).
+ * Used when gapPx > 0 but gapPxToCells is 0 so cell free-flow would pack flush.
+ *
+ * Contact-aware placement + gravity + void-fill so residual columns beside tall
+ * process cards get used (screenshot 192700 empty bottom-right).
+ */
+function freeFlowPixelKeepSizes(
+  cards: CanvasItem[],
+  ox: number,
+  oy: number,
+  boxW: number,
+  gapPx: number,
+): { placed: CanvasItem[]; width: number; height: number } {
+  if (cards.length === 0) return { placed: [], width: 0, height: 0 }
+  const gap = Math.max(0, Math.round(gapPx))
+  const bandW = Math.max(48, Math.round(boxW))
+  type Pl = { i: number; x: number; y: number; w: number; h: number }
+  const idxs = cards.map((_, i) => i)
+  const orderings: number[][] = [
+    [...idxs].sort(
+      (a, b) =>
+        cards[b]!.height - cards[a]!.height ||
+        cards[b]!.width * cards[b]!.height -
+          cards[a]!.width * cards[a]!.height,
+    ),
+    [...idxs].sort(
+      (a, b) =>
+        cards[b]!.width * cards[b]!.height -
+          cards[a]!.width * cards[a]!.height ||
+        cards[b]!.height - cards[a]!.height,
+    ),
+    [...idxs].sort(
+      (a, b) =>
+        cards[b]!.width - cards[a]!.width ||
+        cards[b]!.height - cards[a]!.height,
+    ),
+    // Short first: slip into residual beside tall process charts
+    [...idxs].sort(
+      (a, b) =>
+        cards[a]!.height - cards[b]!.height ||
+        cards[b]!.width - cards[a]!.width,
+    ),
+    idxs,
+  ]
+  const collides = (
+    placed: Pl[],
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    ignore?: number,
+  ) => {
+    for (const p of placed) {
+      if (ignore != null && p.i === ignore) continue
+      if (
+        x < p.x + p.w + gap &&
+        x + w + gap > p.x &&
+        y < p.y + p.h + gap &&
+        y + h + gap > p.y
+      ) {
+        return true
+      }
+    }
+    return false
+  }
+  const contactScore = (
+    placed: Pl[],
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    ignore?: number,
+  ) => {
+    let c = 0
+    if (x <= 0.5) c += h * 0.5
+    if (y <= 0.5) c += w * 0.5
+    for (const p of placed) {
+      if (ignore != null && p.i === ignore) continue
+      const yOl = Math.min(y + h, p.y + p.h) - Math.max(y, p.y)
+      if (yOl > 0) {
+        if (Math.abs(x - (p.x + p.w + gap)) < 0.6) c += yOl
+        if (Math.abs(p.x - (x + w + gap)) < 0.6) c += yOl
+      }
+      const xOl = Math.min(x + w, p.x + p.w) - Math.max(x, p.x)
+      if (xOl > 0) {
+        if (Math.abs(y - (p.y + p.h + gap)) < 0.6) c += xOl
+        if (Math.abs(p.y - (y + h + gap)) < 0.6) c += xOl
+      }
+    }
+    return c
+  }
+  const candSets = (placed: Pl[]) => {
+    const xCands = new Set<number>([0])
+    const yCands = new Set<number>([0])
+    for (const p of placed) {
+      xCands.add(p.x)
+      xCands.add(p.x + p.w + gap)
+      yCands.add(p.y)
+      yCands.add(p.y + p.h + gap)
+    }
+    return { xCands, yCands }
+  }
+  const gravity = (placed: Pl[]) => {
+    for (let sweep = 0; sweep < 12; sweep++) {
+      let any = false
+      for (const p of [...placed].sort((a, b) => a.y - b.y || a.x - b.x)) {
+        let lo = 0
+        let hi = p.y
+        let bestY = p.y
+        while (lo <= hi) {
+          const mid = Math.floor((lo + hi) / 2)
+          if (!collides(placed, p.x, mid, p.w, p.h, p.i)) {
+            bestY = mid
+            hi = mid - 1
+          } else lo = mid + 1
+        }
+        if (bestY < p.y) {
+          p.y = bestY
+          any = true
+        }
+      }
+      for (const p of [...placed].sort((a, b) => a.x - b.x || a.y - b.y)) {
+        let lo = 0
+        let hi = p.x
+        let bestX = p.x
+        while (lo <= hi) {
+          const mid = Math.floor((lo + hi) / 2)
+          if (
+            mid + p.w <= bandW + 0.5 &&
+            !collides(placed, mid, p.y, p.w, p.h, p.i)
+          ) {
+            bestX = mid
+            hi = mid - 1
+          } else lo = mid + 1
+        }
+        if (bestX < p.x) {
+          p.x = bestX
+          any = true
+        }
+      }
+      if (!any) break
+    }
+  }
+  const voidFill = (placed: Pl[]) => {
+    for (let round = 0; round < 5; round++) {
+      let any = false
+      for (const p of [...placed].sort(
+        (a, b) => b.w * b.h - a.w * a.h || b.h - a.h,
+      )) {
+        const others = placed.filter((o) => o.i !== p.i)
+        const { xCands, yCands } = candSets(others)
+        let best: { x: number; y: number; score: number } | null = null
+        for (const y of [...yCands].sort((a, b) => a - b)) {
+          for (const x of [...xCands].sort((a, b) => a - b)) {
+            if (x + p.w > bandW + 0.5) continue
+            if (collides(others, x, y, p.w, p.h)) continue
+            const bottom = Math.max(
+              others.reduce((m, o) => Math.max(m, o.y + o.h), 0),
+              y + p.h,
+            )
+            const contact = contactScore(others, x, y, p.w, p.h)
+            // Prefer compact height + contact (fills residual beside tall cards)
+            const score = bottom * 1e9 + y * 1e5 + x * 10 - contact * 120
+            if (!best || score < best.score) best = { x, y, score }
+          }
+        }
+        if (!best) continue
+        const curContact = contactScore(others, p.x, p.y, p.w, p.h)
+        const curBottom = Math.max(
+          others.reduce((m, o) => Math.max(m, o.y + o.h), 0),
+          p.y + p.h,
+        )
+        const curScore =
+          curBottom * 1e9 + p.y * 1e5 + p.x * 10 - curContact * 120
+        if (best.score < curScore - 1) {
+          p.x = best.x
+          p.y = best.y
+          any = true
+        }
+      }
+      if (!any) break
+      gravity(placed)
+    }
+  }
+
+  let bestPl: Pl[] | null = null
+  let bestScore = Infinity
+  for (const order of orderings) {
+    const placed: Pl[] = []
+    for (const i of order) {
+      const c = cards[i]!
+      const w = Math.min(bandW, Math.max(8, Math.round(c.width)))
+      const h = Math.max(8, Math.round(c.height))
+      const { xCands, yCands } = candSets(placed)
+      let best: { x: number; y: number; score: number } | null = null
+      for (const y of [...yCands].sort((a, b) => a - b)) {
+        for (const x of [...xCands].sort((a, b) => a - b)) {
+          if (x + w > bandW + 0.5) continue
+          if (collides(placed, x, y, w, h)) continue
+          const bottom = Math.max(
+            placed.reduce((m, p) => Math.max(m, p.y + p.h), 0),
+            y + h,
+          )
+          const contact = contactScore(placed, x, y, w, h)
+          const score = bottom * 1e9 + y * 1e5 + x * 10 - contact * 100
+          if (!best || score < best.score) best = { x, y, score }
+        }
+      }
+      if (!best) {
+        const y =
+          placed.length === 0
+            ? 0
+            : Math.max(...placed.map((p) => p.y + p.h)) + gap
+        best = { x: 0, y, score: y }
+      }
+      placed.push({ i, x: best.x, y: best.y, w, h })
+    }
+    gravity(placed)
+    voidFill(placed)
+    gravity(placed)
+    const maxY = Math.max(...placed.map((p) => p.y + p.h), 0)
+    const maxX = Math.max(...placed.map((p) => p.x + p.w), 0)
+    // Prefer short packs that still use the band width (less empty right/bottom)
+    const unusedW = Math.max(0, bandW - maxX)
+    const score = maxY * 1e6 + unusedW * 8e3 + maxX * maxY * 4
+    if (score < bestScore) {
+      bestScore = score
+      bestPl = placed.map((p) => ({ ...p }))
+    }
+  }
+  let maxX = ox
+  let maxY = oy
+  const placed = cards.map((m, i) => {
+    const p =
+      bestPl?.find((x) => x.i === i) ?? {
+        x: 0,
+        y: 0,
+        w: m.width,
+        h: m.height,
+      }
+    const x = Math.round(ox + p.x)
+    const y = Math.round(oy + p.y)
+    maxX = Math.max(maxX, x + m.width)
+    maxY = Math.max(maxY, y + m.height)
+    return { ...m, x, y }
+  })
+  return {
+    placed,
+    width: Math.max(8, maxX - ox),
+    height: Math.max(8, maxY - oy),
+  }
+}
+
+/**
  * Free-flow place keeping **full original pixel sizes**.
- * Skyline uses ceil(w/grid) footprints so cards don't claim less space than
- * they paint (avoids post-restore overlaps).
+ * Cell skyline when gap fits grid; pixel skyline for sub-cell block gaps
+ * so user 2–12px gaps are not packed flush then “forgotten”.
  */
 function freeFlowKeepSizes(
   cards: CanvasItem[],
@@ -147,9 +397,16 @@ function freeFlowKeepSizes(
   boxW: number,
   grid: number,
   gapCells: number,
+  gapPx = 0,
+  /** When true: keep input order (name reading flow), like sheet groupSort. */
+  readingFlow = false,
 ): { placed: CanvasItem[]; width: number; height: number } {
   if (cards.length === 0) {
     return { placed: [], width: 0, height: 0 }
+  }
+  // Sub-cell but non-zero: exact pixel pack (gapPxToCells floor → 0)
+  if (gapPx > 0 && gapCells <= 0) {
+    return freeFlowPixelKeepSizes(cards, ox, oy, boxW, gapPx)
   }
   const g = Math.max(4, grid)
   const bandW = Math.max(48, Math.round(boxW))
@@ -160,8 +417,8 @@ function freeFlowKeepSizes(
     ch: Math.max(1, Math.ceil(Math.max(20, m.height) / g)),
   }))
   const pos = placeTopicRegionsDense(regions, pageCols, Math.max(0, gapCells), {
-    multiOrder: true,
-    readingFlow: false,
+    multiOrder: !readingFlow,
+    readingFlow,
   })
   let maxX = ox
   let maxY = oy
@@ -195,46 +452,110 @@ function freeFlowBestWidthKeepSizes(
   maxBoxW: number,
   grid: number,
   gapCells: number,
+  gapPx = 0,
+  readingFlow = false,
 ): { placed: CanvasItem[]; width: number; height: number } {
   if (cards.length === 0) {
     return { placed: [], width: 0, height: 0 }
   }
   const g = Math.max(4, grid)
-  const maxCardW = Math.max(...cards.map((c) => c.width), 48)
-  const area = cards.reduce((s, c) => s + c.width * c.height, 0)
-  const candidates = Array.from(
-    new Set(
-      [
-        maxBoxW,
-        Math.ceil((maxBoxW * 3) / 4),
-        Math.ceil((maxBoxW * 2) / 3),
-        Math.ceil(maxBoxW / 2),
-        Math.min(maxBoxW, Math.max(maxCardW, Math.ceil(Math.sqrt(area * 1.2)))),
-      ]
-        .map((w) => Math.max(maxCardW, Math.min(maxBoxW, w)))
-        .filter((w) => w >= 24),
+  return freeFlowKeepSizes(
+    cards,
+    ox,
+    oy,
+    maxBoxW,
+    g,
+    gapCells,
+    gapPx,
+    readingFlow,
+  )
+}
+
+/** Rotate card order so successive in-panel clicks try different densest packs. */
+function rotateMembers(cards: CanvasItem[], seed: number): CanvasItem[] {
+  if (cards.length <= 1) return cards
+  const n = ((seed % cards.length) + cards.length) % cards.length
+  if (n === 0) return cards
+  return [...cards.slice(n), ...cards.slice(0, n)]
+}
+
+function packResidualScore(
+  placed: CanvasItem[],
+  ox: number,
+  oy: number,
+  packW: number,
+  packH: number,
+): number {
+  const vis = placed.filter((m) => !m.hidden && !isHeadingCard(m))
+  if (vis.length === 0) return Infinity
+  const maxX = Math.max(...vis.map((m) => m.x + m.width)) - ox
+  const maxY = Math.max(...vis.map((m) => m.y + m.height)) - oy
+  const used = vis.reduce((s, m) => s + m.width * m.height, 0)
+  const bbox = Math.max(1, maxX * maxY)
+  const fill = Math.min(1, used / bbox)
+  const unusedW = Math.max(0, packW - maxX)
+  const unusedH = Math.max(0, packH - maxY)
+  // Prefer short packs that still use width (fill residual columns)
+  return maxY * 1e6 + unusedW * 8e4 + unusedH * 2e3 + (1 - fill) * 5e5
+}
+
+/**
+ * Try several free-flow seeds; pick the one that best fills residual space
+ * inside the fixed panel content box (not just first densest order).
+ */
+function freeFlowMultiSeed(
+  cards: CanvasItem[],
+  ox: number,
+  oy: number,
+  packW: number,
+  packH: number,
+  grid: number,
+  gapCells: number,
+  gapPx: number,
+  readingFlow: boolean,
+  packSeed: number,
+): CanvasItem[] {
+  if (cards.length === 0) return []
+  // Seeds: rotate start + height/area preferred pre-sorts
+  const variants: CanvasItem[][] = []
+  const base = [...cards]
+  for (let s = 0; s < Math.min(6, Math.max(3, cards.length)); s++) {
+    variants.push(rotateMembers(base, packSeed + s))
+  }
+  variants.push(
+    [...base].sort(
+      (a, b) =>
+        b.height - a.height || b.width * b.height - a.width * a.height,
     ),
-  ).sort((a, b) => b - a)
+  )
+  variants.push(
+    [...base].sort(
+      (a, b) =>
+        b.width * b.height - a.width * a.height || b.height - a.height,
+    ),
+  )
+  variants.push(
+    [...base].sort((a, b) => a.height - b.height || b.width - a.width),
+  )
 
-  let best: {
-    placed: CanvasItem[]
-    width: number
-    height: number
-    score: number
-  } | null = null
-
-  for (const boxW of candidates) {
-    const r = freeFlowKeepSizes(cards, ox, oy, boxW, g, gapCells)
-    // Prefer short+filled (same spirit as packBBoxScore)
-    const box = Math.max(1, r.width * r.height)
-    const fill = Math.min(1, area / box)
-    const score =
-      r.height * 1e6 + box * 8 + r.width * 0.25 + (1 - fill) * 5e5
-    if (!best || score < best.score) {
-      best = { ...r, score }
+  let best: { placed: CanvasItem[]; score: number } | null = null
+  for (const variant of variants) {
+    const r = freeFlowBestWidthKeepSizes(
+      variant,
+      ox,
+      oy,
+      packW,
+      grid,
+      gapCells,
+      gapPx,
+      readingFlow,
+    )
+    const score = packResidualScore(r.placed, ox, oy, packW, packH)
+    if (!best || score < best.score - 1e-6) {
+      best = { placed: r.placed, score }
     }
   }
-  return best ?? freeFlowKeepSizes(cards, ox, oy, maxBoxW, g, gapCells)
+  return best?.placed ?? cards
 }
 
 function restoreSizes(
@@ -266,26 +587,6 @@ function pinCluster(
   }))
 }
 
-function clampBand(
-  placed: CanvasItem[],
-  packLeft: number,
-  packTop: number,
-  packRight: number,
-): CanvasItem[] {
-  const packW = Math.max(48, packRight - packLeft)
-  return placed.map((m) => {
-    if (m.hidden) return m
-    let x = m.x
-    let y = m.y
-    if (x < packLeft) x = packLeft
-    if (y < packTop) y = packTop
-    if (m.width <= packW && x + m.width > packRight) {
-      x = Math.max(packLeft, packRight - m.width)
-    }
-    return { ...m, x: Math.round(x), y: Math.round(y) }
-  })
-}
-
 type FootLeaf = {
   locals: Array<{ id: string; dx: number; dy: number }>
   footW: number
@@ -293,24 +594,55 @@ type FootLeaf = {
 }
 
 /**
- * Pixel skyline pack of chrome footprints (no cell ceil air between L2s).
- * Multi-order densest; then gravity up/left into voids.
+ * L9: Keep footprint width ≤ pack band and scale local offsets so cards stay
+ * inside the packed chrome box (pack used min(bandW, footW) while dx used
+ * full leaf width → paint-over after rebuild).
+ */
+function normalizeFootLeaf(leaf: FootLeaf, bandW: number): FootLeaf {
+  const maxW = Math.max(48, Math.round(bandW))
+  const fw = Math.max(8, Math.round(leaf.footW))
+  const fh = Math.max(8, Math.round(leaf.footH))
+  if (fw <= maxW + 0.5) {
+    return { locals: leaf.locals, footW: fw, footH: fh }
+  }
+  const sx = maxW / fw
+  const locals = leaf.locals.map((loc) => ({
+    id: loc.id,
+    dx: Math.max(0, Math.min(maxW - 1, Math.round(loc.dx * sx))),
+    dy: loc.dy,
+  }))
+  return { locals, footW: maxW, footH: fh }
+}
+
+/**
+ * Pixel skyline pack of L2 chrome footprints with **user gap only** between
+ * frames (e.g. 2px). Prior version left large skyline voids (screenshot 144157
+ * red circles) that looked like “gaps not 2px” — those were empty residual
+ * columns, not the L2 gap knob.
+ *
+ * Fixes: more insertion orders, residual/hole candidates, contact-aware
+ * placement score, aggressive gravity + void-fill into free rectangles.
  */
 function packFootprintsPixel(
-  leaves: FootLeaf[],
+  leavesIn: FootLeaf[],
   packLeft: number,
   packTop: number,
   packW: number,
   gapPx: number,
+  /**
+   * Sheet groupSort parity: name A→Z/Z→A keeps leaf insertion order (reading
+   * flow). `none` tries multi-order densest (same as sheet densest free-flow).
+   */
+  readingFlow = false,
 ): Map<string, { x: number; y: number }> {
-  if (leaves.length === 0) return new Map()
+  if (leavesIn.length === 0) return new Map()
+  // Exact user L2 gap (stroke-to-stroke between chrome footprints)
   const gap = Math.max(0, Math.round(gapPx))
   const bandW = Math.max(48, Math.round(packW))
+  const leaves = leavesIn.map((L) => normalizeFootLeaf(L, bandW))
 
   type Placed = { i: number; x: number; y: number; w: number; h: number }
-  const orderings: number[][] = []
   const idxs = leaves.map((_, i) => i)
-  // height-desc, area-desc, width-desc, input
   const byH = [...idxs].sort(
     (a, b) =>
       leaves[b]!.footH - leaves[a]!.footH ||
@@ -328,7 +660,21 @@ function packFootprintsPixel(
       leaves[b]!.footW - leaves[a]!.footW ||
       leaves[b]!.footH - leaves[a]!.footH,
   )
-  orderings.push(byH, byA, byW, idxs)
+  // Short/wide first often fills residual beside tall leaves better
+  const byHAsc = [...idxs].sort(
+    (a, b) =>
+      leaves[a]!.footH - leaves[b]!.footH ||
+      leaves[b]!.footW - leaves[a]!.footW,
+  )
+  const byPeri = [...idxs].sort((a, b) => {
+    const pa = leaves[a]!.footW + leaves[a]!.footH
+    const pb = leaves[b]!.footW + leaves[b]!.footH
+    return pb - pa || leaves[b]!.footH - leaves[a]!.footH
+  })
+  // Name sort: single pass in given leaf order (reading flow). No-sort: densest.
+  const orderings = readingFlow
+    ? [idxs]
+    : [byH, byA, byW, byHAsc, byPeri, idxs, [...idxs].reverse()]
 
   const collides = (
     placed: Placed[],
@@ -352,47 +698,66 @@ function packFootprintsPixel(
     return false
   }
 
-  const placeOnce = (order: number[]): Placed[] => {
-    const placed: Placed[] = []
-    for (const i of order) {
-      const L = leaves[i]!
-      const w = Math.min(bandW, Math.max(8, Math.round(L.footW)))
-      const h = Math.max(8, Math.round(L.footH))
-      const xCands = new Set<number>([0])
-      const yCands = new Set<number>([0])
-      for (const p of placed) {
-        xCands.add(p.x)
-        xCands.add(p.x + p.w + gap)
-        yCands.add(p.y)
-        yCands.add(p.y + p.h + gap)
+  /** Edge contact length with already-placed (higher = denser tetris). */
+  const contactScore = (
+    placed: Placed[],
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    ignore?: number,
+  ) => {
+    let c = 0
+    // Bonus for sitting on pack origin
+    if (x <= 0.5) c += h * 0.5
+    if (y <= 0.5) c += w * 0.5
+    for (const p of placed) {
+      if (ignore != null && p.i === ignore) continue
+      // Horizontal abut (right of p or left of p) with y-overlap
+      const yOl =
+        Math.min(y + h, p.y + p.h) - Math.max(y, p.y)
+      if (yOl > 0) {
+        if (Math.abs(x - (p.x + p.w + gap)) < 0.6) c += yOl
+        if (Math.abs(p.x - (x + w + gap)) < 0.6) c += yOl
       }
-      let best: { x: number; y: number; score: number } | null = null
-      for (const y of [...yCands].sort((a, b) => a - b)) {
-        for (const x of [...xCands].sort((a, b) => a - b)) {
-          if (x + w > bandW + 0.5) continue
-          if (collides(placed, x, y, w, h)) continue
-          const bottom =
-            Math.max(
-              placed.reduce((m, p) => Math.max(m, p.y + p.h), 0),
-              y + h,
-            )
-          const score = bottom * 1e9 + y * 1e5 + x * 10
-          if (!best || score < best.score) best = { x, y, score }
-        }
+      // Vertical abut with x-overlap
+      const xOl =
+        Math.min(x + w, p.x + p.w) - Math.max(x, p.x)
+      if (xOl > 0) {
+        if (Math.abs(y - (p.y + p.h + gap)) < 0.6) c += xOl
+        if (Math.abs(p.y - (y + h + gap)) < 0.6) c += xOl
       }
-      if (!best) {
-        const y =
-          placed.length === 0
-            ? 0
-            : Math.max(...placed.map((p) => p.y + p.h)) + gap
-        best = { x: 0, y, score: y }
-      }
-      placed.push({ i, x: best.x, y: best.y, w, h })
     }
-    // Gravity: up then left
-    for (let sweep = 0; sweep < 10; sweep++) {
+    return c
+  }
+
+  const candSets = (placed: Placed[]) => {
+    const xCands = new Set<number>([0])
+    const yCands = new Set<number>([0])
+    for (const p of placed) {
+      xCands.add(p.x)
+      xCands.add(p.x + p.w + gap)
+      // Residual column under a shorter neighbor: same x as p, below others
+      yCands.add(p.y)
+      yCands.add(p.y + p.h + gap)
+    }
+    // Also try mid residual: for each pair, x after left item
+    for (const p of placed) {
+      for (const q of placed) {
+        if (p.i === q.i) continue
+        // slot to the right of p if free
+        xCands.add(p.x + p.w + gap)
+        yCands.add(Math.max(p.y, q.y))
+      }
+    }
+    return { xCands, yCands }
+  }
+
+  const gravity = (placed: Placed[]) => {
+    for (let sweep = 0; sweep < 16; sweep++) {
       let any = false
-      for (const p of [...placed].sort((a, b) => b.y - a.y || a.x - b.x)) {
+      // Up
+      for (const p of [...placed].sort((a, b) => a.y - b.y || a.x - b.x)) {
         let lo = 0
         let hi = p.y
         let bestY = p.y
@@ -408,7 +773,8 @@ function packFootprintsPixel(
           any = true
         }
       }
-      for (const p of [...placed].sort((a, b) => b.x - a.x || a.y - b.y)) {
+      // Left
+      for (const p of [...placed].sort((a, b) => a.x - b.x || a.y - b.y)) {
         let lo = 0
         let hi = p.x
         let bestX = p.x
@@ -429,19 +795,119 @@ function packFootprintsPixel(
       }
       if (!any) break
     }
+  }
+
+  /**
+   * Try re-seat each leaf into residual holes (fills voids under short top
+   * neighbors — screenshot 144157 red empty columns).
+   */
+  const voidFill = (placed: Placed[]) => {
+    for (let round = 0; round < 4; round++) {
+      let any = false
+      for (const p of [...placed].sort(
+        (a, b) => b.w * b.h - a.w * a.h || b.h - a.h,
+      )) {
+        const { xCands, yCands } = candSets(placed.filter((o) => o.i !== p.i))
+        let best: { x: number; y: number; score: number } | null = null
+        const others = placed.filter((o) => o.i !== p.i)
+        const curBottom = Math.max(
+          ...others.map((o) => o.y + o.h),
+          p.y + p.h,
+          0,
+        )
+        for (const y of [...yCands].sort((a, b) => a - b)) {
+          for (const x of [...xCands].sort((a, b) => a - b)) {
+            if (x + p.w > bandW + 0.5) continue
+            if (collides(others, x, y, p.w, p.h)) continue
+            const bottom = Math.max(
+              others.reduce((m, o) => Math.max(m, o.y + o.h), 0),
+              y + p.h,
+            )
+            const contact = contactScore(others, x, y, p.w, p.h)
+            // Prefer not growing height; prefer top-left; prefer contact
+            const score =
+              bottom * 1e9 + y * 1e5 + x * 10 - contact * 50
+            if (!best || score < best.score) best = { x, y, score }
+          }
+        }
+        if (
+          best &&
+          (best.y < p.y - 0.5 ||
+            best.x < p.x - 0.5 ||
+            best.y + p.h < curBottom - 0.5)
+        ) {
+          // Only move if placement score is better than current
+          const curContact = contactScore(others, p.x, p.y, p.w, p.h)
+          const curBottom2 = Math.max(
+            others.reduce((m, o) => Math.max(m, o.y + o.h), 0),
+            p.y + p.h,
+          )
+          const curScore =
+            curBottom2 * 1e9 + p.y * 1e5 + p.x * 10 - curContact * 50
+          if (best.score < curScore - 1) {
+            p.x = best.x
+            p.y = best.y
+            any = true
+          }
+        }
+      }
+      if (!any) break
+      gravity(placed)
+    }
+  }
+
+  const placeOnce = (order: number[]): Placed[] => {
+    const placed: Placed[] = []
+    for (const i of order) {
+      const L = leaves[i]!
+      const w = Math.min(bandW, Math.max(8, Math.round(L.footW)))
+      const h = Math.max(8, Math.round(L.footH))
+      const { xCands, yCands } = candSets(placed)
+      let best: { x: number; y: number; score: number } | null = null
+      for (const y of [...yCands].sort((a, b) => a - b)) {
+        for (const x of [...xCands].sort((a, b) => a - b)) {
+          if (x + w > bandW + 0.5) continue
+          if (collides(placed, x, y, w, h)) continue
+          const bottom = Math.max(
+            placed.reduce((m, p) => Math.max(m, p.y + p.h), 0),
+            y + h,
+          )
+          const contact = contactScore(placed, x, y, w, h)
+          // Contact bonus fills residual holes instead of stacking below
+          const score = bottom * 1e9 + y * 1e5 + x * 10 - contact * 80
+          if (!best || score < best.score) best = { x, y, score }
+        }
+      }
+      if (!best) {
+        const y =
+          placed.length === 0
+            ? 0
+            : Math.max(...placed.map((p) => p.y + p.h)) + gap
+        best = { x: 0, y, score: y }
+      }
+      placed.push({ i, x: best.x, y: best.y, w, h })
+    }
+    gravity(placed)
+    voidFill(placed)
+    gravity(placed)
     return placed
   }
 
   let bestPlaced: Placed[] | null = null
   let bestScore = Infinity
+  const filledArea = leaves.reduce((s, L) => s + L.footW * L.footH, 0)
   for (const order of orderings) {
     const pl = placeOnce(order)
     const maxY = Math.max(...pl.map((p) => p.y + p.h), 0)
     const maxX = Math.max(...pl.map((p) => p.x + p.w), 0)
     const area = Math.max(1, maxX * maxY)
-    const filled = leaves.reduce((s, L) => s + L.footW * L.footH, 0)
+    const fill = Math.min(1, filledArea / area)
+    // Strong empty-tax: large red-circle voids must lose to denser packs
     const score =
-      maxY * 1e6 + area * 8 + maxX * 0.25 + (1 - Math.min(1, filled / area)) * 5e5
+      maxY * 1e6 +
+      area * 12 +
+      maxX * 0.25 +
+      (1 - fill) * 2e6
     if (score < bestScore) {
       bestScore = score
       bestPlaced = pl
@@ -475,8 +941,11 @@ function hierarchicalAtLeafBudget(
     grid: number
     pad: number
     blockGapCells: number
+    blockGapPx: number
     l2GapPx: number
     leafContentW: number
+    /** Sheet groupSort parity: name flow vs densest multi-order. */
+    readingFlow?: boolean
     sort: (cards: CanvasItem[], leaf: LayoutPanel) => CanvasItem[]
   },
 ): { placed: CanvasItem[]; score: number; spanH: number; spanW: number } {
@@ -487,13 +956,16 @@ function hierarchicalAtLeafBudget(
     grid,
     pad,
     blockGapCells,
+    blockGapPx,
     l2GapPx,
     leafContentW,
     sort,
   } = opts
+  const readingFlow = opts.readingFlow === true
   const g = Math.max(4, grid)
   const titlePx = NESTED_TITLE_BAND_PX
-  const maxContent = Math.max(48, leafContentW)
+  // Content band inside L2 chrome (both side pads reserved for footW = c + 2*pad)
+  const maxContent = Math.max(48, Math.min(leafContentW, packW - pad * 2))
 
   const leaves: FootLeaf[] = []
   const claimed = new Set<string>()
@@ -513,16 +985,23 @@ function hierarchicalAtLeafBudget(
       maxContent,
       g,
       blockGapCells,
+      blockGapPx,
+      readingFlow,
     )
-    leaves.push({
-      locals: local.placed.map((m) => ({
-        id: m.id,
-        dx: m.x + pad,
-        dy: m.y + titlePx + pad,
-      })),
-      footW: local.width + pad * 2,
-      footH: local.height + titlePx + pad * 2,
-    })
+    leaves.push(
+      normalizeFootLeaf(
+        {
+          locals: local.placed.map((m) => ({
+            id: m.id,
+            dx: m.x + pad,
+            dy: m.y + titlePx + pad,
+          })),
+          footW: local.width + pad * 2,
+          footH: local.height + titlePx + pad * 2,
+        },
+        packW,
+      ),
+    )
   }
 
   const rest = members.filter((m) => !claimed.has(m.id))
@@ -534,16 +1013,23 @@ function hierarchicalAtLeafBudget(
       maxContent,
       g,
       blockGapCells,
+      blockGapPx,
+      readingFlow,
     )
-    leaves.push({
-      locals: local.placed.map((m) => ({
-        id: m.id,
-        dx: m.x + pad,
-        dy: m.y + pad,
-      })),
-      footW: local.width + pad * 2,
-      footH: local.height + pad * 2,
-    })
+    leaves.push(
+      normalizeFootLeaf(
+        {
+          locals: local.placed.map((m) => ({
+            id: m.id,
+            dx: m.x + pad,
+            dy: m.y + pad,
+          })),
+          footW: local.width + pad * 2,
+          footH: local.height + pad * 2,
+        },
+        packW,
+      ),
+    )
   }
 
   if (leaves.length === 0) {
@@ -556,6 +1042,7 @@ function hierarchicalAtLeafBudget(
     packTop,
     packW,
     Math.max(0, l2GapPx),
+    readingFlow,
   )
   const placed = members.map((m) => {
     const p = byId.get(m.id)
@@ -601,14 +1088,17 @@ function packHierarchicalLeaves(
     grid: number
     pad: number
     blockGapCells: number
+    blockGapPx: number
     l2GapPx: number
+    readingFlow?: boolean
     sort: (cards: CanvasItem[], leaf: LayoutPanel) => CanvasItem[]
   },
 ): CanvasItem[] {
   const { packW, pad } = opts
-  const full = Math.max(48, packW - pad)
+  // L9: max content inside L2 = pack band − both chrome side pads
+  const full = Math.max(48, packW - pad * 2)
   // Multi-leaf: also try ~2/3 and ~1/2 band so medium L2s can tile.
-  // Single leaf: full band only (same as flat free-flow).
+  // Single leaf: full content band only (same as flat free-flow).
   const budgets =
     orderedLeaves.length >= 2
       ? Array.from(
@@ -660,9 +1150,11 @@ function retileLeafChromeFootprints(
     pad: number
     titlePx: number
     l2GapPx: number
+    readingFlow?: boolean
   },
 ): CanvasItem[] {
   const { packLeft, packTop, packW, pad, titlePx, l2GapPx } = opts
+  const readingFlow = opts.readingFlow === true
   const leaves: FootLeaf[] = []
 
   for (const leaf of orderedLeaves) {
@@ -674,15 +1166,20 @@ function retileLeafChromeFootprints(
     const minY = Math.min(...mem.map((m) => m.y))
     const maxX = Math.max(...mem.map((m) => m.x + m.width))
     const maxY = Math.max(...mem.map((m) => m.y + m.height))
-    leaves.push({
-      locals: mem.map((m) => ({
-        id: m.id,
-        dx: m.x - minX + pad,
-        dy: m.y - minY + titlePx + pad,
-      })),
-      footW: maxX - minX + pad * 2,
-      footH: maxY - minY + titlePx + pad * 2,
-    })
+    leaves.push(
+      normalizeFootLeaf(
+        {
+          locals: mem.map((m) => ({
+            id: m.id,
+            dx: m.x - minX + pad,
+            dy: m.y - minY + titlePx + pad,
+          })),
+          footW: maxX - minX + pad * 2,
+          footH: maxY - minY + titlePx + pad * 2,
+        },
+        packW,
+      ),
+    )
   }
   if (leaves.length === 0) return placed
 
@@ -692,6 +1189,7 @@ function retileLeafChromeFootprints(
     packTop,
     packW,
     Math.max(0, l2GapPx),
+    readingFlow,
   )
 
   return placed.map((m) => {
@@ -703,6 +1201,175 @@ function retileLeafChromeFootprints(
 /**
  * Dense in-panel reflow — hierarchical-first + size-safe densify polish.
  */
+/**
+ * Pack all members as one flat MaxRects into the fixed panel content box.
+ * Intentionally minimal post-process — prior densify/clamp passes undid
+ * residual-column placement.
+ */
+function packForceFlatIntoPin(args: {
+  items: CanvasItem[]
+  panel: LayoutPanel
+  members: CanvasItem[]
+  memberIds: Set<string>
+  allPanels: LayoutPanel[]
+  pinX: number
+  pinY: number
+  pinW: number
+  pinH: number
+  packLeft: number
+  packTop: number
+  packW: number
+  packH: number
+  pad: number
+  blockGapPx: number
+  chromeShape: 'rect' | 'polygon'
+  packSeed: number
+  sizeById: Map<string, { w: number; h: number }>
+}): { items: CanvasItem[]; panel: LayoutPanel; panels?: LayoutPanel[] } {
+  const {
+    items,
+    panel,
+    members,
+    memberIds,
+    allPanels,
+    pinX,
+    pinY,
+    pinW,
+    pinH,
+    packLeft,
+    packTop,
+    packW,
+    packH,
+    pad,
+    blockGapPx,
+    chromeShape,
+    packSeed,
+    sizeById,
+  } = args
+
+  const packed = packIntoBox(members, {
+    ox: packLeft,
+    oy: packTop,
+    packW,
+    packH,
+    gapPx: blockGapPx,
+    seed: packSeed,
+  })
+
+  if (typeof console !== 'undefined') {
+    console.info(
+      '[in-panel packIntoBox]',
+      `used ${Math.round(packed.usedW)}×${Math.round(packed.usedH)}`,
+      `of ${Math.round(packW)}×${Math.round(packH)}`,
+      `bboxFill=${packed.bboxFill.toFixed(2)}`,
+      `areaFill=${packed.areaFill.toFixed(2)}`,
+      packed.overflowH ? 'overflowH' : 'fitsH',
+      `seed=${packSeed}`,
+      `${members.length} cards`,
+    )
+  }
+
+  const placed = packed.placed.map((m) => {
+    const s = sizeById.get(m.id)
+    return s
+      ? {
+          ...m,
+          width: s.w,
+          height: s.h,
+          x: Math.round(m.x),
+          y: Math.round(m.y),
+        }
+      : { ...m, x: Math.round(m.x), y: Math.round(m.y) }
+  })
+
+  // Soft floor only — never pull overflow up into overlaps.
+  const packRight = packLeft + packW
+  const settled = placed.map((m) => {
+    if (m.hidden) return m
+    let x = m.x
+    let y = m.y
+    if (x < packLeft) x = packLeft
+    if (y < packTop) y = packTop
+    if (m.width <= packW && x + m.width > packRight) {
+      x = Math.max(packLeft, packRight - m.width)
+    }
+    return { ...m, x: Math.round(x), y: Math.round(y) }
+  })
+
+  const placedById = new Map(settled.map((m) => [m.id, m]))
+  const nextItems = items.map((it) => {
+    const p = placedById.get(it.id)
+    if (!p) return it
+    const s = sizeById.get(it.id)
+    return {
+      ...it,
+      x: p.x,
+      y: p.y,
+      width: s?.w ?? it.width,
+      height: s?.h ?? it.height,
+    }
+  })
+
+  const nestedSorted = allPanels
+    .filter(
+      (p) =>
+        p.id !== panel.id &&
+        p.memberIds?.length &&
+        p.memberIds.every((id) => memberIds.has(id)),
+    )
+    .sort((a, b) => (b.hierarchyLevel ?? 1) - (a.hierarchyLevel ?? 1))
+
+  const byId = new Map(nextItems.map((i) => [i.id, i]))
+  const rebuilt = new Map<string, LayoutPanel>()
+  for (const child of nestedSorted) {
+    rebuilt.set(
+      child.id,
+      rebuildChrome(child, byId, {
+        grid: 24,
+        panelPad: pad,
+        allPanels: allPanels.map((p) => rebuilt.get(p.id) ?? p),
+        forceShape: chromeShape,
+      }),
+    )
+  }
+  const kids = nestedSorted.map((c) => rebuilt.get(c.id)!).filter(Boolean)
+  const parent = rebuildChrome(
+    {
+      ...panel,
+      contentSort: panel.contentSort ?? 'none',
+      shape: chromeShape,
+    },
+    byId,
+    {
+      grid: 24,
+      panelPad: pad,
+      allPanels: kids.length ? [panel, ...kids] : [panel],
+      forceShape: chromeShape,
+    },
+  )
+  const locked = lockPinnedFrame(parent, {
+    pinX,
+    pinY,
+    pinW,
+    pinH,
+    needW: pinW,
+    needH: pinH,
+    forceRectRuns: kids.length > 0 || parent.shape !== 'polygon',
+    exactPin: true,
+  })
+  rebuilt.set(panel.id, locked)
+
+  const panelsOut = allPanels.length
+    ? allPanels.map((p) => rebuilt.get(p.id) ?? p)
+    : [locked]
+
+  return {
+    items: nextItems,
+    panel: locked,
+    panels: panelsOut,
+  }
+}
+
 export function relayoutPanelDenseSheetParity(
   args: DenseRelayoutArgs,
 ): { items: CanvasItem[]; panel: LayoutPanel; panels?: LayoutPanel[] } {
@@ -734,100 +1401,103 @@ export function relayoutPanelDenseSheetParity(
   const packLeft = contentX
   const packTop = contentY
   const packRight = packLimitRight
+  // Fixed bin: panel size at click is the hard content budget (never grow).
+  const packBottom = pinY + pinH - pad
   const packW = Math.max(48, packRight - packLeft)
+  const packH = Math.max(48, packBottom - packTop)
   const g = Math.max(4, grid)
-
-  const multiLevel = orderedLeaves.length > 0
-  const shallowLevel = Math.min(3, Math.max(1, level)) as PanelGroupLevel
-  const deepLevel = Math.min(
-    3,
-    Math.max(shallowLevel, level + (multiLevel ? 1 : 0)),
-  ) as PanelGroupLevel
-
-  const blockGapCells = gapPxToCells(blockGapPx, g)
-  // Sheet parity: content-to-content clearance so stroked L2 frames sit
-  // ~userGap apart (pad lives inside each frame; title strip needs vertical
-  // room or ensureLeafTitleClearance shoves groups into sparse voids).
-  const l2ContentClearPx = multiLevel
-    ? Math.max(0, l2PanelGapPx) + pad * 2 + NESTED_TITLE_BAND_PX
-    : Math.max(0, l2PanelGapPx)
 
   const sizeById = new Map(
     members.map((m) => [m.id, { w: m.width, h: m.height }] as const),
   )
+  const packSeed = Math.max(0, Math.floor(args.packSeed ?? 0))
 
-  // ── 1) Hierarchical-first place (multi-budget leaf free-flow) ──────────
-  let placed: CanvasItem[]
-  if (multiLevel && orderedLeaves.length > 0) {
-    placed = packHierarchicalLeaves(members, orderedLeaves, {
-      packLeft,
-      packTop,
-      packRight,
-      packW,
-      grid: g,
-      pad,
-      blockGapCells,
-      l2GapPx: l2PanelGapPx,
-      sort: (cards, leaf) => {
-        // Preserve leaf member order when contentSort is none; else name
-        const sortMode = panel.contentSort ?? 'name-asc'
-        if (sortMode === 'none' && leaf.memberIds?.length) {
-          const rank = new Map(leaf.memberIds.map((id, i) => [id, i]))
-          return [...cards].sort(
-            (a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0),
-          )
-        }
-        const dir = sortMode === 'name-desc' ? -1 : 1
-        return [...cards].sort((a, b) => {
-          const ta = (a.title ?? a.latex ?? a.id).toLocaleLowerCase()
-          const tb = (b.title ?? b.latex ?? b.id).toLocaleLowerCase()
-          if (ta < tb) return -1 * dir
-          if (ta > tb) return 1 * dir
-          return a.id.localeCompare(b.id)
-        })
-      },
-    })
-  } else {
-    // Flat L2 leaf (or no nested panels): full-band free-flow
-    placed = freeFlowBestWidthKeepSizes(
+  // ── Flat leaf / forceFlat button path ──────────────────────────────────
+  // Clean MaxRects into the pin box → write x/y → lock frame.
+  // Applies when:
+  //   • forceFlat (in-panel Rectangle/N-gon button), or
+  //   • no nested leaf panels (true L2 leaf pack)
+  // Prior hierarchical polish (resolveCardOverlaps grid-snap, clampBandFull
+  // pulling overflow into overlaps, separateLeafCardsByGap) undid residual
+  // columns and zeroed block gaps (screenshot 192700 + gap tests).
+  const multiLevel = !args.forceFlat && orderedLeaves.length > 0
+  if (!multiLevel) {
+    return packForceFlatIntoPin({
+      items,
+      panel,
       members,
+      memberIds,
+      allPanels,
+      pinX,
+      pinY,
+      pinW,
+      pinH,
       packLeft,
       packTop,
       packW,
-      g,
-      blockGapCells,
-    ).placed
+      packH,
+      pad,
+      blockGapPx,
+      chromeShape,
+      packSeed,
+      sizeById,
+    })
   }
+
+  // Hierarchical L1⊃L2 path only from here (multiLevel guaranteed)
+  const shallowLevel = Math.min(3, Math.max(1, level)) as PanelGroupLevel
+  const deepLevel = Math.min(3, Math.max(shallowLevel, level + 1)) as PanelGroupLevel
+
+  const blockGapCells = gapPxToCells(blockGapPx, g)
+  // Sheet parity: axis-aware content clear — title only on vertical stacks.
+  const l2ContentClearH = Math.max(0, l2PanelGapPx) + pad * 2
+  const l2ContentClearV =
+    Math.max(0, l2PanelGapPx) + pad * 2 + NESTED_TITLE_BAND_PX
+  const l2ContentClearPx = l2ContentClearV
+
+  // Group sort: none → densest free-flow; name → reading order free-flow
+  const sortMode = panel.contentSort ?? 'none'
+  const readingFlow = sortMode === 'name-asc' || sortMode === 'name-desc'
+
+  // ── 1) Pack each L2 leaf, then pack chrome footprints ──────────────────
+  let placed: CanvasItem[] = packHierarchicalLeaves(members, orderedLeaves, {
+    packLeft,
+    packTop,
+    packRight,
+    packW,
+    grid: g,
+    pad,
+    blockGapCells,
+    blockGapPx,
+    l2GapPx: l2PanelGapPx,
+    readingFlow,
+    sort: (cards, leaf) => {
+      if (sortMode === 'none' && leaf.memberIds?.length) {
+        const rank = new Map(leaf.memberIds.map((id, i) => [id, i]))
+        return [...cards].sort(
+          (a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0),
+        )
+      }
+      const dir = sortMode === 'name-desc' ? -1 : 1
+      return [...cards].sort((a, b) => {
+        const ta = (a.title ?? a.latex ?? a.id).toLocaleLowerCase()
+        const tb = (b.title ?? b.latex ?? b.id).toLocaleLowerCase()
+        if (ta < tb) return -1 * dir
+        if (ta > tb) return 1 * dir
+        return a.id.localeCompare(b.id)
+      })
+    },
+  })
 
   placed = restoreSizes(placed, sizeById)
+  void freeFlowMultiSeed
+  void readingFlow
+  void blockGapCells
+  void packSeed
+  void packH
+  void packBottom
 
   // ── 2) Interior polish ─────────────────────────────────────────────────
-  // Multi-level L1: hierarchical multi-budget already free-flowed each L2 and
-  // packed chrome footprints. densify/repackLeafInteriors reflow leaf aspect
-  // ratios into residual columns (Genetics 274→176 stacked) and destroy the
-  // global tile. Only run sheet densify on flat leaves / folder-only packs.
-  if (folders.length > 0 && !multiLevel) {
-    const pageCols = Math.max(1, Math.floor(packW / g))
-    const before = new Map(
-      placed.map((m) => [m.id, { w: m.width, h: m.height }] as const),
-    )
-    placed = densifyPlacedGroups(placed, folders, deepLevel, {
-      grid: g,
-      contentLeft: packLeft,
-      contentTop: packTop,
-      contentRight: packRight,
-      pageCols,
-      gapCells: blockGapCells,
-    })
-    placed = repackLeafInteriors(placed, folders, deepLevel, {
-      grid: g,
-      contentLeft: packLeft,
-      contentRight: packRight,
-      gapCells: blockGapCells,
-    })
-    placed = restoreSizes(placed, before)
-  }
-
   placed = resolveCardOverlaps(placed, { grid: g, contentRight: packRight })
   if (folders.length > 0 && blockGapPx > 0) {
     placed = separateLeafCardsByGap(placed, folders, deepLevel, {
@@ -838,42 +1508,32 @@ export function relayoutPanelDenseSheetParity(
     placed = restoreSizes(placed, sizeById)
   }
 
-  // ── 3) L2 frame clearance (no reflow of leaf interiors) ────────────────
-  if (multiLevel && folders.length > 0) {
-    placed = ensureLeafTitleClearance(
-      placed,
-      folders,
-      deepLevel,
-      Math.max(18, NESTED_TITLE_BAND_PX),
-      g,
-    )
-    placed = resolveLeafGroupCollisions(placed, folders, deepLevel, {
-      grid: g,
-      minGapPx: Math.max(0, l2ContentClearPx),
-      parentLevel: shallowLevel,
-    })
-    placed = restoreSizes(placed, sizeById)
+  // ── 3) L2 chrome re-tile ───────────────────────────────────────────────
+  placed = retileLeafChromeFootprints(placed, orderedLeaves, {
+    packLeft,
+    packTop,
+    packW,
+    grid: g,
+    pad,
+    titlePx: NESTED_TITLE_BAND_PX,
+    l2GapPx: l2PanelGapPx,
+    readingFlow,
+  })
+  placed = restoreSizes(placed, sizeById)
 
-    // Re-tile chrome footprints only (rigid leaf interiors). Prefer pixel
-    // pack over repackGroupsInParents — cell ceil was adding gutters and
-    // residual-column squeeze after collision pushes.
-    if (orderedLeaves.length > 0) {
-      placed = retileLeafChromeFootprints(placed, orderedLeaves, {
-        packLeft,
-        packTop,
-        packW,
-        grid: g,
-        pad,
-        titlePx: NESTED_TITLE_BAND_PX,
-        l2GapPx: l2PanelGapPx,
-      })
-      placed = restoreSizes(placed, sizeById)
-    }
-  }
-
-  // ── 4) Pin + hard clamp into panel content band ────────────────────────
+  // ── 4) Pin to content origin; soft floor (no overlap-inducing clamp) ───
   placed = pinCluster(placed, packLeft, packTop)
-  placed = clampBand(placed, packLeft, packTop, packRight)
+  placed = placed.map((m) => {
+    if (m.hidden) return m
+    let x = m.x
+    let y = m.y
+    if (x < packLeft) x = packLeft
+    if (y < packTop) y = packTop
+    if (m.width <= packW && x + m.width > packRight) {
+      x = Math.max(packLeft, packRight - m.width)
+    }
+    return { ...m, x: Math.round(x), y: Math.round(y) }
+  })
   placed = restoreSizes(placed, sizeById)
 
   if (folders.length > 0 && blockGapPx > 0) {
@@ -884,7 +1544,43 @@ export function relayoutPanelDenseSheetParity(
     })
     placed = restoreSizes(placed, sizeById)
   }
-  placed = clampBand(placed, packLeft, packTop, packRight)
+
+  // Final chrome re-tile after any card gap moves (keeps L2 frames clear)
+  placed = retileLeafChromeFootprints(placed, orderedLeaves, {
+    packLeft,
+    packTop,
+    packW,
+    grid: g,
+    pad,
+    titlePx: NESTED_TITLE_BAND_PX,
+    l2GapPx: l2PanelGapPx,
+    readingFlow,
+  })
+  placed = restoreSizes(placed, sizeById)
+  if (folders.length > 0 && blockGapPx > 0) {
+    placed = separateLeafCardsByGap(placed, folders, deepLevel, {
+      grid: g,
+      minGapPx: blockGapPx,
+      contentRight: packRight,
+    })
+    placed = restoreSizes(placed, sizeById)
+    placed = retileLeafChromeFootprints(placed, orderedLeaves, {
+      packLeft,
+      packTop,
+      packW,
+      grid: g,
+      pad,
+      titlePx: NESTED_TITLE_BAND_PX,
+      l2GapPx: l2PanelGapPx,
+      readingFlow,
+    })
+    placed = restoreSizes(placed, sizeById)
+  }
+  placed = pinCluster(placed, packLeft, packTop)
+  void l2ContentClearH
+  void ensureLeafTitleClearance
+  void resolveLeafGroupCollisions
+  void shallowLevel
 
   const placedById = new Map(placed.map((m) => [m.id, m]))
   let nextItems = items.map((it) => {
@@ -933,40 +1629,17 @@ export function relayoutPanelDenseSheetParity(
       forceShape: chromeShape,
     })
 
-    const memNow = itemsNow.filter((i) => memberIds.has(i.id) && !i.hidden)
-    const contentMaxX =
-      memNow.length > 0
-        ? Math.max(...memNow.map((i) => i.x + i.width))
-        : pinX + pinW
-    const contentMaxY =
-      memNow.length > 0
-        ? Math.max(...memNow.map((i) => i.y + i.height))
-        : pinY + pinH
-    const needW = Math.max(48, Math.round(contentMaxX - pinX + pad))
-    const needH = Math.round(contentMaxY - pinY + pad)
-    const fillRatio = needW / Math.max(1, pinW)
-    // Keep pack budget when nearly full; hug when sparse; never exceed pinW
-    const lockedW =
-      fillRatio >= 0.85 ? pinW : Math.min(pinW, Math.max(needW, 48))
-
-    const locked: LayoutPanel = {
-      ...parent,
-      x: pinX,
-      y: pinY,
-      width: Math.max(48, Math.min(pinW, lockedW)),
-      height: Math.max(pinH, needH, parent.height),
-    }
-    if (kids.length > 0 || locked.shape !== 'polygon') {
-      locked.runs = [
-        {
-          x: locked.x,
-          y: locked.y,
-          width: locked.width,
-          height: locked.height,
-        },
-      ]
-      locked.outlinePath = undefined
-    }
+    // Fixed bin: panel geometry stays exactly the user-provided pin box.
+    const locked = lockPinnedFrame(parent, {
+      pinX,
+      pinY,
+      pinW,
+      pinH,
+      needW: pinW,
+      needH: pinH,
+      forceRectRuns: kids.length > 0 || parent.shape !== 'polygon',
+      exactPin: true,
+    })
     rebuilt.set(panel.id, locked)
     return allPanels.length
       ? allPanels.map((p) => rebuilt.get(p.id) ?? p)
@@ -997,7 +1670,8 @@ export function relayoutPanelDenseSheetParity(
     return s ? { ...it, width: s.w, height: s.h } : it
   })
 
-  // Re-pin + clamp after frame pushes
+  // Re-pin origin after frame pushes. Multi-level: no per-card right-clamp
+  // (that re-stacked L2s). Soft floor only, then chrome re-tile if needed.
   {
     const mem = nextItems.filter((i) => memberIds.has(i.id) && !i.hidden)
     if (mem.length > 0) {
@@ -1044,30 +1718,166 @@ export function relayoutPanelDenseSheetParity(
     })
   }
 
-  panelsOut = rebuildAll(nextItems)
-  panelsOut = panelsOut.map((p) => {
-    if (p.id !== panel.id) return p
-    const w = Math.min(pinW, Math.max(48, p.width))
-    const h = Math.max(pinH, p.height)
+  // Re-tile L2 chrome after enforce / block-gap so frames never paint-overlap
+  {
+    const slice = nextItems.filter((i) => memberIds.has(i.id))
+    const retiled = retileLeafChromeFootprints(slice, orderedLeaves, {
+      packLeft,
+      packTop,
+      packW,
+      grid: g,
+      pad,
+      titlePx: NESTED_TITLE_BAND_PX,
+      l2GapPx: l2PanelGapPx,
+      readingFlow,
+    })
+    const byId = new Map(retiled.map((i) => [i.id, i]))
+    nextItems = nextItems.map((it) => {
+      const p = byId.get(it.id)
+      if (!p) return it
+      const s = sizeById.get(it.id)
+      return s
+        ? { ...it, x: p.x, y: p.y, width: s.w, height: s.h }
+        : { ...it, x: p.x, y: p.y }
+    })
+    // Pin again after retile
+    {
+      const mem = nextItems.filter((i) => memberIds.has(i.id) && !i.hidden)
+      if (mem.length > 0) {
+        const minX = Math.min(...mem.map((m) => m.x))
+        const minY = Math.min(...mem.map((m) => m.y))
+        const dx = Math.round(packLeft - minX)
+        const dy = Math.round(packTop - minY)
+        if (dx !== 0 || dy !== 0) {
+          nextItems = nextItems.map((it) =>
+            memberIds.has(it.id)
+              ? { ...it, x: Math.round(it.x + dx), y: Math.round(it.y + dy) }
+              : it,
+          )
+        }
+      }
+    }
+  }
+
+  // Final pin + clamp members into fixed content box (panel interior)
+  {
+    const mem = nextItems.filter((i) => memberIds.has(i.id) && !i.hidden)
+    if (mem.length > 0) {
+      const minX = Math.min(...mem.map((m) => m.x))
+      const minY = Math.min(...mem.map((m) => m.y))
+      const dx = Math.round(packLeft - minX)
+      const dy = Math.round(packTop - minY)
+      if (dx !== 0 || dy !== 0) {
+        nextItems = nextItems.map((it) =>
+          memberIds.has(it.id)
+            ? { ...it, x: Math.round(it.x + dx), y: Math.round(it.y + dy) }
+            : it,
+        )
+      }
+    }
+  }
+  // Soft floor + right-pull only — never pull tall content up into overlaps
+  nextItems = nextItems.map((it) => {
+    if (!memberIds.has(it.id) || it.hidden) return it
+    const s = sizeById.get(it.id)
+    const w = s?.w ?? it.width
+    const h = s?.h ?? it.height
+    let x = it.x
+    let y = it.y
+    if (x < packLeft) x = packLeft
+    if (y < packTop) y = packTop
+    if (w <= packW && x + w > packRight) x = Math.max(packLeft, packRight - w)
     return {
-      ...p,
-      x: pinX,
-      y: pinY,
+      ...it,
+      x: Math.round(x),
+      y: Math.round(y),
       width: w,
       height: h,
-      runs:
-        p.runs?.length && (p.shape !== 'polygon' || nestedSorted.length > 0)
-          ? [{ x: pinX, y: pinY, width: w, height: h }]
-          : p.runs,
     }
+  })
+  void packBottom
+
+  panelsOut = rebuildAll(nextItems)
+  // Exact pin box — sort & fit into provided panel size; never grow/shrink
+  panelsOut = panelsOut.map((p) => {
+    if (p.id !== panel.id) return p
+    return lockPinnedFrame(p, {
+      pinX,
+      pinY,
+      pinW,
+      pinH,
+      needW: pinW,
+      needH: pinH,
+      forceRectRuns: nestedSorted.length > 0 || p.shape !== 'polygon',
+      exactPin: true,
+    })
   })
 
   void titleBand
   void l1GapPx
+  void l2ContentClearPx
 
   return {
     items: nextItems,
     panel: panelsOut.find((p) => p.id === panel.id) ?? panelWithSort,
     panels: panelsOut,
+  }
+}
+
+/**
+ * Pin panel origin. By default never grow past pin; with exactPin keep the
+ * provided panel size exactly (fixed-bin in-panel auto-layout).
+ */
+function lockPinnedFrame(
+  p: LayoutPanel,
+  args: {
+    pinX: number
+    pinY: number
+    pinW: number
+    pinH: number
+    needW: number
+    needH: number
+    forceRectRuns?: boolean
+    /** Keep pinW×pinH exactly (user-provided panel size). */
+    exactPin?: boolean
+  },
+): LayoutPanel {
+  const {
+    pinX,
+    pinY,
+    pinW,
+    pinH,
+    needW,
+    needH,
+    forceRectRuns,
+    exactPin,
+  } = args
+  let width: number
+  let height: number
+  if (exactPin) {
+    width = Math.max(48, Math.round(pinW))
+    height = Math.max(48, Math.round(pinH))
+  } else {
+    const fillW = needW / Math.max(1, pinW)
+    const fillH = needH / Math.max(1, pinH)
+    const w =
+      fillW >= 0.88 ? pinW : Math.min(pinW, Math.max(48, needW))
+    const h =
+      fillH >= 0.88 ? pinH : Math.min(pinH, Math.max(48, needH))
+    width = Math.min(pinW, Math.max(48, Math.round(w)))
+    height = Math.min(pinH, Math.max(48, Math.round(h)))
+  }
+  const runs =
+    forceRectRuns || (p.runs?.length && p.shape !== 'polygon')
+      ? [{ x: pinX, y: pinY, width, height }]
+      : p.runs
+  return {
+    ...p,
+    x: pinX,
+    y: pinY,
+    width,
+    height,
+    ...(runs ? { runs } : {}),
+    ...(forceRectRuns ? { outlinePath: undefined } : {}),
   }
 }

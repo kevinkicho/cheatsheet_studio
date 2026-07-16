@@ -38,7 +38,11 @@ export function resolveOllamaBackend(): OllamaBackend {
   return 'custom'
 }
 
-/** Cloud API models often omit the `-cloud` suffix (see docs.ollama.com/cloud). */
+/**
+ * Cloud API model id (docs.ollama.com/cloud often omit the `-cloud` suffix).
+ * Marketing name `gemma4:31b-cloud` → set `VITE_OLLAMA_MODEL=gemma4:31b`.
+ * Node CLI scripts pass model via enrichTopicWithOllama({ model }) from env.
+ */
 export const DEFAULT_OLLAMA_MODEL =
   envStr('VITE_OLLAMA_MODEL') || 'gemma4:31b'
 

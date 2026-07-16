@@ -39,6 +39,7 @@ export function useKeyboardShortcuts() {
         undo: () => state.undo(),
         redo: () => state.redo(),
         removeItems: (ids) => state.removeItems(ids),
+        removeLayoutPanels: (ids) => state.removeLayoutPanels(ids),
         select: (id) => state.select(id),
         selectAll: () => {
           // Visible cards only (unless Layers "show hidden" is on)
@@ -56,6 +57,7 @@ export function useKeyboardShortcuts() {
         pastLength: state.past.length,
         futureLength: state.future.length,
         selectedIds: state.selectedIds,
+        selectedPanelIds: state.selectedPanelIds,
       })
       if (result.handled) e.preventDefault()
     }

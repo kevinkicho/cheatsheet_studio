@@ -5,34 +5,42 @@ import {
   DEFAULT_TITLE_FONT_SIZE,
   titleBandPx,
 } from '@/types'
-import { FigureView } from '@/components/math/FigureView'
-import { LatexView } from '@/components/math/LatexView'
-import { MarkdownTable } from '@/components/math/MarkdownTable'
+import {
+  NATURAL_MAX_H,
+  NATURAL_MAX_W,
+  NATURAL_SLACK_PX,
+  NaturalCardBody,
+  naturalBodyWraps,
+} from '@/components/canvas/NaturalCardBody'
+import { LibraryItemPreviewBody, libraryItemAsCanvasPreview } from '@/components/library/LibraryItemPreviewBody'
 import { estimateLibraryCardSize } from '@/lib/canvasDrop'
 import { composeBorderCss } from '@/lib/cardDefaults'
 
-/** Match CanvasItemView autoFit slack so ghost size ≈ final card chrome. */
-const PREVIEW_SLACK_PX = 2
-const MAX_PREVIEW_W = 520
-const MAX_PREVIEW_H = 420
-
 /**
  * Ghost preview while dragging from the library.
- * Sized to natural content at 100% (base font) — same chrome + measure math as
- * canvas autoFit so drop can paste at this exact box.
+ *
+ * WYSIWYG contract (all kinds — equations, prose, constants, matrices, …):
+ * - Paint unfitted content at the same base font as canvas cards (DEFAULT 18px).
+ * - Box = content + title band + slack (same formula as canvas autoFit).
+ * - Drop uses data-preview-width/height + matchPreview so the pasted card
+ *   freezes at this box (no second autoFit jump).
  */
 export function CanvasDragPreview({ item }: { item: LibraryItem }) {
-  const isFigure = item.type === 'figure' && Boolean(item.imageUrl)
+  const isImage =
+    (item.type === 'figure' || item.type === 'plot') && Boolean(item.imageUrl)
   const style = DEFAULT_ITEM_STYLE
+  /** Canvas card body base font — not library tile 12px. */
   const baseFont = style.fontSize ?? 18
   const titleFs = style.titleFontSize ?? DEFAULT_TITLE_FONT_SIZE
   const titleBand = titleBandPx(titleFs)
   const estimate = estimateLibraryCardSize(item)
   const [box, setBox] = useState(estimate)
   const measureRef = useRef<HTMLDivElement>(null)
+  const canvasItem = libraryItemAsCanvasPreview(item, { fontSize: baseFont })
+  const wraps = naturalBodyWraps(canvasItem)
 
   useLayoutEffect(() => {
-    if (isFigure) {
+    if (isImage) {
       setBox(estimate)
       return
     }
@@ -43,12 +51,16 @@ export function CanvasDragPreview({ item }: { item: LibraryItem }) {
       const w = Math.ceil(Math.max(el.scrollWidth, el.offsetWidth, 1))
       const h = Math.ceil(Math.max(el.scrollHeight, el.offsetHeight, 1))
       if (w < 4 || h < 4) return
-      // Same formula as CanvasItemView autoFit (content + title band + slack)
+      // Title may be wider than a short formula / term — same floor as autoFit
+      const titleW = Math.ceil((item.title ?? '').length * titleFs * 0.58) + 12
       setBox({
-        width: Math.min(MAX_PREVIEW_W, Math.max(80, w + PREVIEW_SLACK_PX)),
+        width: Math.min(
+          NATURAL_MAX_W,
+          Math.max(80, Math.max(w, titleW) + NATURAL_SLACK_PX),
+        ),
         height: Math.min(
-          MAX_PREVIEW_H,
-          Math.max(40, h + titleBand + PREVIEW_SLACK_PX),
+          NATURAL_MAX_H,
+          Math.max(40, h + titleBand + NATURAL_SLACK_PX),
         ),
       })
     }
@@ -56,21 +68,37 @@ export function CanvasDragPreview({ item }: { item: LibraryItem }) {
     apply()
     const t1 = window.setTimeout(apply, 40)
     const t2 = window.setTimeout(apply, 120)
+    const t3 = window.setTimeout(apply, 280)
     if (document.fonts?.ready) {
       void document.fonts.ready.then(apply)
     }
     return () => {
       window.clearTimeout(t1)
       window.clearTimeout(t2)
+      window.clearTimeout(t3)
     }
   }, [
     item.id,
+    item.type,
+    item.title,
     item.latex,
     item.tableMarkdown,
-    isFigure,
+    item.body,
+    item.code,
+    item.term,
+    item.listItems?.join('|'),
+    item.identities?.join('|'),
+    item.symbol,
+    item.value,
+    item.unit,
+    item.matrixRows?.map((r) => r.join(',')).join(';'),
+    item.calloutVariant,
+    isImage,
     estimate.width,
     estimate.height,
     titleBand,
+    titleFs,
+    baseFont,
   ])
 
   return (
@@ -79,6 +107,7 @@ export function CanvasDragPreview({ item }: { item: LibraryItem }) {
       data-preview-scale="100"
       data-preview-width={box.width}
       data-preview-height={box.height}
+      data-preview-kind={item.type}
       className="pointer-events-none select-none shadow-2xl ring-2 ring-indigo-400/80"
       style={{
         width: box.width,
@@ -97,7 +126,6 @@ export function CanvasDragPreview({ item }: { item: LibraryItem }) {
         overflow: 'hidden',
       }}
     >
-      {/* Title band matches CanvasItemView (font + line-height + margin) */}
       <div
         className="shrink-0 truncate px-0.5 font-medium uppercase tracking-wide text-zinc-500"
         style={{
@@ -110,33 +138,28 @@ export function CanvasDragPreview({ item }: { item: LibraryItem }) {
         {item.title}
       </div>
       <div className="relative min-h-0 flex-1 overflow-hidden">
-        {isFigure && item.imageUrl ? (
-          <FigureView
-            src={item.imageUrl}
-            alt={item.title}
-            fillContainer
-            className="h-full w-full"
+        {isImage ? (
+          <LibraryItemPreviewBody
+            item={item}
+            stageW={Math.max(48, box.width - 4)}
+            stageH={Math.max(48, box.height - titleBand - 4)}
           />
         ) : (
-          // Natural size at base font — no FitContent scale (stays 100%)
           <div
             ref={measureRef}
-            className="inline-block"
-            style={{ fontSize: baseFont }}
+            className={wraps ? 'box-border min-w-0' : 'inline-block'}
+            style={{
+              fontSize: baseFont,
+              // Prose: wrap like canvas ProseFit wrapToBox (cap = autoFit max)
+              ...(wraps
+                ? {
+                    width: 'max-content',
+                    maxWidth: NATURAL_MAX_W - NATURAL_SLACK_PX,
+                  }
+                : undefined),
+            }}
           >
-            {(item.type === 'equation' || item.latex) && item.latex && (
-              <LatexView
-                latex={item.latex}
-                className="overflow-visible text-inherit [&_.katex]:text-[1em] [&_.katex-display]:m-0"
-              />
-            )}
-            {item.type === 'table' && item.tableMarkdown && (
-              <MarkdownTable
-                markdown={item.tableMarkdown}
-                fitContent
-                className="overflow-visible text-inherit"
-              />
-            )}
+            <NaturalCardBody item={canvasItem} />
           </div>
         )}
       </div>

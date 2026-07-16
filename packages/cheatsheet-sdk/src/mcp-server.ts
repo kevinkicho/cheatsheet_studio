@@ -78,13 +78,27 @@ const TOOLS: ToolDef[] = [
   {
     name: 'cheatsheet_list_blocks',
     description:
-      'List Studio blocks filtered by type (equation|table|figure|process)',
+      'List Studio blocks filtered by type (equation|table|figure|definition|list|callout|code|constant|identity-set|plot|matrix|process)',
     inputSchema: {
       type: 'object',
       properties: {
         type: {
           type: 'string',
-          enum: ['all', 'equation', 'table', 'figure', 'process'],
+          enum: [
+            'all',
+            'equation',
+            'table',
+            'figure',
+            'definition',
+            'list',
+            'callout',
+            'code',
+            'constant',
+            'identity-set',
+            'plot',
+            'matrix',
+            'process',
+          ],
         },
         processKind: {
           type: 'string',
@@ -329,12 +343,23 @@ async function callTool(
     case 'cheatsheet_catalog_search':
     case 'cheatsheet_list_blocks': {
       const typeArg = args.type
+      const known = new Set([
+        'equation',
+        'table',
+        'figure',
+        'definition',
+        'list',
+        'callout',
+        'code',
+        'constant',
+        'identity-set',
+        'plot',
+        'matrix',
+        'process',
+      ])
       const type =
-        typeArg === 'equation' ||
-        typeArg === 'table' ||
-        typeArg === 'figure' ||
-        typeArg === 'process'
-          ? typeArg
+        typeof typeArg === 'string' && known.has(typeArg)
+          ? (typeArg as import('./catalog').CatalogBlockType)
           : 'all'
       const pk = args.processKind
       const processKind =

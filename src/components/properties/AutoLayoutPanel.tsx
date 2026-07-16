@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useState } from 'react'
-import { Loader2, Sparkles, LayoutGrid } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Check, Loader2, Sparkles, LayoutGrid } from 'lucide-react'
+import { clearLiveCanvasDrag } from '@/lib/liveCanvasDrag'
 import {
   DENSITY_PRESETS,
   GROUP_CHROME_PRESETS,
   GROUP_SORT_ORDER,
   GROUP_SORT_PRESETS,
-  PANEL_SHAPE_PRESETS,
   panelGroupLevelOptions,
   type CheatsheetLayoutOptions,
   type ContentDensity,
@@ -14,7 +14,6 @@ import {
   type PanelGroupLevel,
   normalizeGroupChrome,
 } from '@/lib/autoOrganize'
-import type { PanelShape } from '@/types'
 import {
   DEFAULT_OLLAMA_MODEL,
   ollamaPing,
@@ -26,6 +25,8 @@ import { suggestCheatsheetLayoutWithOllama } from '@/lib/ollamaLayout'
 import { useCanvasStore } from '@/stores/canvasStore'
 
 const DENSITIES = Object.keys(DENSITY_PRESETS) as ContentDensity[]
+/** How long Apply shows the success checkmark. */
+const APPLY_OK_MS = 1600
 
 /**
  * Sheet-level cheatsheet packing controls + Ollama AI assist
@@ -46,9 +47,10 @@ export function AutoLayoutPanel() {
   const [blockGap, setBlockGap] = useState(2)
   /** Topic chrome: labels (banner rows) vs panels (encapsulating frames). */
   const [groupChrome, setGroupChrome] = useState<GroupChrome>('panels')
-  const [panelShape, setPanelShape] = useState<PanelShape>('rect')
   /** Chrome inset: cards → panel stroke (not free-flow air). */
   const [panelPadding, setPanelPadding] = useState(4)
+  const [flashOk, setFlashOk] = useState(false)
+  const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   /**
    * Multi-select hierarchy depths. Selecting 1+2 draws outer (top) panels
    * wrapping inner (subsection) panels.
@@ -105,6 +107,13 @@ export function AutoLayoutPanel() {
     void refreshOllama()
   }, [refreshOllama])
 
+  useEffect(
+    () => () => {
+      if (flashTimerRef.current) clearTimeout(flashTimerRef.current)
+    },
+    [],
+  )
+
   const opts = (): CheatsheetLayoutOptions => ({
     density,
     // Three gap knobs (also set legacy `gap` = L1 for older snapshots)
@@ -115,13 +124,12 @@ export function AutoLayoutPanel() {
     // Dense mosaic only — no forced multi-column / row bands (those leave
     // large gutters between uneven topic groups).
     groupChrome,
-    panelShape: groupChrome === 'panels' ? panelShape : undefined,
+    // Rectangle frames only (n-gon shape picker removed from UI)
+    panelShape: groupChrome === 'panels' ? 'rect' : undefined,
     panelPadding,
     panelGroupLevels,
     panelBorderLevels,
-    // Polygon → n-gon on all bordered levels (no per-level picker)
-    panelNgonLevels:
-      panelShape === 'polygon' ? panelBorderLevels : undefined,
+    panelNgonLevels: undefined,
     groupSort,
     fitPrint,
     multiPage: true,
@@ -136,18 +144,68 @@ export function AutoLayoutPanel() {
     })),
   })
 
+  const yieldFrames = (n = 2) =>
+    new Promise<void>((resolve) => {
+      let i = 0
+      const step = () => {
+        i++
+        if (i >= n) resolve()
+        else requestAnimationFrame(step)
+      }
+      requestAnimationFrame(step)
+    })
+
   const runPack = () => {
     setError(null)
+    setFlashOk(false)
+    if (flashTimerRef.current) {
+      clearTimeout(flashTimerRef.current)
+      flashTimerRef.current = null
+    }
+    // Sheet auto-layout fully re-packs cards and rebuilds layoutPanels from
+    // folders — warn when the user already has manual panel frames.
+    const existingPanels =
+      useCanvasStore.getState().canvas.layoutPanels?.length ?? 0
+    if (existingPanels > 0) {
+      const ok = window.confirm(
+        'Sheet Auto-layout rebuilds all panel frames and card positions from Layers folders.\n\nYour manual panel arrangement will be replaced. Continue?',
+      )
+      if (!ok) return
+    }
+    setBusy(true)
+    setStatus('Packing sheet…')
     const o = opts()
-    autoOrganize(o)
-    const chrome = GROUP_CHROME_PRESETS[groupChrome].label
-    const panelsOn = groupChrome === 'panels'
-    const panelBit = panelsOn
-      ? ` · ${panelShape === 'polygon' ? 'n-gon' : 'rect'} · borders L${panelBorderLevels.join('+')} · pad ${panelPadding}px`
-      : ''
-    setStatus(
-      `Packed ${items.filter((i) => !i.hidden).length} cards · ${DENSITY_PRESETS[density].label} · ${chrome} · levels L${panelGroupLevels.join('+')} · L1 ${l1PanelGap}px · L2 ${l2PanelGap}px · blocks ${blockGap}px${panelBit}`,
-    )
+    // Yield so React paints status before the synchronous pack runs (elaborate
+    // sequential place/densify/finalize can take 100ms–1s+ on large sheets).
+    void (async () => {
+      try {
+        await yieldFrames(2)
+        // Drop any stuck live drag offsets so packed positions paint correctly.
+        clearLiveCanvasDrag()
+        autoOrganize(o)
+        // Let React commit items/panels and schedule KaTeX/Mermaid measure
+        await yieldFrames(3)
+        await new Promise((r) => setTimeout(r, 50))
+        // Frame the packed print area (same as AI layout / agent import).
+        window.dispatchEvent(
+          new CustomEvent('cheatsheet:fit-print-layout', {
+            detail: { reason: 'auto-layout' },
+          }),
+        )
+        setStatus(null)
+        setFlashOk(true)
+        flashTimerRef.current = setTimeout(() => {
+          setFlashOk(false)
+          flashTimerRef.current = null
+        }, APPLY_OK_MS)
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Auto-layout failed')
+        setStatus(null)
+        setFlashOk(false)
+      } finally {
+        setBusy(false)
+      }
+    })()
   }
 
   const runAi = async () => {
@@ -360,52 +418,6 @@ export function AutoLayoutPanel() {
           <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
             Panel packing
           </p>
-          <div className="grid grid-cols-2 gap-1">
-            {(Object.keys(PANEL_SHAPE_PRESETS) as PanelShape[]).map((id) => {
-              const p = PANEL_SHAPE_PRESETS[id]
-              const active = panelShape === id
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  data-testid={`panel-shape-${id}`}
-                  onClick={() => {
-                    setPanelShape(id)
-                    if (id === 'polygon') {
-                      // Ensure nested group + borders; n-gon applies to all
-                      // bordered levels (per-level n-gon UI removed).
-                      setPanelGroupLevels((g) => {
-                        const next = new Set(g)
-                        next.add(1)
-                        next.add(2)
-                        if (g.includes(3) || next.has(3)) next.add(3)
-                        else next.add(2)
-                        return [...next].sort((a, b) => a - b) as PanelGroupLevel[]
-                      })
-                      setPanelBorderLevels((b) => {
-                        const next = new Set(b)
-                        next.add(1)
-                        next.add(2)
-                        return [...next].sort(
-                          (a, c) => a - c,
-                        ) as PanelGroupLevel[]
-                      })
-                    }
-                  }}
-                  className={`rounded-md border px-2 py-1.5 text-left transition ${
-                    active
-                      ? 'border-sky-500/50 bg-sky-500/12 text-sky-100'
-                      : 'border-zinc-800 bg-zinc-950/40 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200'
-                  }`}
-                >
-                  <span className="block text-[11px] font-medium">{p.label}</span>
-                  <span className="mt-0.5 block text-[9px] leading-snug text-zinc-500">
-                    {p.hint}
-                  </span>
-                </button>
-              )
-            })}
-          </div>
           <label className="flex flex-col gap-1">
             <span className="text-[10px] text-zinc-500">
               Panel pad · {panelPadding}px
@@ -601,27 +613,55 @@ export function AutoLayoutPanel() {
       </label>
       {canvas.dissolvePrintArea ? (
         <p className="text-[10px] leading-snug text-emerald-500/90">
-          Dissolve print pages is on (Sheet properties) — pack uses continuous
-          max space.
+          Dissolve printable page areas is on — pack uses the full multipage
+          super-rectangle (outer margins only; grid/row/stack gutters gone).
         </p>
       ) : null}
       <p className="text-[9px] leading-snug text-zinc-600">
         Always <span className="text-zinc-400">free-flow</span>.
         <span className="text-zinc-400"> Levels</span> multi-select for nested
         frames (L1 wraps L2).
-        <span className="text-zinc-400"> N-gon</span> = L/stepped chrome on card
-        runs (not a full empty box).
       </p>
 
       <button
         type="button"
         data-testid="auto-layout-apply"
-        disabled={n === 0}
+        data-apply-ok={flashOk ? '1' : undefined}
+        disabled={n === 0 || busy}
         onClick={runPack}
-        className="inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-indigo-500/40 bg-indigo-500/15 px-2.5 py-1.5 text-xs font-medium text-indigo-100 hover:bg-indigo-500/25 disabled:opacity-40"
+        aria-label={flashOk ? 'Auto layout applied' : `Apply auto layout (${n})`}
+        className={`inline-flex w-full items-center justify-center gap-1.5 overflow-hidden rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors duration-200 disabled:opacity-40 ${
+          flashOk
+            ? 'border-emerald-500/50 bg-emerald-500/20 text-emerald-50'
+            : 'border-indigo-500/40 bg-indigo-500/15 text-indigo-100 hover:bg-indigo-500/25'
+        }`}
       >
-        <LayoutGrid className="h-3.5 w-3.5" />
-        Apply auto layout ({n})
+        {busy ? (
+          <>
+            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+            Packing…
+          </>
+        ) : flashOk ? (
+          <span
+            className="inline-flex items-center gap-1.5 animate-[organize-ok-pop_0.45s_ease-out]"
+            data-testid="auto-layout-apply-ok"
+          >
+            <span className="relative flex h-4 w-4 shrink-0 items-center justify-center">
+              <span className="absolute inset-0 rounded-full bg-emerald-400/25 animate-[organize-ok-ring_0.5s_ease-out]" />
+              <Check
+                className="relative h-3.5 w-3.5 text-emerald-300"
+                strokeWidth={2.75}
+                aria-hidden
+              />
+            </span>
+            Applied
+          </span>
+        ) : (
+          <>
+            <LayoutGrid className="h-3.5 w-3.5" aria-hidden />
+            Apply auto layout ({n})
+          </>
+        )}
       </button>
 
       <div className="border-t border-zinc-800 pt-3">

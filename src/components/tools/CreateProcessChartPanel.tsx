@@ -250,6 +250,22 @@ export function CreateProcessChartPanel() {
     }
   }, [items, editingProcessChartId, endEditProcessChart])
 
+  /** Deep-clone processFlow without throwing (structuredClone can fail on RF proxies). */
+  const cloneFlowSafe = (
+    flow: import('@/lib/processFlowSnapshot').ProcessFlowSnapshot,
+  ): import('@/lib/processFlowSnapshot').ProcessFlowSnapshot | null => {
+    try {
+      return structuredClone(flow)
+    } catch {
+      try {
+        return JSON.parse(JSON.stringify(flow)) as typeof flow
+      } catch (e) {
+        console.error('[process] processFlow clone failed', e)
+        return null
+      }
+    }
+  }
+
   /** Live editor → canvas card bound to edit mode (auto-save) */
   const handleEditorSnapshot = useCallback(
     (
@@ -258,37 +274,81 @@ export function CreateProcessChartPanel() {
     ) => {
       const targetId = editingProcessChartId
       if (!targetId) return
-      const chart = items.find((i) => i.id === targetId)
+      // Latest items — avoid stale closure skipping the write
+      const chart = useCanvasStore.getState().items.find((i) => i.id === targetId)
       if (!chart) return
       const k = detectMermaidKind(mermaid)
       const dir = detectFlowDirection(mermaid) ?? direction
-      // Never write processFlow: undefined — that wipes the card snapshot
+      // Never write processFlow: undefined — that would wipe the card snapshot
       const patch: Parameters<typeof updateItem>[1] = {
         mermaidSource: mermaid,
         mermaidKind: isProcessPanelKind(k) ? k : kind,
         mermaidDirection: dir,
         title: title.trim() || chart.title,
+        // Force canvas ProcessFlowView remount after geometry edits
+        contentFitKey: (chart.contentFitKey ?? 0) + 1,
       }
       if (flow && isProcessFlowSnapshot(flow)) {
-        patch.processFlow = structuredClone(flow)
+        const cloned = cloneFlowSafe(flow)
+        if (cloned) patch.processFlow = cloned
       }
       updateItem(targetId, patch)
     },
-    [editingProcessChartId, items, direction, kind, title, updateItem],
+    [editingProcessChartId, direction, kind, title, updateItem],
   )
 
   const finishEditing = useCallback(() => {
-    // Flush latest editor state onto the card before leaving edit mode
-    const mermaid = getVisualEditorMermaidSource().trim()
-    const flow = getVisualEditorProcessFlow()
-    if (editingProcessChartId && mermaid) {
-      handleEditorSnapshot(mermaid, flow)
+    // Flush editor → card, then leave edit mode. On hard failure stay in edit
+    // so the user can still use Save card (old path exited edit and stranded them).
+    let statusMsg = 'Left edit mode'
+    let leaveEdit = true
+    try {
+      let mermaid = ''
+      let flow: import('@/lib/processFlowSnapshot').ProcessFlowSnapshot | null =
+        null
+      try {
+        mermaid = getVisualEditorMermaidSource().trim()
+      } catch (e) {
+        console.error('[process] Done: mermaid serialize failed', e)
+        throw new Error('Could not read diagram text from editor')
+      }
+      try {
+        flow = getVisualEditorProcessFlow()
+      } catch (e) {
+        console.error('[process] Done: processFlow capture failed', e)
+        // Still try to save mermaid text alone
+        flow = null
+      }
+
+      if (editingProcessChartId) {
+        if (mermaid) {
+          if (!flow || !isProcessFlowSnapshot(flow)) {
+            console.warn(
+              '[process] Done: mermaid captured but processFlow missing — card may not show free-form sizes',
+            )
+            statusMsg = 'Saved text · layout may be incomplete'
+          } else {
+            statusMsg = 'Saved · left edit mode'
+          }
+          handleEditorSnapshot(mermaid, flow)
+        } else {
+          statusMsg = 'Nothing to save — diagram is empty'
+        }
+      }
+    } catch (e) {
+      console.error('[process] finishEditing flush failed', e)
+      const detail = e instanceof Error ? e.message : 'unknown error'
+      statusMsg = `Save failed (${detail}). Still editing — use Save card.`
+      leaveEdit = false
     }
-    editBaselineRef.current = null
-    skipUnmountFlushRef.current = false
-    endEditProcessChart()
-    prevEditingId.current = null
-    flash('Saved · left edit mode')
+
+    if (leaveEdit) {
+      editBaselineRef.current = null
+      skipUnmountFlushRef.current = true
+      endEditProcessChart()
+      prevEditingId.current = null
+    }
+    flash(statusMsg)
   }, [
     editingProcessChartId,
     handleEditorSnapshot,
@@ -384,10 +444,12 @@ export function CreateProcessChartPanel() {
         if (mermaid) {
           const k = detectMermaidKind(mermaid)
           const dir = detectFlowDirection(mermaid) ?? 'TD'
+          const chart = useCanvasStore.getState().items.find((i) => i.id === id)
           const patch: Parameters<typeof updateItem>[1] = {
             mermaidSource: mermaid,
             mermaidKind: isProcessPanelKind(k) ? k : 'flowchart',
             mermaidDirection: dir,
+            contentFitKey: (chart?.contentFitKey ?? 0) + 1,
           }
           if (flow && isProcessFlowSnapshot(flow)) {
             patch.processFlow = structuredClone(flow)
@@ -544,7 +606,14 @@ export function CreateProcessChartPanel() {
 
   const saveEditingCard = () => {
     if (!editingProcessChartId) return
-    const src = resolveSource()
+    let src = ''
+    try {
+      src = resolveSource()
+    } catch (e) {
+      console.error('[process] Save card: resolveSource failed', e)
+      flash('Could not read diagram from editor')
+      return
+    }
     if (!src) {
       flash('Add at least one node on the canvas first')
       return
@@ -552,12 +621,36 @@ export function CreateProcessChartPanel() {
     setSource(src)
     const k = detectMermaidKind(src)
     const dir = detectFlowDirection(src) ?? direction
-    const captured = getVisualEditorProcessFlow()
-    const processFlow = captured ? structuredClone(captured) : undefined
+    let processFlow:
+      | import('@/lib/processFlowSnapshot').ProcessFlowSnapshot
+      | undefined
+    try {
+      const captured = getVisualEditorProcessFlow()
+      if (captured && isProcessFlowSnapshot(captured)) {
+        processFlow = cloneFlowSafe(captured) ?? undefined
+      }
+    } catch (e) {
+      console.error('[process] Save card: processFlow capture failed', e)
+    }
     if (!processFlow) {
-      flash('Could not capture diagram — add nodes in the editor first')
+      // Still save mermaid text so Done/Save is not a total no-op
+      const chart = useCanvasStore
+        .getState()
+        .items.find((i) => i.id === editingProcessChartId)
+      updateItem(editingProcessChartId, {
+        title: title.trim() || (editingChart?.title ?? 'Process chart'),
+        mermaidSource: src,
+        mermaidTheme: 'dark',
+        mermaidKind: isProcessPanelKind(k) ? k : kind,
+        mermaidDirection: dir,
+        contentFitKey: (chart?.contentFitKey ?? 0) + 1,
+      })
+      flash('Saved text only · layout snapshot missing — try Done again')
       return
     }
+    const chart = useCanvasStore
+      .getState()
+      .items.find((i) => i.id === editingProcessChartId)
     updateItem(editingProcessChartId, {
       title: title.trim() || (editingChart?.title ?? 'Process chart'),
       mermaidSource: src,
@@ -565,8 +658,9 @@ export function CreateProcessChartPanel() {
       mermaidTheme: 'dark',
       mermaidKind: isProcessPanelKind(k) ? k : kind,
       mermaidDirection: dir,
+      contentFitKey: (chart?.contentFitKey ?? 0) + 1,
     })
-    if (processFlow) setEditorProcessFlow(processFlow)
+    setEditorProcessFlow(processFlow)
     flash('Saved to canvas card')
   }
 
@@ -949,6 +1043,7 @@ export function CreateProcessChartPanel() {
                 onClick={finishEditing}
                 className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-md bg-emerald-600 px-2 py-2 text-xs font-medium text-white hover:bg-emerald-500"
                 data-testid="process-done-editing-footer"
+                title="Keep changes and leave edit mode"
               >
                 Done
               </button>

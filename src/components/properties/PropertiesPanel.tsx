@@ -1,6 +1,8 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { ChevronDown, ChevronRight, Scan, Trash2 } from 'lucide-react'
 import { AutoLayoutPanel } from '@/components/properties/AutoLayoutPanel'
+import { CatalogEnrichPanel } from '@/components/catalog/CatalogEnrichPanel'
+import { ItemBodyEditor } from '@/components/properties/ItemBodyEditor'
 import { PanelProperties } from '@/components/properties/PanelProperties'
 import type {
   BorderStroke,
@@ -16,8 +18,8 @@ import {
   percentToGridOpacity,
 } from '@/types'
 import { useCanvasStore } from '@/stores/canvasStore'
-import { LatexView } from '@/components/math/LatexView'
 import { ColorPicker } from '@/components/ui/ColorPicker'
+import { cardKindLabel } from '@/lib/cardKinds'
 
 const GRID_EXTENT_OPTIONS: {
   id: GridExtent
@@ -75,26 +77,47 @@ export function PropertiesPanel() {
       ? (canvas.layoutPanels ?? []).find((p) => p.id === selectedPanelId)
       : undefined
 
+  // All left-sidebar sections start collapsed
   const [sheetPropsOpen, setSheetPropsOpen] = useState(false)
   const [gridSettingsOpen, setGridSettingsOpen] = useState(false)
-  const [autoLayoutOpen, setAutoLayoutOpen] = useState(true)
+  const [autoLayoutOpen, setAutoLayoutOpen] = useState(false)
+  const [catalogOpen, setCatalogOpen] = useState(false)
+
+  // FAB / AI chat asks to open Catalog & enrich
+  useEffect(() => {
+    const open = () => setCatalogOpen(true)
+    window.addEventListener('cheatsheet:open-catalog-panel', open)
+    return () =>
+      window.removeEventListener('cheatsheet:open-catalog-panel', open)
+  }, [])
   // Item properties collapsibles (when a card is selected)
+  const [bodyOpen, setBodyOpen] = useState(false)
   const [titleOpen, setTitleOpen] = useState(false)
   const [sizeOpen, setSizeOpen] = useState(false)
   const [contentOpen, setContentOpen] = useState(false)
 
-  // Panel selected → panel editor in left sidebar
-  if (selected.length === 0 && selectedPanel) {
+  // Panel selected → panel editor in left sidebar (even when collection
+  // cards are multi-selected too — in-panel auto-layout needs this UI).
+  if (selectedPanel) {
     return (
-      <div className="flex h-full flex-col overflow-y-auto">
+      <div className="flex flex-col">
         <PanelProperties panel={selectedPanel} />
+        {selected.length > 0 ? (
+          <p className="border-t border-zinc-800 px-3 py-2 text-[10px] leading-snug text-zinc-500">
+            {selected.length} card{selected.length === 1 ? '' : 's'} also
+            selected from Layers · Delete removes cards only; use “Delete
+            panel” below to remove the frame alone.
+          </p>
+        ) : null}
       </div>
     )
   }
 
   if (selected.length === 0) {
+    // Natural height sections; LeftSidebar scrolls the column.
+    // No fixed max-h on collapsibles — expand to full content.
     return (
-      <div className="flex h-full flex-col overflow-hidden">
+      <div className="flex flex-col">
         {/* Sheet properties (collapsible) */}
         <button
           type="button"
@@ -137,13 +160,14 @@ export function PropertiesPanel() {
               />
               <span>
                 <span className="font-medium text-zinc-300">
-                  Dissolve print pages
+                  Dissolve printable page areas
                 </span>
                 <span className="mt-0.5 block text-[10px] leading-snug text-zinc-500">
-                  Merge contiguous pages into one continuous printable band
-                  (no borders between pages; free inter-page gutters for height).
-                  Width stays inside the green print margins. Auto-layout and
-                  export both use this.
+                  Merge multipage frames into one super-page: only the outer
+                  margins stay non-printable (48px around the combined edge by
+                  default). Inter-page gutters and facing margins disappear for
+                  vertical, horizontal, and grid layouts. Auto-layout packs
+                  into that full printable rectangle.
                 </span>
               </span>
             </label>
@@ -168,8 +192,31 @@ export function PropertiesPanel() {
           </span>
         </button>
         {autoLayoutOpen && (
-          <div className="min-h-0 max-h-[50%] shrink overflow-y-auto border-b border-zinc-800">
+          <div className="shrink-0 border-b border-zinc-800">
             <AutoLayoutPanel />
+          </div>
+        )}
+
+        {/* Catalog inventory + Ollama enrich → RTDB bulk */}
+        <button
+          type="button"
+          onClick={() => setCatalogOpen((o) => !o)}
+          className="flex shrink-0 items-center gap-1.5 border-b border-zinc-800 bg-zinc-900/80 px-3 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-zinc-300 hover:bg-zinc-900"
+          data-testid="catalog-enrich-toggle"
+        >
+          {catalogOpen ? (
+            <ChevronDown className="h-3.5 w-3.5 text-zinc-500" />
+          ) : (
+            <ChevronRight className="h-3.5 w-3.5 text-zinc-500" />
+          )}
+          Catalog &amp; enrich
+          <span className="ml-auto font-normal normal-case tracking-normal text-zinc-600">
+            RTDB · AI
+          </span>
+        </button>
+        {catalogOpen && (
+          <div className="shrink-0 border-b border-zinc-800">
+            <CatalogEnrichPanel />
           </div>
         )}
 
@@ -192,7 +239,7 @@ export function PropertiesPanel() {
           </span>
         </button>
         {gridSettingsOpen && (
-          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+          <div className="shrink-0 space-y-3 border-b border-zinc-800 p-3">
             <label className="flex items-center gap-2 text-xs text-zinc-300">
               <input
                 type="checkbox"
@@ -313,8 +360,11 @@ export function PropertiesPanel() {
           </div>
         )}
 
-        {!sheetPropsOpen && !autoLayoutOpen && !gridSettingsOpen && (
-          <p className="p-3 text-xs text-zinc-600">
+        {!sheetPropsOpen &&
+          !autoLayoutOpen &&
+          !catalogOpen &&
+          !gridSettingsOpen && (
+          <p className="shrink-0 p-3 text-xs text-zinc-600">
             Expand a section above, click a panel, or select a card.
           </p>
         )}
@@ -370,25 +420,16 @@ export function PropertiesPanel() {
     (i) => i.style?.background ?? '#1e2028',
   )
 
-  const allEquations = selected.every(
-    (i) =>
-      i.type === 'equation' ||
-      i.type === 'custom-equation' ||
-      Boolean(i.latex),
-  )
-  const allFigures = selected.every(
-    (i) =>
-      i.type === 'figure' ||
-      i.type === 'custom-image' ||
-      (Boolean(i.imageUrl) && !i.latex),
-  )
-
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/* Sticky header */}
       <div className="flex shrink-0 items-center justify-between gap-1 border-b border-zinc-800 px-3 py-2">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
-          {multi ? `${selected.length} cards selected` : 'Item properties'}
+          {multi
+            ? `${selected.length} cards selected`
+            : single
+              ? `${cardKindLabel(single.type)} · properties`
+              : 'Item properties'}
         </h2>
         <div className="flex items-center gap-0.5">
           <button
@@ -448,6 +489,47 @@ export function PropertiesPanel() {
                 {selected.every((i) => i.hidden) ? 'Hidden' : 'Hide'}
               </button>
             </div>
+          </div>
+        )}
+
+        {/* ── Body (type-specific payload) ────────────────────────────────── */}
+        {!multi && single && (
+          <ItemCollapsible
+            title="Body"
+            open={bodyOpen}
+            onToggle={() => setBodyOpen((o) => !o)}
+          >
+            <ItemBodyEditor
+              item={single}
+              onChange={(partial) => {
+                const cur = useCanvasStore
+                  .getState()
+                  .items.find((i) => i.id === single.id)
+                useCanvasStore.getState().updateItem(single.id, {
+                  ...partial,
+                  contentFitKey: (cur?.contentFitKey ?? 0) + 1,
+                })
+              }}
+            />
+          </ItemCollapsible>
+        )}
+        {multi && (
+          <div className="border-b border-zinc-800 px-3 py-2">
+            <p className="text-[10px] leading-relaxed text-zinc-500">
+              Body content is edited one card at a time (select a single card).
+              Shared chrome / size below apply to all {selected.length}{' '}
+              selected.
+              {selected.length > 0 && (
+                <>
+                  {' '}
+                  Types:{' '}
+                  {[...new Set(selected.map((i) => cardKindLabel(i.type)))].join(
+                    ', ',
+                  )}
+                  .
+                </>
+              )}
+            </p>
           </div>
         )}
 
@@ -650,9 +732,9 @@ export function PropertiesPanel() {
           </Field>
         </ItemCollapsible>
 
-        {/* ── Content (chrome: colors, border) ────────────────────────────── */}
+        {/* ── Appearance (chrome: colors, border) ─────────────────────────── */}
         <ItemCollapsible
-          title="Content"
+          title="Appearance"
           open={contentOpen}
           onToggle={() => setContentOpen((o) => !o)}
         >
@@ -807,62 +889,11 @@ export function PropertiesPanel() {
           </div>
         </ItemCollapsible>
 
-        {/* ── Type-specific (not collapsible) ─────────────────────────────── */}
-        <div className="flex flex-col gap-3 p-3">
-          {!multi &&
-            single &&
-            (single.latex !== undefined ||
-              single.type === 'equation' ||
-              single.type === 'custom-equation') && (
-              <>
-                <Field label="LaTeX">
-                  <textarea
-                    value={single.latex ?? ''}
-                    onChange={(e) => patch({ latex: e.target.value })}
-                    rows={4}
-                    className="field-input font-mono text-[11px]"
-                    spellCheck={false}
-                  />
-                </Field>
-                <div className="rounded-md border border-zinc-800 bg-zinc-950 p-2">
-                  <p className="mb-1 text-[10px] uppercase text-zinc-500">
-                    Preview
-                  </p>
-                  <LatexView latex={single.latex ?? ''} className="text-sm" />
-                </div>
-              </>
-            )}
-
-          {!multi &&
-            single &&
-            (single.type === 'figure' ||
-              single.type === 'custom-image' ||
-              single.imageUrl) && (
-              <Field label="Image URL">
-                <input
-                  value={single.imageUrl ?? ''}
-                  onChange={(e) => patch({ imageUrl: e.target.value })}
-                  className="field-input text-[11px]"
-                />
-              </Field>
-            )}
-
-          {multi && allEquations && (
-            <p className="text-[10px] text-zinc-500">
-              All selected are equations — shared chrome edits apply. Edit LaTeX
-              one card at a time.
-            </p>
-          )}
-          {multi && allFigures && (
-            <p className="text-[10px] text-zinc-500">
-              All selected are figures — shared chrome edits apply.
-            </p>
-          )}
-
+        <div className="px-3 py-2">
           <p className="text-[10px] text-zinc-600">
             {multi
-              ? `Types: ${[...new Set(selected.map((i) => i.type))].join(', ')}`
-              : `Type: ${primary.type} · z: ${primary.zIndex}`}
+              ? `Types: ${[...new Set(selected.map((i) => cardKindLabel(i.type)))].join(', ')}`
+              : `Type: ${cardKindLabel(primary.type)} · z: ${primary.zIndex}`}
           </p>
         </div>
       </div>

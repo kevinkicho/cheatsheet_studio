@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import type { CanvasItem } from '@/types'
 import { FitContent } from '@/components/math/FitContent'
 import { FigureView, isSvgFigureSrc } from '@/components/math/FigureView'
@@ -6,9 +7,24 @@ import { MarkdownTable } from '@/components/math/MarkdownTable'
 import { MermaidView } from '@/components/math/MermaidView'
 import { ProcessFlowView } from '@/components/math/ProcessFlowView'
 import {
+  CalloutView,
+  CodeView,
+  ConstantView,
+  DefinitionView,
+  IdentitySetView,
+  ListView,
+  MatrixView,
+} from '@/components/math/TextCardViews'
+import {
   CARD_DEFAULTS,
   isFigureLike,
 } from '@/lib/cardDefaults'
+import {
+  isEquationCard,
+  isProcessCard,
+  isTableCard,
+  isVectorTextCard,
+} from '@/lib/cardKinds'
 import { isProcessFlowSnapshot } from '@/lib/processFlowSnapshot'
 
 type Props = {
@@ -28,9 +44,10 @@ type Props = {
  *
  * VECTOR GRAPHICS POLICY (see docs/vector-graphics.md):
  * Block items are authored as vectors so resize stays sharp:
- * - Equations → KaTeX (vector type) + fontSize fit
- * - Tables → HTML + em type + fontSize fit
- * - Figures → inline SVG at display size (not bitmap scale)
+ * - Equations / matrix / identity / constant → KaTeX
+ * - Tables → HTML + em type
+ * - Prose (definition/list/callout/code) → em text
+ * - Figures / plots → inline SVG
  * - Process → processFlow / Mermaid SVG
  * Photos may still use raster via Import Image.
  */
@@ -50,11 +67,7 @@ export function CanvasCardBody({
   const mermaidTheme = item.mermaidTheme ?? 'dark'
 
   if (asFigure && item.imageUrl) {
-    // ── VECTOR FIGURES (SVG) ─────────────────────────────────────────────
-    // Never CSS-transform a fixed-pixel SVG — that soft-rasterizes (PPF looked
-    // pixelated). fillContainer + viewBox re-paints paths at card size → sharp.
-    // Raster photos only: FitContent transform (unavoidable soft scale).
-    // Policy: docs/vector-graphics.md — new diagrams MUST be SVG, not PNG.
+    // ── VECTOR FIGURES / PLOTS (SVG) ─────────────────────────────────────
     const vectorSvg = isSvgFigureSrc(item.imageUrl)
     if (vectorSvg) {
       return (
@@ -72,7 +85,6 @@ export function CanvasCardBody({
         </div>
       )
     }
-    // Raster (photo) path — soft when enlarged; prefer SVG for diagrams
     return (
       <FitContent
         mode="scale"
@@ -94,12 +106,8 @@ export function CanvasCardBody({
     )
   }
 
-  if (item.type === 'process-chart' || item.mermaidSource || item.processFlow) {
-    // Vector paint: processFlow SVG or Mermaid SVG (never a static bitmap)
-    // Free-form snapshot: fill card via SVG viewBox (like Mermaid fillContainer).
-    // Avoid FitContent+meet double letterbox — that made horizontal resize look uneven.
+  if (isProcessCard(item)) {
     if (isProcessFlowSnapshot(item.processFlow)) {
-      // Fingerprint geometry so any path/node move re-paints the card
       const pf = item.processFlow
       const pathSig = pf.edges
         .map(
@@ -133,24 +141,68 @@ export function CanvasCardBody({
     )
   }
 
-  const isEquation =
-    item.type === 'equation' ||
-    item.type === 'custom-equation' ||
-    Boolean(item.latex)
-  // Equations + markdown tables are vector type (KaTeX / HTML em fonts)
-  const isVectorText =
-    isEquation || item.type === 'table' || Boolean(item.tableMarkdown)
+  // ── Tier 1 + Tier 2 structured (vector text) ──────────────────────────
+  if (item.type === 'definition') {
+    return (
+      <ProseFit item={item} showBadge={showBadge} interactiveFast={interactiveFast}>
+        <DefinitionView item={item} />
+      </ProseFit>
+    )
+  }
+  if (item.type === 'list') {
+    return (
+      <ProseFit item={item} showBadge={showBadge} interactiveFast={interactiveFast}>
+        <ListView item={item} />
+      </ProseFit>
+    )
+  }
+  if (item.type === 'callout') {
+    return (
+      <ProseFit item={item} showBadge={showBadge} interactiveFast={interactiveFast}>
+        <CalloutView item={item} />
+      </ProseFit>
+    )
+  }
+  if (item.type === 'code') {
+    return (
+      <ProseFit item={item} showBadge={showBadge} interactiveFast={interactiveFast}>
+        <CodeView item={item} />
+      </ProseFit>
+    )
+  }
+  if (item.type === 'constant') {
+    return (
+      <ProseFit item={item} showBadge={showBadge} interactiveFast={interactiveFast}>
+        <ConstantView item={item} />
+      </ProseFit>
+    )
+  }
+  if (item.type === 'identity-set') {
+    return (
+      <ProseFit item={item} showBadge={showBadge} interactiveFast={interactiveFast}>
+        <IdentitySetView item={item} />
+      </ProseFit>
+    )
+  }
+  if (item.type === 'matrix') {
+    return (
+      <ProseFit item={item} showBadge={showBadge} interactiveFast={interactiveFast}>
+        <MatrixView item={item} />
+      </ProseFit>
+    )
+  }
 
-  // During drag/resize: transform (cheap). Idle + aspect locked: fontSize for
-  // crisp vector type (equations AND tables — tables used to always transform).
+  const isEquation = isEquationCard(item)
+  const isVectorText = isVectorTextCard(item)
+
+  // Always fontSize for equations/tables when aspect-locked so resize live
+  // paint matches the committed look (no transform→reflow jump / gutters).
+  // transform only for stretch free-transform or non-vector content.
   const vectorTextFit =
-    interactiveFast || !isVectorText || !keepAspectRatio
-      ? 'transform'
-      : CARD_DEFAULTS.equationFitMethod
+    isVectorText && keepAspectRatio
+      ? CARD_DEFAULTS.equationFitMethod
+      : 'transform'
 
-  // contentFill false → maxScale 1 (natural KaTeX; export-19 equation look).
-  // contentFill true → may grow into card (process/figures).
-  // Do not special-case autoFit here (offscreen measure is separate).
   const vectorMaxScale = contentFill === false ? 1 : maxScale
 
   return (
@@ -172,13 +224,80 @@ export function CanvasCardBody({
           className="overflow-visible text-inherit [&_.katex]:text-[1em] [&_.katex-display]:m-0"
         />
       )}
-      {(item.type === 'table' || item.tableMarkdown) && item.tableMarkdown && (
+      {isTableCard(item) && item.tableMarkdown && (
         <MarkdownTable
           markdown={item.tableMarkdown}
           fitContent
           className="overflow-visible text-inherit"
         />
       )}
+    </FitContent>
+  )
+}
+
+function ProseFit({
+  item,
+  showBadge,
+  interactiveFast,
+  children,
+}: {
+  item: CanvasItem
+  showBadge: boolean
+  interactiveFast: boolean
+  children: ReactNode
+}) {
+  const style = item.style ?? {}
+  const contentFill = item.contentFill !== false
+  const keepAspectRatio = item.keepAspectRatio !== false
+  const fillMode = keepAspectRatio ? 'contain' : 'stretch'
+  const maxScale = contentFill ? CARD_DEFAULTS.maxFillScale : 1
+  const minScale = CARD_DEFAULTS.minFitScale
+  const showTitle = item.showTitle !== false && Boolean(item.title)
+  // Prose wraps to the card width. Without wrapToBox, FitContent measures at
+  // max-content (one long line) then shrinks to ~20% — illegible paste.
+  const wrapProse =
+    item.type === 'definition' ||
+    item.type === 'list' ||
+    item.type === 'callout'
+  // Always fontSize for prose/code (and KaTeX structured cards) when aspect
+  // locked — same live/final path while resizing (no transform gutters jump).
+  const vectorTextFit =
+    keepAspectRatio ? CARD_DEFAULTS.equationFitMethod : 'transform'
+  const vectorMaxScale = contentFill === false ? 1 : maxScale
+  const payloadKey = [
+    item.type,
+    item.term,
+    item.body,
+    item.code,
+    item.codeLanguage,
+    item.listItems?.join('|'),
+    item.listOrdered,
+    item.calloutVariant,
+    item.symbol,
+    item.value,
+    item.unit,
+    item.identities?.join('|'),
+    item.matrixRows?.map((r) => r.join(',')).join(';'),
+    item.latex,
+  ].join('·')
+
+  return (
+    <FitContent
+      mode="scale"
+      fillMode={fillMode}
+      // Wrapping prose: top-align so last lines are never clipped under center gutters
+      align={wrapProse ? 'start' : keepAspectRatio ? 'center' : 'start'}
+      minScale={minScale}
+      maxScale={vectorMaxScale}
+      fitMethod={vectorTextFit}
+      // Match DEFAULT_ITEM_STYLE / drag-ghost measure (18) so paste ≈ ghost
+      baseFontSize={style.fontSize ?? 18}
+      wrapToBox={wrapProse}
+      showBadge={showBadge && !interactiveFast}
+      contentKey={`${item.id}-${payloadKey}-fit${item.contentFitKey ?? 0}-fill${contentFill ? 1 : 0}-ar${keepAspectRatio ? 1 : 0}-t${showTitle ? 1 : 0}-m${vectorTextFit}-w${wrapProse ? 1 : 0}`}
+      className="h-full w-full"
+    >
+      {children}
     </FitContent>
   )
 }

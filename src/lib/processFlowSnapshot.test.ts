@@ -52,6 +52,56 @@ describe('processFlowSnapshot', () => {
     expect(snap!.width).toBeGreaterThan(40)
   })
 
+  it('prefers larger uniform scale over stale small live size (enlarge)', () => {
+    const resized = [
+      {
+        id: 'Topic',
+        type: 'mindmapNode',
+        position: { x: 0, y: 0 },
+        // Stale DOM measure still at original circle size
+        measured: { width: 96, height: 96 },
+        width: 96,
+        height: 96,
+        // User enlarged via NodeResizer — style is larger, same aspect
+        style: { width: 220, height: 220 },
+        data: { label: 'Topic', shape: 'circle' },
+      },
+    ] as Node<FlowNodeData>[]
+    const snap = captureProcessFlow(resized, [], {
+      direction: 'TD',
+      diagramKind: 'mindmap',
+    })
+    expect(snap).not.toBeNull()
+    expect(snap!.nodes[0]!.width).toBe(220)
+    expect(snap!.nodes[0]!.height).toBe(220)
+  })
+
+  it('captures circle→ellipse free morph (screenshot 015231 New topic)', () => {
+    // Editor paints tall oval; stale style still square — must not flatten to circle
+    const morphed = [
+      {
+        id: 'NewTopic',
+        type: 'mindmapNode',
+        position: { x: 100, y: 50 },
+        width: 120,
+        height: 220,
+        measured: { width: 120, height: 220 },
+        style: { width: 100, height: 100 }, // stale square
+        data: { label: 'New topic', shape: 'circle' },
+      },
+    ] as Node<FlowNodeData>[]
+    const snap = captureProcessFlow(morphed, [], {
+      direction: 'TD',
+      diagramKind: 'mindmap',
+    })
+    expect(snap).not.toBeNull()
+    expect(snap!.nodes[0]!.width).toBe(120)
+    expect(snap!.nodes[0]!.height).toBe(220)
+    // SVG must paint ellipse (rx ≠ ry), not a forced square circle
+    const svg = processFlowToSvg(snap!)
+    expect(svg).toMatch(/A60,110/)
+  })
+
   it('captures mindmap graphs with diagramKind and paints SVG', () => {
     const mmNodes = [
       {

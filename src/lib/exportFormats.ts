@@ -137,11 +137,12 @@ export const EXPORT_PACKAGE_MODES: {
     id: 'combined',
     label: 'All together',
     description:
-      'One file (PDF multi-page, stitched PNG/JPEG, or single multi-page SVG)',
+      'One file: PDF multi-page, one long/big PNG/JPEG (stack or sheet layout), or one multi-page SVG',
   },
   {
     id: 'separate',
     label: 'Page by page',
-    description: 'One download file per page',
+    description:
+      'One image/PDF/SVG per page (multipage PNG/JPEG packs into one .zip download)',
   },
 ]

@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { AppShell } from '@/components/layout/AppShell'
 import { useAuthStore } from '@/stores/authStore'
 import { useLibraryStore } from '@/stores/libraryStore'
+// useLibraryStore.getState() used for splash-already-loaded guard
 import { useSheetsStore } from '@/stores/sheetsStore'
 
 export function Workspace() {
@@ -10,8 +11,12 @@ export function Workspace() {
   const ensureDefaultSheet = useSheetsStore((s) => s.ensureDefaultSheet)
   const bootstrappedFor = useRef<string | null>(null)
 
+  // Catalog bulk-load runs in AppInitSplash (runAppBootstrap → libraryStore.load).
+  // Keep a safety reload if splash was skipped / store empty.
   useEffect(() => {
-    void loadLibrary()
+    if (useLibraryStore.getState().items.length === 0) {
+      void loadLibrary()
+    }
   }, [loadLibrary])
 
   useEffect(() => {

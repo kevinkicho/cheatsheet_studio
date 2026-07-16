@@ -173,9 +173,18 @@ export function isMermaidExportPending(root: HTMLElement): boolean {
 export async function waitForExportReady(
   root: HTMLElement,
   timeoutMs = 14000,
+  opts?: {
+    /** When false, skip document.fonts wait (already done globally). */
+    waitFonts?: boolean
+    /** Settle delay after ready (default 120). */
+    settleMs?: number
+  },
 ): Promise<void> {
   const start = Date.now()
-  if (document.fonts?.ready) {
+  const waitFonts = opts?.waitFonts !== false
+  const settleMs = opts?.settleMs ?? 120
+
+  if (waitFonts && document.fonts?.ready) {
     try {
       await Promise.race([
         document.fonts.ready,
@@ -188,7 +197,7 @@ export async function waitForExportReady(
 
   // Allow React commit + KaTeX + FitContent + Mermaid mount
   await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
-  await new Promise((r) => setTimeout(r, 80))
+  await new Promise((r) => setTimeout(r, 40))
 
   while (Date.now() - start < timeoutMs) {
     const imgs = Array.from(root.querySelectorAll('img'))
@@ -204,16 +213,18 @@ export async function waitForExportReady(
             new Promise<void>((resolve) => {
               img.addEventListener('load', () => resolve(), { once: true })
               img.addEventListener('error', () => resolve(), { once: true })
-              setTimeout(resolve, 1500)
+              setTimeout(resolve, 1200)
             }),
         ),
       )
     } else {
-      await new Promise((r) => setTimeout(r, 100))
+      await new Promise((r) => setTimeout(r, 80))
     }
   }
 
   // Extra frames so FitContent / SVG viewBox settle after mermaid paint
   await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
-  await new Promise((r) => setTimeout(r, 120))
+  if (settleMs > 0) {
+    await new Promise((r) => setTimeout(r, settleMs))
+  }
 }

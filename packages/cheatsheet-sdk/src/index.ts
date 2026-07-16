@@ -25,6 +25,14 @@ export type {
   AddTableInput,
   AddFigureInput,
   AddProcessInput,
+  AddDefinitionInput,
+  AddListInput,
+  AddCalloutInput,
+  AddCodeInput,
+  AddConstantInput,
+  AddIdentitySetInput,
+  AddPlotInput,
+  AddMatrixInput,
 } from './builder'
 
 export { composeFromOutline, appendOutlineToSheet } from './compose'

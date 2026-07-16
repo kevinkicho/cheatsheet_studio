@@ -4,6 +4,7 @@ import { chromeFromMembers } from '../polyomino'
 import { enforcePanelLayoutInvariants } from '../densify'
 import type { FolderRef } from '../folders'
 import { packBBoxScore, type PackOrderStrategy } from '../shelf'
+
 import {
   exclusiveTitleBandPx,
   NESTED_TITLE_BAND_PX,
@@ -128,6 +129,64 @@ export function translateLayoutPanelCluster(
   })
 
   return { items: nextItems, panels: nextPanels }
+}
+
+/**
+ * Free-transform a layout panel AABB (corners / edges). Member cards (and
+ * nested child-panel members) scale uniformly from the old panel box into the
+ * new box — same model as multi-select free transform.
+ */
+/**
+ * Resize a panel frame only — **does not scale member cards**.
+ *
+ * Workflow: drag panel to desired size → Auto-layout in panel packs cards
+ * into that fixed box. Scaling members with the frame made reflow look like
+ * a no-op (same relative layout, just bigger/smaller).
+ */
+export function resizeLayoutPanelCluster(
+  items: CanvasItem[],
+  panels: LayoutPanel[],
+  panelId: string,
+  nextGeom: { x: number; y: number; width: number; height: number },
+  opts?: { grid?: number; panelPad?: number },
+): { items: CanvasItem[]; panels: LayoutPanel[] } {
+  const panel = panels.find((p) => p.id === panelId)
+  if (!panel) return { items, panels }
+
+  const minW = 80
+  const minH = 48
+  const nx = Math.round(nextGeom.x)
+  const ny = Math.round(nextGeom.y)
+  const nw = Math.max(minW, Math.round(nextGeom.width))
+  const nh = Math.max(minH, Math.round(nextGeom.height))
+
+  if (
+    Math.abs(panel.x - nx) < 0.5 &&
+    Math.abs(panel.y - ny) < 0.5 &&
+    Math.abs(panel.width - nw) < 0.5 &&
+    Math.abs(panel.height - nh) < 0.5
+  ) {
+    return { items, panels }
+  }
+
+  void opts
+  // Frame-only: keep card sizes/positions; in-panel auto-layout reflows next.
+  const nextPanels = panels.map((p) => {
+    if (p.id !== panelId) return p
+    return {
+      ...p,
+      x: nx,
+      y: ny,
+      width: nw,
+      height: nh,
+      runs: [{ x: nx, y: ny, width: nw, height: nh }],
+      outlinePath: undefined,
+      // Solid rect handles while free-transforming
+      shape: (p.shape === 'polygon' ? 'polygon' : 'rect') as LayoutPanel['shape'],
+    }
+  })
+
+  return { items, panels: nextPanels }
 }
 
 /**
@@ -648,6 +707,12 @@ export function relayoutPanelContents(
      * this (matches sheet pack band). Default: keep original panel right.
      */
     contentRight?: number
+    /**
+     * Flat MaxRects of all members (ignore nested leaf panels).
+     * Only the in-panel Rectangle/N-gon button should pass true.
+     * Default false so hierarchical L1 packs keep L2 structure.
+     */
+    forceFlat?: boolean
   },
 ): { items: CanvasItem[]; panel: LayoutPanel; panels?: LayoutPanel[] } {
   const ids = new Set(panel.memberIds ?? [])
@@ -659,8 +724,9 @@ export function relayoutPanelContents(
   const pad = Math.max(2, opts?.panelPad ?? 4)
   const grid = opts?.grid ?? ORGANIZE_GRID
   const dense = opts?.mode === 'dense'
-  // Default: Name A→Z for shelf mode; dense free-flow matches sheet multi-order
-  const sort = panel.contentSort ?? 'name-asc'
+  // Dense default: densest free-flow; shelf still uses name-asc when unset
+  const sort =
+    panel.contentSort ?? (dense ? ('none' as const) : ('name-asc' as const))
   // Shape only affects chrome (rect AABB vs n-gon stepped) — packing is shared
   const chromeShape = opts?.panelShape ?? panel.shape ?? 'rect'
   // Dense default: always densest multi-order (seed 0). Optional packSeed for tests.
@@ -692,10 +758,8 @@ export function relayoutPanelContents(
   members = sortCards(members, sort, panel.memberIds)
   if (members.length === 0) return { items, panel }
 
-  // Pack inside the *incoming* panel box. pinW/pinH are locked as the
-  // horizontal (and vertical) budget for this click — never shrink the root
-  // frame on rebuild (repeated clicks were walking the right edge left:
-  // pack → shrink-wrap to content → narrower pack next time).
+  // Fixed bin: panel size at click is the hard pack budget (never grow into
+  // neighbors; sort + fit members inside this box only).
   const pinX = panel.x
   const pinY = panel.y
   const pinW = Math.max(48, panel.width)
@@ -732,12 +796,14 @@ export function relayoutPanelContents(
     return !deeper
   })
 
-  // Leaf order varies by packing seed (and user name sort when seed uses name)
+  // Leaf order: match sheet groupSort — name A→Z/Z→A, or densest (height) when none
   const nameDir: 1 | -1 = sort === 'name-desc' ? -1 : 1
+  const leafSortMode =
+    sort === 'none' ? 'height' : ('name' as const)
   const orderedLeaves = sortLeafPanels(
     leafNested,
     members,
-    seedCfg.leafSort,
+    leafSortMode,
     nameDir,
   )
 
@@ -745,10 +811,18 @@ export function relayoutPanelContents(
   // (densify / repackLeaf / repackGroupsInParents / block gaps), scoped to
   // this panel. Custom pixel/rigid packers repeatedly failed on stack/overlap.
   if (dense) {
+    // Sort members for flat packs (name / member order) — hierarchical path
+    // re-sorts per leaf inside denseRelayout from panel.contentSort.
+    const membersSorted = sortCards(members, sort, panel.memberIds)
+    // forceFlat only when explicitly requested (in-panel button).
+    const forceFlat = opts?.forceFlat === true
+    const seed = forceFlat
+      ? takePanelPackSeed(panel.id)
+      : (opts?.packSeed ?? 0)
     return relayoutPanelDenseSheetParity({
       items,
-      panel,
-      members,
+      panel: { ...panel, contentSort: sort },
+      members: membersSorted,
       memberIds: ids,
       folders,
       allPanels,
@@ -767,9 +841,11 @@ export function relayoutPanelContents(
       l1GapPx: gap,
       chromeShape,
       titleBand,
-      orderedLeaves,
+      orderedLeaves: forceFlat ? [] : orderedLeaves,
       level,
       hasNestedStroke,
+      forceFlat,
+      packSeed: seed,
     })
   }
 
@@ -1108,63 +1184,96 @@ export function relayoutPanelContents(
     // shrink-wrap so we don't leave a huge empty right (screenshot 125333).
     // Next click re-measures from this chrome, so packing can reflow into the
     // true used width without a one-way right-edge walk.
-    const memNow = itemsNow.filter(
-      (i) => memberSet.has(i.id) && !i.hidden,
-    )
-    const contentMaxX =
-      memNow.length > 0
-        ? Math.max(...memNow.map((i) => i.x + i.width))
-        : pinX + pinW
-    const contentMaxY =
-      memNow.length > 0
-        ? Math.max(...memNow.map((i) => i.y + i.height))
-        : pinY + pinH
-    const needW = Math.max(48, Math.round(contentMaxX - pinX + pad))
-    const needH = Math.round(contentMaxY - pinY + pad)
-    // Pack budget is pinW (hard max). Hug content when it does not fill the
-    // band; keep pinW when content nearly spans it (stable re-clicks).
-    const fillRatio = needW / Math.max(1, pinW)
-    const lockedW =
-      fillRatio >= 0.85 ? pinW : Math.min(pinW, Math.max(needW, parent.width))
-    const locked: LayoutPanel = {
-      ...parent,
-      x: pinX,
-      y: pinY,
-      width: Math.max(48, Math.min(pinW, lockedW)),
-      height: Math.max(pinH, needH, parent.height),
-    }
-    if (kids.length > 0 || locked.shape !== 'polygon') {
-      locked.runs = [
-        {
-          x: locked.x,
-          y: locked.y,
-          width: locked.width,
-          height: locked.height,
-        },
-      ]
-      locked.outlinePath = undefined
-    }
+    // Fixed bin: keep panel size at click exactly (do not shrink-wrap).
+    const locked = lockPinnedPanelFrame(parent, {
+      pinX,
+      pinY,
+      pinW,
+      pinH,
+      needW: pinW,
+      needH: pinH,
+      forceRectRuns: kids.length > 0 || parent.shape !== 'polygon',
+      exactPin: true,
+    })
     rebuilt.set(panel.id, locked)
     return allPanels.map((p) => rebuilt.get(p.id) ?? p)
   }
 
   const lockRootFrame = (p: LayoutPanel): LayoutPanel => {
-    // Never exceed the pack budget to the right; never walk origin.
-    // Allow shrink-wrap below pinW when content is clearly narrower (empty
-    // right interior); never grow past pinW (horizontal overflow).
-    const w = Math.min(pinW, Math.max(48, p.width))
-    const h = Math.max(pinH, p.height)
+    return lockPinnedPanelFrame(p, {
+      pinX,
+      pinY,
+      pinW,
+      pinH,
+      needW: pinW,
+      needH: pinH,
+      forceRectRuns: nestedIds.size > 0 || p.shape !== 'polygon',
+      exactPin: true,
+    })
+  }
+
+  function lockPinnedPanelFrame(
+    p: LayoutPanel,
+    args: {
+      pinX: number
+      pinY: number
+      pinW: number
+      pinH: number
+      needW: number
+      needH: number
+      forceRectRuns?: boolean
+      exactPin?: boolean
+    },
+  ): LayoutPanel {
+    const {
+      pinX: x0,
+      pinY: y0,
+      pinW: bw,
+      pinH: bh,
+      needW,
+      needH,
+      forceRectRuns,
+      exactPin,
+    } = args
+    // Dense in-panel: keep the user-provided panel size exactly.
+    const width = exactPin
+      ? Math.max(48, Math.round(bw))
+      : Math.min(
+          bw,
+          Math.max(
+            48,
+            Math.round(
+              needW / Math.max(1, bw) >= 0.88
+                ? bw
+                : Math.min(bw, Math.max(48, needW)),
+            ),
+          ),
+        )
+    const height = exactPin
+      ? Math.max(48, Math.round(bh))
+      : Math.min(
+          bh,
+          Math.max(
+            48,
+            Math.round(
+              needH / Math.max(1, bh) >= 0.88
+                ? bh
+                : Math.min(bh, Math.max(48, needH)),
+            ),
+          ),
+        )
     const runs =
-      p.runs?.length && (p.shape !== 'polygon' || nestedIds.size > 0)
-        ? [{ x: pinX, y: pinY, width: w, height: h }]
+      forceRectRuns || (p.runs?.length && p.shape !== 'polygon')
+        ? [{ x: x0, y: y0, width, height }]
         : p.runs
     return {
       ...p,
-      x: pinX,
-      y: pinY,
-      width: w,
-      height: h,
+      x: x0,
+      y: y0,
+      width,
+      height,
       ...(runs ? { runs } : {}),
+      ...(forceRectRuns ? { outlinePath: undefined } : {}),
     }
   }
 

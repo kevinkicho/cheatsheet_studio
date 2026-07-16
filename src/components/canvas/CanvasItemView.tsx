@@ -1,33 +1,36 @@
 import {
   useCallback,
+  useEffect,
   useLayoutEffect,
   useRef,
   useState,
   useSyncExternalStore,
-  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react'
 import type { CanvasItem } from '@/types'
 import { DEFAULT_TITLE_FONT_SIZE, titleBandPx } from '@/types'
 import { useCanvasStore } from '@/stores/canvasStore'
 import { useUiStore } from '@/stores/uiStore'
-import { LatexView } from '@/components/math/LatexView'
-import { MarkdownTable } from '@/components/math/MarkdownTable'
-import { MermaidView } from '@/components/math/MermaidView'
-import { ProcessFlowView } from '@/components/math/ProcessFlowView'
-import { isProcessFlowSnapshot } from '@/lib/processFlowSnapshot'
 import { CanvasCardBody } from '@/components/canvas/CanvasCardBody'
+import {
+  NATURAL_MAX_H,
+  NATURAL_MAX_W,
+  NATURAL_SLACK_PX,
+  NaturalCardBody,
+} from '@/components/canvas/NaturalCardBody'
 import {
   CARD_DEFAULTS,
   composeBorderCss,
   isFigureLike,
 } from '@/lib/cardDefaults'
 import {
-  HANDLE_HIT_PX,
+  CARD_SELECTED_FLOAT,
+  CARD_STACK_BASE,
   HANDLE_LAYOUT,
   HANDLE_VISUAL_PX,
   RESIZE_CURSOR,
   applyHandleToRect,
+  handleHitPx,
   type ResizeHandle,
 } from '@/lib/resizeHandles'
 import {
@@ -52,54 +55,11 @@ interface CanvasItemViewProps {
 }
 
 /** Shared with CanvasDragPreview so library ghost size matches canvas snug. */
-const MAX_AUTO_W = 520
-const MAX_AUTO_H = 420
+const MAX_AUTO_W = NATURAL_MAX_W
+const MAX_AUTO_H = NATURAL_MAX_H
 const DRAG_THRESHOLD_PX = 3
 /** Minimal chrome slack when snugging autoFit cards (avoid oversized height). */
-const AUTOFIT_SLACK_PX = 2
-
-/** Natural-size measure target for autoFit (unscaled). */
-function NaturalBody({ item }: { item: CanvasItem }) {
-  if (item.type === 'process-chart' || item.mermaidSource || item.processFlow) {
-    if (isProcessFlowSnapshot(item.processFlow)) {
-      return (
-        <ProcessFlowView
-          snapshot={item.processFlow}
-          title={item.title}
-          className="h-full w-full"
-        />
-      )
-    }
-    return (
-      <MermaidView
-        source={item.mermaidSource ?? ''}
-        theme={item.mermaidTheme ?? 'dark'}
-        forceDark={(item.mermaidTheme ?? 'dark') !== 'forest'}
-        className="h-full w-full"
-      />
-    )
-  }
-  return (
-    <>
-      {(item.type === 'equation' ||
-        item.type === 'custom-equation' ||
-        item.latex) &&
-        item.latex && (
-          <LatexView
-            latex={item.latex}
-            className="overflow-visible text-inherit [&_.katex]:text-[1em] [&_.katex-display]:m-0"
-          />
-        )}
-      {(item.type === 'table' || item.tableMarkdown) && item.tableMarkdown && (
-        <MarkdownTable
-          markdown={item.tableMarkdown}
-          fitContent
-          className="overflow-visible text-inherit"
-        />
-      )}
-    </>
-  )
-}
+const AUTOFIT_SLACK_PX = NATURAL_SLACK_PX
 
 export function CanvasItemView({
   item,
@@ -116,7 +76,13 @@ export function CanvasItemView({
   const selectedCount = useCanvasStore((s) => s.selectedIds.length)
   /** Multi-select: group frame owns resize; cards float above non-selected. */
   const multiSelected = selected && selectedCount > 1
-  const displayZ = multiSelected ? item.zIndex + 10_000 : item.zIndex
+  // Stack above panel title chips (CARD_STACK_BASE). Selected floats so
+  // protruding corner grips are not covered by higher-z neighbors.
+  const displayZ = multiSelected
+    ? CARD_STACK_BASE + item.zIndex + CARD_SELECTED_FLOAT
+    : selected
+      ? CARD_STACK_BASE + item.zIndex + CARD_SELECTED_FLOAT
+      : CARD_STACK_BASE + item.zIndex
   const updateItem = useCanvasStore((s) => s.updateItem)
   const editingProcessChartId = useUiStore((s) => s.editingProcessChartId)
   const beginEditProcessChart = useUiStore((s) => s.beginEditProcessChart)
@@ -305,10 +271,18 @@ export function CanvasItemView({
     (e: ReactPointerEvent) => {
       if (!interactive) return
       if (e.button !== 0) return
-      if ((e.target as HTMLElement).closest('[data-resize-handle]')) return
+      // Resize grips + process Edit control own their pointer events
+      if (
+        (e.target as HTMLElement).closest(
+          '[data-resize-handle], [data-process-edit]',
+        )
+      ) {
+        return
+      }
 
       e.stopPropagation()
-      e.preventDefault()
+      // Do not preventDefault on pure click — helps avoid sticky capture after
+      // splash/first paint when pointerup is lost. Capture only after threshold.
 
       const shift = e.shiftKey
       if (shift) {
@@ -329,25 +303,15 @@ export function CanvasItemView({
         return
       }
 
-      // One undo step for the whole drag
-      useCanvasStore.getState().beginHistoryBatch()
-
       const hitTitle = Boolean(
         (e.target as HTMLElement).closest('[data-card-title]'),
       )
 
-      const el = rootRef.current
-      if (el) {
-        try {
-          el.setPointerCapture(e.pointerId)
-        } catch {
-          /* ignore */
-        }
-      }
-
       const state = useCanvasStore.getState()
       const idsForGroup =
-        !shift && state.selectedIds.includes(item.id) && state.selectedIds.length > 1
+        !shift &&
+        state.selectedIds.includes(item.id) &&
+        state.selectedIds.length > 1
           ? state.selectedIds
           : [item.id]
       const groupOrigins: Record<string, { x: number; y: number }> = {}
@@ -362,6 +326,8 @@ export function CanvasItemView({
         return
       }
 
+      // Intent only — pointer capture starts after DRAG_THRESHOLD so a normal
+      // click never sticks to the cursor if pointerup is missed (post-refresh).
       dragRef.current = {
         mode: 'move',
         active: false,
@@ -476,11 +442,55 @@ export function CanvasItemView({
     }
   }, [moveItem, moveItemsBy, applyItemRects])
 
+  /** End move/resize even when the event isn't on this node (lost pointerup). */
+  const endPointerGesture = useCallback(
+    (pointerId: number, opts?: { fromWindow?: boolean }) => {
+      const d = dragRef.current
+      if (!d || d.pointerId !== pointerId) return
+
+      // Click (no drag) on title overlay → hide title
+      if (d.mode === 'move' && !d.active && d.hitTitle && !d.shiftToggle) {
+        updateItem(item.id, {
+          showTitle: false,
+          contentFitKey: (item.contentFitKey ?? 0) + 1,
+        })
+      }
+
+      commitPendingGeom()
+
+      if (d.active || d.mode === 'resize') {
+        useCanvasStore.getState().endHistoryBatch()
+      } else if (d.mode === 'move' && d.active === false) {
+        // Intent-only click: no history batch was opened until drag activates
+      }
+
+      dragRef.current = null
+      setDragging(false)
+      const el = rootRef.current
+      if (el) {
+        try {
+          if (el.hasPointerCapture?.(pointerId)) {
+            el.releasePointerCapture(pointerId)
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+      void opts
+    },
+    [item.id, item.contentFitKey, updateItem, commitPendingGeom],
+  )
+
   const onPointerMove = useCallback(
     (e: ReactPointerEvent) => {
       if (!interactive) return
       const d = dragRef.current
       if (!d || d.pointerId !== e.pointerId) return
+      // Button released but we missed pointerup (splash / focus steal / etc.)
+      if (e.buttons === 0) {
+        endPointerGesture(e.pointerId, { fromWindow: true })
+        return
+      }
       // Shift+click toggle: ignore move
       if (d.shiftToggle) return
 
@@ -492,6 +502,16 @@ export function CanvasItemView({
         if (Math.hypot(rawDx, rawDy) < DRAG_THRESHOLD_PX) return
         d.active = true
         setDragging(true)
+        // Capture only once drag is real — simple clicks never hold the pointer
+        useCanvasStore.getState().beginHistoryBatch()
+        const el = rootRef.current
+        if (el) {
+          try {
+            el.setPointerCapture(e.pointerId)
+          } catch {
+            /* ignore */
+          }
+        }
       }
 
       const dx = rawDx / z
@@ -551,66 +571,47 @@ export function CanvasItemView({
         }
       }
     },
-    [item.id, zoom, interactive, snapLive],
+    [item.id, zoom, interactive, snapLive, endPointerGesture],
   )
 
   const endPointer = useCallback(
     (e: ReactPointerEvent) => {
-      if (!interactive) return
+      endPointerGesture(e.pointerId)
+    },
+    [endPointerGesture],
+  )
+
+  // Global safety net: if pointerup is lost (common after hard refresh /
+  // splash / focus changes), buttons===0 on any move ends the sticky drag.
+  useEffect(() => {
+    const onWinPointerUp = (e: PointerEvent) => {
       const d = dragRef.current
-      if (d && d.pointerId !== e.pointerId) return
-
-      // Click (no drag) on title overlay → hide title (overlay only; no size change)
-      if (d && d.mode === 'move' && !d.active && d.hitTitle && !d.shiftToggle) {
-        updateItem(item.id, {
-          showTitle: false,
-          contentFitKey: (item.contentFitKey ?? 0) + 1,
-        })
+      if (!d || d.pointerId !== e.pointerId) return
+      endPointerGesture(e.pointerId, { fromWindow: true })
+    }
+    const onWinPointerMove = (e: PointerEvent) => {
+      const d = dragRef.current
+      if (!d || d.pointerId !== e.pointerId) return
+      if (e.buttons === 0) {
+        endPointerGesture(e.pointerId, { fromWindow: true })
       }
-
-      // Single store commit at end of gesture
-      commitPendingGeom()
-
-      if (d && (d.active || d.mode === 'resize')) {
-        useCanvasStore.getState().endHistoryBatch()
-      } else if (d) {
-        // Click without drag — still close history batch opened in beginMove
-        useCanvasStore.getState().endHistoryBatch()
-      }
-
-      dragRef.current = null
-      setDragging(false)
-      for (const el of [e.currentTarget as HTMLElement, rootRef.current]) {
-        if (!el) continue
-        try {
-          el.releasePointerCapture(e.pointerId)
-        } catch {
-          /* ignore */
-        }
-      }
-    },
-    [item.id, item.contentFitKey, updateItem, interactive, commitPendingGeom],
-  )
-
-  /**
-   * Double-click empty card space → scale content (up or down) to fill the
-   * card body. Keeps card width/height; only changes render scale.
-   */
-  const onDoubleClick = useCallback(
-    (e: ReactMouseEvent) => {
-      if (!interactive) return
-      if ((e.target as HTMLElement).closest('[data-resize-handle]')) return
-      if ((e.target as HTMLElement).closest('[data-card-title]')) return
-      e.stopPropagation()
-      e.preventDefault()
-      updateItem(item.id, {
-        autoFit: false,
-        contentFill: true,
-        contentFitKey: (item.contentFitKey ?? 0) + 1,
-      })
-    },
-    [item.id, item.contentFitKey, updateItem, interactive],
-  )
+    }
+    const onBlur = () => {
+      const d = dragRef.current
+      if (!d) return
+      endPointerGesture(d.pointerId, { fromWindow: true })
+    }
+    window.addEventListener('pointerup', onWinPointerUp, true)
+    window.addEventListener('pointercancel', onWinPointerUp, true)
+    window.addEventListener('pointermove', onWinPointerMove, true)
+    window.addEventListener('blur', onBlur)
+    return () => {
+      window.removeEventListener('pointerup', onWinPointerUp, true)
+      window.removeEventListener('pointercancel', onWinPointerUp, true)
+      window.removeEventListener('pointermove', onWinPointerMove, true)
+      window.removeEventListener('blur', onBlur)
+    }
+  }, [endPointerGesture])
 
   const style = item.style ?? {}
   const pad = style.padding ?? CARD_DEFAULTS.padding
@@ -644,6 +645,8 @@ export function CanvasItemView({
         ? 'text-right'
         : 'text-left'
   const showResizeHandles = selected && !item.locked && !multiSelected
+  // Canvas-space hit that stays ~22px on screen when zoomed out
+  const gripHit = handleHitPx(zoom)
 
   // Layers eye-off: omit from board unless "Show hidden" is checked
   if (item.hidden && !canvasShowHiddenItems) {
@@ -654,6 +657,7 @@ export function CanvasItemView({
     <div
       ref={rootRef}
       data-canvas-item
+      data-testid={`canvas-item-${item.id}`}
       // overflow-visible so corner/edge handles are not clipped by rounded border
       className={`absolute select-none touch-none ${
         item.hidden ? 'opacity-40' : ''
@@ -679,10 +683,8 @@ export function CanvasItemView({
         top,
         width: safeW,
         height: safeH,
-        // Selected + handles above neighbors so grips stay clickable
-        zIndex: showResizeHandles
-          ? Math.max(displayZ, 1) + 50
-          : displayZ,
+        // displayZ already floats selected above neighbors + panel chips
+        zIndex: displayZ,
         boxSizing: 'border-box',
         overflow: 'visible',
       }}
@@ -690,7 +692,10 @@ export function CanvasItemView({
       onPointerMove={onPointerMove}
       onPointerUp={endPointer}
       onPointerCancel={endPointer}
-      onDoubleClick={onDoubleClick}
+      onLostPointerCapture={(e) => {
+        // Capture lost without pointerup (browser/tab focus) — end gesture
+        endPointerGesture(e.pointerId, { fromWindow: true })
+      }}
       onDragStart={(e) => e.preventDefault()}
       onClick={(e) => {
         e.stopPropagation()
@@ -751,7 +756,7 @@ export function CanvasItemView({
             }}
           >
             <div ref={naturalRef}>
-              <NaturalBody item={item} />
+              <NaturalCardBody item={item} />
             </div>
           </div>
         )}
@@ -766,7 +771,7 @@ export function CanvasItemView({
         </div>
       </div>
 
-      {/* Free-transform handles sit outside clipped chrome (large hit targets) */}
+      {/* Free-transform handles sit outside clipped chrome (zoom-stable hits) */}
       {showResizeHandles &&
         HANDLE_LAYOUT.map(({ id, className }) => (
           <div
@@ -774,10 +779,10 @@ export function CanvasItemView({
             data-resize-handle={id}
             className={`${className} z-[60] flex items-center justify-center`}
             style={{
-              width: HANDLE_HIT_PX,
-              height: HANDLE_HIT_PX,
+              width: gripHit,
+              height: gripHit,
+              // Invisible padding keeps a large hit without a huge blue square
               cursor: RESIZE_CURSOR[id],
-              // Extend hit area without enlarging visual grip
               touchAction: 'none',
             }}
             onPointerDown={beginResize(id)}
@@ -804,12 +809,13 @@ export function CanvasItemView({
         </div>
       )}
 
-      {/* Process chart: Edit mode control (bottom-right, like zoom badges) */}
+      {/* Process Edit — top-right inset (bottom edge is full of resize grips
+          when selected: SW / S / SE at z-60 with large hit boxes). */}
       {isProcessChart && interactive && !item.locked && (
         <button
           type="button"
           data-process-edit
-          className={`absolute bottom-1 right-1 z-30 rounded px-1.5 py-0.5 text-[9px] font-semibold shadow-sm ring-1 ${
+          className={`pointer-events-auto absolute right-1.5 top-1.5 z-[70] rounded px-1.5 py-0.5 text-[9px] font-semibold shadow-sm ring-1 ${
             isEditingThis
               ? 'bg-emerald-500/25 text-emerald-200 ring-emerald-400/50'
               : 'bg-zinc-950/90 text-zinc-200 ring-zinc-600 hover:bg-indigo-500/25 hover:text-indigo-100 hover:ring-indigo-400/60'

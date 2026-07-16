@@ -13,7 +13,7 @@ import {
   getPortLayout,
   type PortPlacement,
 } from '../../lib/portLayout'
-import { wrapMindmapLabelLines } from '../../lib/mindmap'
+import { mindmapLabelLayout } from '../../lib/mindmap'
 import { fitLabelFontPx } from '../../lib/fitNodeLabel'
 
 // ─── SVG shape paths (viewBox 0 0 200 100, preserveAspectRatio="none") ────────
@@ -338,7 +338,7 @@ function NodeLabel({
     <span
       className={
         allowWrap
-          ? 'select-none text-center font-medium leading-tight break-words whitespace-pre-wrap'
+          ? 'select-none text-center font-medium leading-tight whitespace-pre-wrap'
           : 'select-none text-center font-medium leading-tight whitespace-nowrap'
       }
       style={{
@@ -350,6 +350,9 @@ function NodeLabel({
         // Use almost the full label box — avoid wasteful inner pad
         padding: 0,
         lineHeight: 1.15,
+        // Pre-wrapped at spaces only (displayLabel already has \n) — never mid-word
+        wordBreak: allowWrap ? 'normal' : undefined,
+        overflowWrap: allowWrap ? 'normal' : undefined,
       }}
     >
       {value}
@@ -397,23 +400,21 @@ export function FlowNode({ id, data, selected, width, height }: NodeProps) {
   const fontSizePx = useMemo(() => {
     const label = String(nodeData.label ?? '')
     if (isMindmap) {
-      const lines = wrapMindmapLabelLines(
-        label,
-        boxW > 140 ? 16 : 13,
-      )
+      const layout = mindmapLabelLayout(label, boxW, boxH)
       return fitLabelFontPx(label, boxW, boxH, {
-        lines,
-        padX: 8,
-        padY: 8,
-        minPx: 12,
-        maxPx: 28,
+        lines: layout.lines,
+        padX: layout.pad,
+        padY: layout.pad,
+        minPx: layout.minPx,
+        maxPx: layout.maxPx,
       })
     }
+    const side = Math.min(boxW, boxH)
     return fitLabelFontPx(label, boxW, boxH, {
       padX: 8,
       padY: 6,
       minPx: 13,
-      maxPx: 32,
+      maxPx: Math.max(32, Math.floor(side * 0.4)),
     })
   }, [nodeData.label, boxW, boxH, isMindmap])
   const fontSize = `${fontSizePx}px`
@@ -492,15 +493,12 @@ export function FlowNode({ id, data, selected, width, height }: NodeProps) {
     nodeData.portOnPerimeter,
   ])
 
-  // Mindmap only: same line breaks as auto-size / card SVG so text stays inside.
+  // Mindmap only: same line breaks as MindmapNode / card SVG (spaces only).
   // Flowchart: never force wrap — Mermaid/layout boxes assume single-line labels.
   const displayLabel = isMindmap
-    ? wrapMindmapLabelLines(
-        nodeData.label,
-        typeof nodeData.label === 'string' && nodeData.label.length > 18
-          ? 16
-          : 13,
-      ).join('\n')
+    ? mindmapLabelLayout(String(nodeData.label ?? ''), boxW, boxH).lines.join(
+        '\n',
+      )
     : nodeData.label
 
   const labelProps: LabelProps = {

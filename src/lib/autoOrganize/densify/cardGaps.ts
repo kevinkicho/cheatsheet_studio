@@ -7,6 +7,13 @@ import {
 } from '../folders'
 import { rectsOverlap } from '../geometry'
 
+/**
+ * Separate paint-overlapping body cards.
+ *
+ * Always runs for **all** pairs (including different folders). An older
+ * same-folder-only filter left Clinical Psychology ∩ CBT-style stacks after
+ * hierarchical re-pack / multipage when leaf-group passes missed a collision.
+ */
 export function resolveCardOverlaps(
   items: CanvasItem[],
   opts: { grid?: number; contentRight?: number },
@@ -16,35 +23,48 @@ export function resolveCardOverlaps(
   const next = items.map((it) => ({ ...it }))
   const visible = () => next.filter((i) => !i.hidden && !isHeadingCard(i))
 
-  for (let pass = 0; pass < 6; pass++) {
+  for (let pass = 0; pass < 24; pass++) {
     let moved = false
+    // Re-read positions each pass from `next` (not a stale snapshot)
     const cards = visible().sort(
       (a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id),
     )
     for (let i = 0; i < cards.length; i++) {
       for (let j = i + 1; j < cards.length; j++) {
-        const a = cards[i]!
-        const b = cards[j]!
-        if (a.folderId && b.folderId && a.folderId !== b.folderId) {
-          continue
-        }
+        // Always re-fetch from next — earlier pairs may have moved a/b
+        const a = next.find((x) => x.id === cards[i]!.id)!
+        const b = next.find((x) => x.id === cards[j]!.id)!
+        if (!a || !b || a.hidden || b.hidden) continue
         if (!rectsOverlap(a, b, 0)) continue
         const bi = next.findIndex((x) => x.id === b.id)
         if (bi < 0) continue
         const cur = next[bi]!
+        // Prefer slide right; wrap below when past pack right edge.
         let nx = a.x + a.width
-        let ny = cur.y
+        let ny = a.y
         if (nx + cur.width > contentRight + 1) {
           nx = Math.min(a.x, cur.x)
-          ny = Math.max(a.y + a.height, cur.y + 1)
+          ny = a.y + a.height
         }
         nx = Math.round(nx / grid) * grid
         ny = Math.round(ny / grid) * grid
-        if (nx === cur.x && ny === cur.y) {
-          ny = cur.y + grid
+        // Keep pushing down until this pair no longer paints over each other.
+        let guard = 0
+        let trial = { ...cur, x: nx, y: ny }
+        while (rectsOverlap(a, trial, 0) && guard < 40) {
+          ny = Math.round((Math.max(a.y + a.height, trial.y) + grid) / grid) * grid
+          if (ny <= a.y) ny = a.y + a.height
+          // If still too wide for the band, pin left of a and stack
+          if (nx + cur.width > contentRight + 1) {
+            nx = Math.round(a.x / grid) * grid
+          }
+          trial = { ...cur, x: nx, y: ny }
+          guard++
         }
-        next[bi] = { ...cur, x: nx, y: ny }
-        moved = true
+        if (cur.x !== trial.x || cur.y !== trial.y) {
+          next[bi] = trial
+          moved = true
+        }
       }
     }
     if (!moved) break

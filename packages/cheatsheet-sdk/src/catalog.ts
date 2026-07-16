@@ -18,6 +18,14 @@ export type CatalogBlockType =
   | 'equation'
   | 'table'
   | 'figure'
+  | 'definition'
+  | 'list'
+  | 'callout'
+  | 'code'
+  | 'constant'
+  | 'identity-set'
+  | 'plot'
+  | 'matrix'
   | 'process'
 
 export type CatalogItem = {
@@ -31,6 +39,18 @@ export type CatalogItem = {
   tableMarkdown?: string
   imageUrl?: string
   description?: string
+  term?: string
+  body?: string
+  listItems?: string[]
+  listOrdered?: boolean
+  calloutVariant?: 'note' | 'tip' | 'info' | 'warn' | 'danger'
+  code?: string
+  codeLanguage?: string
+  symbol?: string
+  value?: string
+  unit?: string
+  identities?: string[]
+  matrixRows?: string[][]
   /** Process charts only */
   mermaidSource?: string
   mermaidKind?: 'flowchart' | 'mindmap'
@@ -51,6 +71,21 @@ function monorepoRoot(): string {
   return path.resolve(pkgRoot(), '../..')
 }
 
+const SEED_CATALOG_TYPES = new Set<string>([
+  'equation',
+  'table',
+  'figure',
+  'definition',
+  'list',
+  'callout',
+  'code',
+  'constant',
+  'identity-set',
+  'plot',
+  'matrix',
+  'process',
+])
+
 function mapSeed(
   list: Array<{
     id: string
@@ -63,19 +98,25 @@ function mapSeed(
     tableMarkdown?: string
     imageUrl?: string
     description?: string
+    term?: string
+    body?: string
+    listItems?: string[]
+    listOrdered?: boolean
+    calloutVariant?: string
+    code?: string
+    codeLanguage?: string
+    symbol?: string
+    value?: string
+    unit?: string
+    identities?: string[]
+    matrixRows?: string[][]
     mermaidSource?: string
     mermaidKind?: string
     mermaidDirection?: string
   }>,
 ): CatalogItem[] {
   return list
-    .filter(
-      (i) =>
-        i.type === 'equation' ||
-        i.type === 'table' ||
-        i.type === 'figure' ||
-        i.type === 'process',
-    )
+    .filter((i) => SEED_CATALOG_TYPES.has(i.type))
     .map((i) => {
       const base: CatalogItem = {
         id: i.id,
@@ -88,6 +129,26 @@ function mapSeed(
         tableMarkdown: i.tableMarkdown,
         imageUrl: i.imageUrl,
         description: i.description,
+        term: i.term,
+        body: i.body,
+        listItems: i.listItems,
+        listOrdered: i.listOrdered,
+        code: i.code,
+        codeLanguage: i.codeLanguage,
+        symbol: i.symbol,
+        value: i.value,
+        unit: i.unit,
+        identities: i.identities,
+        matrixRows: i.matrixRows,
+      }
+      if (
+        i.calloutVariant === 'note' ||
+        i.calloutVariant === 'tip' ||
+        i.calloutVariant === 'info' ||
+        i.calloutVariant === 'warn' ||
+        i.calloutVariant === 'danger'
+      ) {
+        base.calloutVariant = i.calloutVariant
       }
       if (i.type === 'process' || i.mermaidSource) {
         base.mermaidSource = i.mermaidSource
@@ -197,7 +258,7 @@ export function clearCatalogCache(): void {
 
 export type CatalogSearchOpts = {
   query?: string
-  /** equation | table | figure | process | all */
+  /** equation | table | figure | definition | … | process | all */
   type?: CatalogBlockType | 'all'
   subject?: string
   /** flowchart | mindmap — only applies when type is process or all */
@@ -252,6 +313,14 @@ export async function searchCatalog(
         i.description,
         ...(i.tags ?? []),
         i.latex,
+        i.term,
+        i.body,
+        i.code,
+        i.symbol,
+        i.value,
+        i.unit,
+        ...(i.listItems ?? []),
+        ...(i.identities ?? []),
         i.mermaidSource,
       ]
         .filter(Boolean)

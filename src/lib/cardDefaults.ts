@@ -44,7 +44,7 @@ export function withBorderStyle(
   return next
 }
 
-/** Figure / custom image (not equation or table). */
+/** Figure / plot / custom image (not equation or table). */
 export function isFigureLike(
   item: Pick<
     CanvasItem,
@@ -55,14 +55,19 @@ export function isFigureLike(
   return (
     item.type === 'figure' ||
     item.type === 'custom-image' ||
+    item.type === 'plot' ||
     (Boolean(item.imageUrl) && !item.latex && !item.tableMarkdown)
   )
 }
 
 export function isProcessChart(
-  item: Pick<CanvasItem, 'type' | 'mermaidSource'>,
+  item: Pick<CanvasItem, 'type' | 'mermaidSource' | 'processFlow'>,
 ): boolean {
-  return item.type === 'process-chart' || Boolean(item.mermaidSource)
+  return (
+    item.type === 'process-chart' ||
+    Boolean(item.mermaidSource) ||
+    Boolean(item.processFlow)
+  )
 }
 
 /**
@@ -202,11 +207,15 @@ export function newCardBase(
   const figure =
     type === 'figure' ||
     type === 'custom-image' ||
+    type === 'plot' ||
     (Boolean(partial.imageUrl) &&
       !partial.latex &&
       !partial.tableMarkdown &&
       !partial.mermaidSource)
-  const processChart = type === 'process-chart' || Boolean(partial.mermaidSource)
+  const processChart =
+    type === 'process-chart' ||
+    Boolean(partial.mermaidSource) ||
+    Boolean(partial.processFlow)
 
   return normalizeCanvasItem({
     type,

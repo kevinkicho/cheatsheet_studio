@@ -48,4 +48,13 @@ describe('fitLabelFontPx', () => {
     })
     expect(multi).toBeLessThan(single)
   })
+
+  it('enlarged box can grow past the old 32px ceiling when maxPx allows', () => {
+    const big = fitLabelFontPx('Hi', 200, 200, {
+      padX: 12,
+      padY: 12,
+      maxPx: Math.floor(200 * 0.48),
+    })
+    expect(big).toBeGreaterThan(32)
+  })
 })

@@ -3,6 +3,7 @@ import {
   autoPrintPageOrigins,
   clampPrintPageCount,
   computePrintPageOrigins,
+  dissolvedOuterPageSize,
   multiPageLayoutBounds,
   normalizePrintPageLayout,
   PRINT_PAGE_STACK_GAP,
@@ -49,6 +50,20 @@ describe('print page layout origins', () => {
     expect(o[1]!.y).toBe(0)
     expect(o[2]!.x).toBe(0)
     expect(o[2]!.y).toBeGreaterThan(0)
+  })
+
+  it('dissolvedOuterPageSize grid 6 = 3×2 abutted (no inter-page gap)', () => {
+    const d = dissolvedOuterPageSize(letter, 6, 'grid')
+    expect(d.cols).toBe(3)
+    expect(d.rows).toBe(2)
+    expect(d.outerW).toBe(3 * letter.width)
+    expect(d.outerH).toBe(2 * letter.height)
+  })
+
+  it('grid with gap 0 abuts pages', () => {
+    const o = autoPrintPageOrigins(letter, 6, 'grid', 0)
+    expect(o[1]).toEqual({ x: letter.width, y: 0 })
+    expect(o[3]).toEqual({ x: 0, y: letter.height })
   })
 
   it('free mode uses stored positions with vertical fallback', () => {

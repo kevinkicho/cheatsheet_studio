@@ -66,6 +66,51 @@ export type AddProcessInput = {
   folderId?: string | null
 }
 
+type PlaceOpts = {
+  title?: string
+  x?: number
+  y?: number
+  width?: number
+  height?: number
+  folderId?: string | null
+  libraryItemId?: string
+}
+
+export type AddDefinitionInput = PlaceOpts & {
+  term: string
+  body: string
+}
+export type AddListInput = PlaceOpts & {
+  listItems: string[]
+  listOrdered?: boolean
+}
+export type AddCalloutInput = PlaceOpts & {
+  body: string
+  calloutVariant?: CanvasItem['calloutVariant']
+}
+export type AddCodeInput = PlaceOpts & {
+  code: string
+  codeLanguage?: string
+}
+export type AddConstantInput = PlaceOpts & {
+  symbol: string
+  value?: string
+  unit?: string
+  latex?: string
+  body?: string
+}
+export type AddIdentitySetInput = PlaceOpts & {
+  identities: string[]
+}
+export type AddPlotInput = PlaceOpts & {
+  imageUrl: string
+  imagePath?: string
+}
+export type AddMatrixInput = PlaceOpts & {
+  matrixRows?: string[][]
+  latex?: string
+}
+
 /**
  * Fluent sheet builder for agents and scripts.
  * Output is a portable SheetDocument the Studio app can open (after push or import).
@@ -238,6 +283,134 @@ export class SheetBuilder {
     return this
   }
 
+  private pushCard(
+    type: CanvasItem['type'],
+    idPrefix: string,
+    defaults: { width: number; height: number; title: string; autoFit?: boolean },
+    input: PlaceOpts,
+    payload: Partial<CanvasItem>,
+  ): this {
+    const width = input.width ?? defaults.width
+    const height = input.height ?? defaults.height
+    const folderId = this.resolveFolderId(input.folderId)
+    const item: CanvasItem = {
+      id: createId(idPrefix),
+      type,
+      title: input.title ?? defaults.title,
+      x: input.x ?? this.cursorX,
+      y: input.y ?? this.cursorY,
+      width,
+      height,
+      zIndex: this.nextZ++,
+      libraryItemId: input.libraryItemId,
+      autoFit: defaults.autoFit !== false,
+      contentFill: true,
+      keepAspectRatio: true,
+      showTitle: true,
+      folderId: folderId ?? undefined,
+      style: { ...DEFAULT_ITEM_STYLE },
+      ...payload,
+    }
+    this.items.push(item)
+    this.advanceCursor(height)
+    return this
+  }
+
+  addDefinition(input: AddDefinitionInput): this {
+    return this.pushCard(
+      'definition',
+      'def',
+      { width: 280, height: 110, title: 'Definition' },
+      input,
+      { term: input.term, body: input.body },
+    )
+  }
+
+  addList(input: AddListInput): this {
+    const n = Math.max(input.listItems.length, 1)
+    return this.pushCard(
+      'list',
+      'list',
+      { width: 260, height: Math.min(320, 48 + n * 28), title: 'List' },
+      input,
+      { listItems: input.listItems, listOrdered: input.listOrdered },
+    )
+  }
+
+  addCallout(input: AddCalloutInput): this {
+    return this.pushCard(
+      'callout',
+      'note',
+      { width: 280, height: 100, title: 'Callout' },
+      input,
+      { body: input.body, calloutVariant: input.calloutVariant ?? 'note' },
+    )
+  }
+
+  addCode(input: AddCodeInput): this {
+    const lines = Math.max(input.code.split('\n').length, 1)
+    return this.pushCard(
+      'code',
+      'code',
+      { width: 320, height: Math.min(360, 40 + lines * 18), title: 'Code' },
+      input,
+      { code: input.code, codeLanguage: input.codeLanguage },
+    )
+  }
+
+  addConstant(input: AddConstantInput): this {
+    return this.pushCard(
+      'constant',
+      'const',
+      { width: 260, height: 80, title: 'Constant' },
+      input,
+      {
+        symbol: input.symbol,
+        value: input.value,
+        unit: input.unit,
+        latex: input.latex,
+        body: input.body,
+      },
+    )
+  }
+
+  addIdentitySet(input: AddIdentitySetInput): this {
+    const n = Math.max(input.identities.length, 1)
+    return this.pushCard(
+      'identity-set',
+      'idset',
+      { width: 300, height: Math.min(280, 40 + n * 36), title: 'Identities' },
+      input,
+      { identities: input.identities },
+    )
+  }
+
+  addPlot(input: AddPlotInput): this {
+    return this.pushCard(
+      'plot',
+      'plot',
+      { width: 240, height: 220, title: 'Plot', autoFit: false },
+      input,
+      { imageUrl: input.imageUrl, imagePath: input.imagePath },
+    )
+  }
+
+  addMatrix(input: AddMatrixInput): this {
+    const rows = input.matrixRows?.length ?? 2
+    const cols = input.matrixRows?.[0]?.length ?? 2
+    return this.pushCard(
+      'matrix',
+      'mat',
+      {
+        width: Math.min(360, Math.max(160, cols * 48 + 48)),
+        height: Math.min(280, Math.max(80, rows * 36 + 40)),
+        title: 'Matrix',
+      },
+      input,
+      { matrixRows: input.matrixRows, latex: input.latex },
+    )
+  }
+
   addFolder(name: string, parentId?: string | null): string {
     const id = createId('folder')
     this.folders.push({
@@ -315,6 +488,71 @@ export class SheetBuilder {
       return this.addFigure({
         title: item.title,
         imageUrl: item.imageUrl,
+        libraryItemId: item.id,
+      })
+    }
+    if (item.type === 'definition' && (item.term || item.body)) {
+      return this.addDefinition({
+        title: item.title,
+        term: item.term ?? item.title,
+        body: item.body ?? '',
+        libraryItemId: item.id,
+      })
+    }
+    if (item.type === 'list' && item.listItems?.length) {
+      return this.addList({
+        title: item.title,
+        listItems: item.listItems,
+        listOrdered: item.listOrdered,
+        libraryItemId: item.id,
+      })
+    }
+    if (item.type === 'callout' && item.body) {
+      return this.addCallout({
+        title: item.title,
+        body: item.body,
+        calloutVariant: item.calloutVariant,
+        libraryItemId: item.id,
+      })
+    }
+    if (item.type === 'code' && item.code) {
+      return this.addCode({
+        title: item.title,
+        code: item.code,
+        codeLanguage: item.codeLanguage,
+        libraryItemId: item.id,
+      })
+    }
+    if (item.type === 'constant' && (item.symbol || item.latex)) {
+      return this.addConstant({
+        title: item.title,
+        symbol: item.symbol ?? '?',
+        value: item.value,
+        unit: item.unit,
+        latex: item.latex,
+        body: item.body,
+        libraryItemId: item.id,
+      })
+    }
+    if (item.type === 'identity-set' && item.identities?.length) {
+      return this.addIdentitySet({
+        title: item.title,
+        identities: item.identities,
+        libraryItemId: item.id,
+      })
+    }
+    if (item.type === 'plot' && item.imageUrl) {
+      return this.addPlot({
+        title: item.title,
+        imageUrl: item.imageUrl,
+        libraryItemId: item.id,
+      })
+    }
+    if (item.type === 'matrix' && (item.matrixRows?.length || item.latex)) {
+      return this.addMatrix({
+        title: item.title,
+        matrixRows: item.matrixRows,
+        latex: item.latex,
         libraryItemId: item.id,
       })
     }

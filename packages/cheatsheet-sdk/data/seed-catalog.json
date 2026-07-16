@@ -1,11 +1,19 @@
 {
-  "version": 2,
-  "exportedAt": "2026-07-13T21:32:08.422Z",
-  "count": 184,
+  "version": 3,
+  "exportedAt": "2026-07-16T02:01:44.502Z",
+  "count": 317,
   "types": {
     "equation": 143,
     "table": 13,
     "figure": 9,
+    "definition": 23,
+    "list": 15,
+    "callout": 18,
+    "code": 12,
+    "constant": 19,
+    "identity-set": 14,
+    "matrix": 14,
+    "plot": 18,
     "process": 19
   },
   "items": [
@@ -1519,14 +1527,15 @@
     {
       "id": "fin-capm",
       "type": "equation",
-      "title": "CAPM",
+      "title": "CAPM expected return",
       "subject": "finance",
       "topic": "Asset Pricing",
       "tags": [
-        "returns"
+        "returns",
+        "capm"
       ],
-      "latex": "E[R_i] = R_f + \\beta_i\\big(E[R_m] - R_f\\big)",
-      "description": "Expected return vs systematic risk."
+      "latex": "\\mathrm{E}[R_{i}] = R_{f} + \\beta_{i}\\bigl(\\mathrm{E}[R_{m}] - R_{f}\\bigr)",
+      "description": "Security market line: required / expected return from systematic risk."
     },
     {
       "id": "fin-beta",
@@ -1535,9 +1544,10 @@
       "subject": "finance",
       "topic": "Asset Pricing",
       "tags": [
-        "risk"
+        "risk",
+        "capm"
       ],
-      "latex": "\\beta_i = \\frac{\\mathrm{Cov}(R_i, R_m)}{\\mathrm{Var}(R_m)}",
+      "latex": "\\beta_{i} = \\frac{\\mathrm{Cov}(R_{i}, R_{m})}{\\mathrm{Var}(R_{m})}",
       "description": "Sensitivity to market returns."
     },
     {
@@ -1585,7 +1595,7 @@
       "tags": [
         "risk"
       ],
-      "latex": "S = \\frac{E[R_p] - R_f}{\\sigma_p}",
+      "latex": "S = \\frac{\\mathrm{E}[R_{p}] - R_{f}}{\\sigma_{p}}",
       "description": "Excess return per unit of total risk."
     },
     {
@@ -1597,7 +1607,7 @@
       "tags": [
         "risk"
       ],
-      "latex": "T = \\frac{E[R_p] - R_f}{\\beta_p}",
+      "latex": "T = \\frac{\\mathrm{E}[R_{p}] - R_{f}}{\\beta_{p}}",
       "description": "Excess return per unit of systematic risk."
     },
     {
@@ -2023,6 +2033,2031 @@
       ],
       "imageUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22260%22%20height%3D%22100%22%20viewBox%3D%220%200%20260%20100%22%3E%0A%20%20%20%20%20%20%3Cline%20x1%3D%2220%22%20y1%3D%2255%22%20x2%3D%22240%22%20y2%3D%2255%22%20stroke%3D%22%236b7280%22%20stroke-width%3D%222%22%2F%3E%0A%20%20%20%20%20%20%3Ccircle%20cx%3D%2240%22%20cy%3D%2255%22%20r%3D%224%22%20fill%3D%22%23818cf8%22%2F%3E%0A%20%20%20%20%20%20%3Ccircle%20cx%3D%22100%22%20cy%3D%2255%22%20r%3D%224%22%20fill%3D%22%23818cf8%22%2F%3E%0A%20%20%20%20%20%20%3Ccircle%20cx%3D%22160%22%20cy%3D%2255%22%20r%3D%224%22%20fill%3D%22%23818cf8%22%2F%3E%0A%20%20%20%20%20%20%3Ccircle%20cx%3D%22220%22%20cy%3D%2255%22%20r%3D%224%22%20fill%3D%22%23818cf8%22%2F%3E%0A%20%20%20%20%20%20%3Cline%20x1%3D%2240%22%20y1%3D%2255%22%20x2%3D%2240%22%20y2%3D%2225%22%20stroke%3D%22%23f87171%22%20stroke-width%3D%222%22%2F%3E%0A%20%20%20%20%20%20%3Cline%20x1%3D%22100%22%20y1%3D%2255%22%20x2%3D%22100%22%20y2%3D%2235%22%20stroke%3D%22%2334d399%22%20stroke-width%3D%222%22%2F%3E%0A%20%20%20%20%20%20%3Cline%20x1%3D%22160%22%20y1%3D%2255%22%20x2%3D%22160%22%20y2%3D%2230%22%20stroke%3D%22%2334d399%22%20stroke-width%3D%222%22%2F%3E%0A%20%20%20%20%20%20%3Cline%20x1%3D%22220%22%20y1%3D%2255%22%20x2%3D%22220%22%20y2%3D%2228%22%20stroke%3D%22%2334d399%22%20stroke-width%3D%222%22%2F%3E%0A%20%20%20%20%20%20%3Ctext%20x%3D%2234%22%20y%3D%2218%22%20fill%3D%22%23fca5a5%22%20font-size%3D%2210%22%20font-family%3D%22sans-serif%22%3E%E2%88%92PV%3C%2Ftext%3E%0A%20%20%20%20%20%20%3Ctext%20x%3D%2295%22%20y%3D%2228%22%20fill%3D%22%2386efac%22%20font-size%3D%2210%22%20font-family%3D%22sans-serif%22%3EC%3C%2Ftext%3E%0A%20%20%20%20%20%20%3Ctext%20x%3D%22155%22%20y%3D%2224%22%20fill%3D%22%2386efac%22%20font-size%3D%2210%22%20font-family%3D%22sans-serif%22%3EC%3C%2Ftext%3E%0A%20%20%20%20%20%20%3Ctext%20x%3D%22215%22%20y%3D%2222%22%20fill%3D%22%2386efac%22%20font-size%3D%2210%22%20font-family%3D%22sans-serif%22%3EC%3C%2Ftext%3E%0A%20%20%20%20%20%20%3Ctext%20x%3D%2235%22%20y%3D%2275%22%20fill%3D%22%239ca3af%22%20font-size%3D%2210%22%20font-family%3D%22sans-serif%22%3E0%3C%2Ftext%3E%0A%20%20%20%20%20%20%3Ctext%20x%3D%2295%22%20y%3D%2275%22%20fill%3D%22%239ca3af%22%20font-size%3D%2210%22%20font-family%3D%22sans-serif%22%3E1%3C%2Ftext%3E%0A%20%20%20%20%20%20%3Ctext%20x%3D%22155%22%20y%3D%2275%22%20fill%3D%22%239ca3af%22%20font-size%3D%2210%22%20font-family%3D%22sans-serif%22%3E2%3C%2Ftext%3E%0A%20%20%20%20%20%20%3Ctext%20x%3D%22215%22%20y%3D%2275%22%20fill%3D%22%239ca3af%22%20font-size%3D%2210%22%20font-family%3D%22sans-serif%22%3En%3C%2Ftext%3E%0A%20%20%20%20%3C%2Fsvg%3E",
       "description": "Annuity cash-flow timeline."
+    },
+    {
+      "id": "def-derivative",
+      "type": "definition",
+      "title": "Derivative (definition)",
+      "subject": "mathematics",
+      "topic": "Calculus",
+      "tags": [
+        "calculus",
+        "glossary"
+      ],
+      "description": "Limit definition motivates the tangent-line interpretation.",
+      "term": "Derivative",
+      "body": "The derivative f′(a) is the instantaneous rate of change of f at a — the slope of the tangent line to y = f(x) at x = a."
+    },
+    {
+      "id": "def-npv",
+      "type": "definition",
+      "title": "Net Present Value",
+      "subject": "finance",
+      "topic": "Capital Budgeting",
+      "tags": [
+        "finance",
+        "glossary"
+      ],
+      "term": "NPV",
+      "body": "Present value of all cash inflows minus the present value of all cash outflows, discounted at the project’s cost of capital."
+    },
+    {
+      "id": "list-limit-laws",
+      "type": "list",
+      "title": "Limit laws checklist",
+      "subject": "mathematics",
+      "topic": "Calculus",
+      "tags": [
+        "calculus",
+        "limits"
+      ],
+      "description": "Basic algebraic limit rules.",
+      "listItems": [
+        "Sum / difference: lim (f ± g) = lim f ± lim g",
+        "Product: lim (f·g) = (lim f)(lim g)",
+        "Quotient: lim (f/g) = (lim f)/(lim g) if lim g ≠ 0",
+        "Constant multiple: lim (c f) = c lim f"
+      ]
+    },
+    {
+      "id": "list-stoich-steps",
+      "type": "list",
+      "title": "Stoichiometry steps",
+      "subject": "chemistry",
+      "topic": "Stoichiometry",
+      "tags": [
+        "stoichiometry",
+        "procedure"
+      ],
+      "listItems": [
+        "Balance the chemical equation",
+        "Convert given mass → moles",
+        "Use mole ratio from coefficients",
+        "Convert moles → desired unit"
+      ],
+      "listOrdered": true
+    },
+    {
+      "id": "callout-domain",
+      "type": "callout",
+      "title": "Check the domain",
+      "subject": "mathematics",
+      "topic": "Algebra",
+      "tags": [
+        "algebra",
+        "tip"
+      ],
+      "body": "Before simplifying, note where expressions are undefined (division by zero, even roots of negatives, log of non-positive).",
+      "calloutVariant": "tip"
+    },
+    {
+      "id": "callout-units",
+      "type": "callout",
+      "title": "Unit consistency",
+      "subject": "physics",
+      "topic": "Problem Solving",
+      "tags": [
+        "units",
+        "warn"
+      ],
+      "body": "Always convert to SI (or a consistent set) before substituting into formulas. Mixed units are a common source of wrong answers.",
+      "calloutVariant": "warn"
+    },
+    {
+      "id": "code-newton",
+      "type": "code",
+      "title": "Newton iteration (pseudocode)",
+      "subject": "mathematics",
+      "topic": "Numerical Methods",
+      "tags": [
+        "numerical",
+        "root-finding"
+      ],
+      "description": "Newton–Raphson root finder sketch.",
+      "code": "x ← x0\nfor k = 1..N:\n  if |f(x)| < tol: return x\n  x ← x − f(x) / f'(x)\nreturn x",
+      "codeLanguage": "pseudocode"
+    },
+    {
+      "id": "code-npv-loop",
+      "type": "code",
+      "title": "NPV accumulation",
+      "subject": "finance",
+      "topic": "Capital Budgeting",
+      "tags": [
+        "npv",
+        "code"
+      ],
+      "code": "npv = 0\nfor t, cf in enumerate(cashflows):\n  npv += cf / (1 + r)**t\nreturn npv",
+      "codeLanguage": "python-ish"
+    },
+    {
+      "id": "const-c",
+      "type": "constant",
+      "title": "Speed of light",
+      "subject": "physics",
+      "topic": "Constants",
+      "tags": [
+        "constant",
+        "em"
+      ],
+      "latex": "c = 2.998\\times 10^{8}\\,\\mathrm{m/s}",
+      "body": "Exact defined value in SI is 299 792 458 m/s.",
+      "symbol": "c",
+      "value": "2.998\\times 10^{8}",
+      "unit": "m/s"
+    },
+    {
+      "id": "const-avogadro",
+      "type": "constant",
+      "title": "Avogadro's number",
+      "subject": "chemistry",
+      "topic": "Constants",
+      "tags": [
+        "constant",
+        "mole"
+      ],
+      "latex": "N_A = 6.022\\times 10^{23}\\,\\mathrm{mol^{-1}}",
+      "symbol": "N_A",
+      "value": "6.022\\times 10^{23}",
+      "unit": "mol^{-1}"
+    },
+    {
+      "id": "const-gas-r",
+      "type": "constant",
+      "title": "Gas constant R",
+      "subject": "chemistry",
+      "topic": "Constants",
+      "tags": [
+        "constant",
+        "thermo"
+      ],
+      "latex": "R = 8.314\\,\\mathrm{J\\,mol^{-1}\\,K^{-1}}",
+      "symbol": "R",
+      "value": "8.314",
+      "unit": "J/(mol·K)"
+    },
+    {
+      "id": "id-pythag-trig",
+      "type": "identity-set",
+      "title": "Pythagorean identities",
+      "subject": "mathematics",
+      "topic": "Trigonometry",
+      "tags": [
+        "trig",
+        "identity"
+      ],
+      "description": "Core Pythagorean relations.",
+      "identities": [
+        "\\sin^2\\theta + \\cos^2\\theta = 1",
+        "1 + \\tan^2\\theta = \\sec^2\\theta",
+        "1 + \\cot^2\\theta = \\csc^2\\theta"
+      ]
+    },
+    {
+      "id": "id-log-laws",
+      "type": "identity-set",
+      "title": "Logarithm laws",
+      "subject": "mathematics",
+      "topic": "Algebra",
+      "tags": [
+        "log",
+        "identity"
+      ],
+      "identities": [
+        "\\log_b(xy) = \\log_b x + \\log_b y",
+        "\\log_b(x/y) = \\log_b x - \\log_b y",
+        "\\log_b(x^k) = k\\log_b x"
+      ]
+    },
+    {
+      "id": "mat-2x2",
+      "type": "matrix",
+      "title": "General 2×2 matrix",
+      "subject": "mathematics",
+      "topic": "Linear Algebra",
+      "tags": [
+        "matrix",
+        "linalg"
+      ],
+      "description": "Prototype 2×2 matrix.",
+      "matrixRows": [
+        [
+          "a",
+          "b"
+        ],
+        [
+          "c",
+          "d"
+        ]
+      ]
+    },
+    {
+      "id": "mat-rotation-2d",
+      "type": "matrix",
+      "title": "2D rotation matrix",
+      "subject": "mathematics",
+      "topic": "Linear Algebra",
+      "tags": [
+        "matrix",
+        "rotation"
+      ],
+      "description": "Rotates vectors counterclockwise by θ.",
+      "matrixRows": [
+        [
+          "\\cos\\theta",
+          "-\\sin\\theta"
+        ],
+        [
+          "\\sin\\theta",
+          "\\cos\\theta"
+        ]
+      ]
+    },
+    {
+      "id": "plot-parabola",
+      "type": "plot",
+      "title": "Parabola y = x²",
+      "subject": "mathematics",
+      "topic": "Functions",
+      "tags": [
+        "plot",
+        "graph"
+      ],
+      "imageUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22220%22%20height%3D%22160%22%20viewBox%3D%220%200%20220%20160%22%3E%0A%20%20%20%20%20%20%3Cline%20x1%3D%2220%22%20y1%3D%22140%22%20x2%3D%22200%22%20y2%3D%22140%22%20stroke%3D%22%236b7280%22%20stroke-width%3D%221.5%22%2F%3E%0A%20%20%20%20%20%20%3Cline%20x1%3D%22110%22%20y1%3D%22150%22%20x2%3D%22110%22%20y2%3D%2215%22%20stroke%3D%22%236b7280%22%20stroke-width%3D%221.5%22%2F%3E%0A%20%20%20%20%20%20%3Cpath%20d%3D%22M40%20140%20Q110%2010%20180%20140%22%20fill%3D%22none%22%20stroke%3D%22%23818cf8%22%20stroke-width%3D%222.5%22%2F%3E%0A%20%20%20%20%20%20%3Ctext%20x%3D%22185%22%20y%3D%22155%22%20fill%3D%22%239ca3af%22%20font-size%3D%2211%22%20font-family%3D%22sans-serif%22%3Ex%3C%2Ftext%3E%0A%20%20%20%20%20%20%3Ctext%20x%3D%22118%22%20y%3D%2222%22%20fill%3D%22%239ca3af%22%20font-size%3D%2211%22%20font-family%3D%22sans-serif%22%3Ey%3C%2Ftext%3E%0A%20%20%20%20%20%20%3Ctext%20x%3D%22125%22%20y%3D%2250%22%20fill%3D%22%23a5b4fc%22%20font-size%3D%2212%22%20font-family%3D%22sans-serif%22%3Ey%20%3D%20x%C2%B2%3C%2Ftext%3E%0A%20%20%20%20%3C%2Fsvg%3E",
+      "description": "Standard upward-opening parabola."
+    },
+    {
+      "id": "plot-supply-demand",
+      "type": "plot",
+      "title": "Supply & demand",
+      "subject": "economics",
+      "topic": "Markets",
+      "tags": [
+        "plot",
+        "micro"
+      ],
+      "imageUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22220%22%20height%3D%22160%22%20viewBox%3D%220%200%20220%20160%22%3E%0A%20%20%20%20%20%20%3Cline%20x1%3D%2230%22%20y1%3D%22140%22%20x2%3D%22200%22%20y2%3D%22140%22%20stroke%3D%22%236b7280%22%20stroke-width%3D%221.5%22%2F%3E%0A%20%20%20%20%20%20%3Cline%20x1%3D%2230%22%20y1%3D%22140%22%20x2%3D%2230%22%20y2%3D%2220%22%20stroke%3D%22%236b7280%22%20stroke-width%3D%221.5%22%2F%3E%0A%20%20%20%20%20%20%3Cline%20x1%3D%2240%22%20y1%3D%22120%22%20x2%3D%22180%22%20y2%3D%2240%22%20stroke%3D%22%2334d399%22%20stroke-width%3D%222.5%22%2F%3E%0A%20%20%20%20%20%20%3Cline%20x1%3D%2240%22%20y1%3D%2240%22%20x2%3D%22180%22%20y2%3D%22120%22%20stroke%3D%22%23f87171%22%20stroke-width%3D%222.5%22%2F%3E%0A%20%20%20%20%20%20%3Ccircle%20cx%3D%22110%22%20cy%3D%2280%22%20r%3D%224%22%20fill%3D%22%23fbbf24%22%2F%3E%0A%20%20%20%20%20%20%3Ctext%20x%3D%22185%22%20y%3D%22155%22%20fill%3D%22%239ca3af%22%20font-size%3D%2211%22%20font-family%3D%22sans-serif%22%3EQ%3C%2Ftext%3E%0A%20%20%20%20%20%20%3Ctext%20x%3D%228%22%20y%3D%2230%22%20fill%3D%22%239ca3af%22%20font-size%3D%2211%22%20font-family%3D%22sans-serif%22%3EP%3C%2Ftext%3E%0A%20%20%20%20%20%20%3Ctext%20x%3D%22150%22%20y%3D%2250%22%20fill%3D%22%2386efac%22%20font-size%3D%2211%22%20font-family%3D%22sans-serif%22%3ES%3C%2Ftext%3E%0A%20%20%20%20%20%20%3Ctext%20x%3D%22150%22%20y%3D%22125%22%20fill%3D%22%23fca5a5%22%20font-size%3D%2211%22%20font-family%3D%22sans-serif%22%3ED%3C%2Ftext%3E%0A%20%20%20%20%3C%2Fsvg%3E",
+      "description": "Linear supply and demand with equilibrium."
+    },
+    {
+      "id": "def-limit",
+      "type": "definition",
+      "title": "Limit (definition)",
+      "subject": "mathematics",
+      "topic": "Calculus",
+      "tags": [
+        "calculus",
+        "glossary"
+      ],
+      "term": "Limit",
+      "body": "We write limₓ→a f(x) = L when f(x) approaches L as x approaches a (from both sides unless one-sided). Formal ε–δ: for every ε > 0 there exists δ > 0 such that 0 < |x−a| < δ implies |f(x)−L| < ε."
+    },
+    {
+      "id": "def-integral",
+      "type": "definition",
+      "title": "Definite integral",
+      "subject": "mathematics",
+      "topic": "Calculus",
+      "tags": [
+        "calculus",
+        "glossary"
+      ],
+      "term": "Definite integral",
+      "body": "∫ₐᵇ f(x) dx is the net signed area under y = f(x) from x = a to x = b. By FTC, if F′ = f then ∫ₐᵇ f = F(b) − F(a)."
+    },
+    {
+      "id": "def-eigenvalue",
+      "type": "definition",
+      "title": "Eigenvalue",
+      "subject": "mathematics",
+      "topic": "Linear Algebra",
+      "tags": [
+        "linalg",
+        "glossary"
+      ],
+      "term": "Eigenvalue",
+      "body": "A scalar λ is an eigenvalue of square matrix A if there exists nonzero v with Av = λv. The vector v is an eigenvector for λ."
+    },
+    {
+      "id": "def-continuous",
+      "type": "definition",
+      "title": "Continuity at a point",
+      "subject": "mathematics",
+      "topic": "Calculus",
+      "tags": [
+        "calculus",
+        "glossary"
+      ],
+      "term": "Continuous",
+      "body": "f is continuous at a if limₓ→a f(x) exists, f(a) is defined, and limₓ→a f(x) = f(a)."
+    },
+    {
+      "id": "def-variance",
+      "type": "definition",
+      "title": "Variance",
+      "subject": "mathematics",
+      "topic": "Probability",
+      "tags": [
+        "probability",
+        "glossary"
+      ],
+      "term": "Variance",
+      "body": "Var(X) = E[(X − μ)²] measures spread of a random variable about its mean μ = E[X]. Also Var(X) = E[X²] − μ²."
+    },
+    {
+      "id": "def-momentum",
+      "type": "definition",
+      "title": "Linear momentum",
+      "subject": "physics",
+      "topic": "Mechanics",
+      "tags": [
+        "mechanics",
+        "glossary"
+      ],
+      "term": "Momentum",
+      "body": "p = mv. In an isolated system, total momentum is conserved. Force equals rate of change of momentum: F = dp/dt."
+    },
+    {
+      "id": "def-work",
+      "type": "definition",
+      "title": "Work (mechanics)",
+      "subject": "physics",
+      "topic": "Mechanics",
+      "tags": [
+        "energy",
+        "glossary"
+      ],
+      "term": "Work",
+      "body": "W = ∫ F · dr. For a constant force along a straight displacement, W = F d cos θ. Work–energy: net work equals change in kinetic energy."
+    },
+    {
+      "id": "def-potential",
+      "type": "definition",
+      "title": "Electric potential",
+      "subject": "physics",
+      "topic": "Electricity & Magnetism",
+      "tags": [
+        "em",
+        "glossary"
+      ],
+      "term": "Potential V",
+      "body": "Electric potential V is potential energy per unit charge. For a point charge, V = kq/r (taking V(∞) = 0). Field E = −∇V."
+    },
+    {
+      "id": "def-entropy",
+      "type": "definition",
+      "title": "Entropy (thermo)",
+      "subject": "physics",
+      "topic": "Thermodynamics",
+      "tags": [
+        "thermo",
+        "glossary"
+      ],
+      "term": "Entropy S",
+      "body": "For a reversible process dS = đQ_rev / T. Entropy of an isolated system never decreases (2nd law). Measures disorder / unavailable energy."
+    },
+    {
+      "id": "def-mole",
+      "type": "definition",
+      "title": "Mole",
+      "subject": "chemistry",
+      "topic": "Stoichiometry",
+      "tags": [
+        "stoichiometry",
+        "glossary"
+      ],
+      "term": "Mole",
+      "body": "One mole contains N_A ≈ 6.022×10²³ elementary entities. Moles = mass / molar mass. Bridge between mass and particle count."
+    },
+    {
+      "id": "def-ph",
+      "type": "definition",
+      "title": "pH",
+      "subject": "chemistry",
+      "topic": "Acids & Bases",
+      "tags": [
+        "acids",
+        "glossary"
+      ],
+      "term": "pH",
+      "body": "pH = −log₁₀[H₃O⁺] (approx. in dilute aqueous solutions). Neutral water at 25 °C has pH 7; acids lower pH, bases raise it."
+    },
+    {
+      "id": "def-equilibrium-const",
+      "type": "definition",
+      "title": "Equilibrium constant K",
+      "subject": "chemistry",
+      "topic": "Thermodynamics",
+      "tags": [
+        "equilibrium",
+        "glossary"
+      ],
+      "term": "K",
+      "body": "For aA + bB ⇌ cC + dD, K = ([C]^c [D]^d) / ([A]^a [B]^b) at equilibrium (activities; pure solids/liquids ≈ 1). K depends only on T."
+    },
+    {
+      "id": "def-gene",
+      "type": "definition",
+      "title": "Gene",
+      "subject": "biology",
+      "topic": "Genetics",
+      "tags": [
+        "genetics",
+        "glossary"
+      ],
+      "term": "Gene",
+      "body": "A gene is a heritable unit of DNA that codes for a functional product (typically a protein or RNA). Alleles are alternative forms of a gene."
+    },
+    {
+      "id": "def-enzyme",
+      "type": "definition",
+      "title": "Enzyme",
+      "subject": "biology",
+      "topic": "Enzymes",
+      "tags": [
+        "biochem",
+        "glossary"
+      ],
+      "term": "Enzyme",
+      "body": "A biological catalyst (usually protein) that speeds a reaction by lowering activation energy without being consumed. Highly substrate-specific."
+    },
+    {
+      "id": "def-homeostasis",
+      "type": "definition",
+      "title": "Homeostasis",
+      "subject": "biology",
+      "topic": "Physiology",
+      "tags": [
+        "physiology",
+        "glossary"
+      ],
+      "term": "Homeostasis",
+      "body": "Maintenance of stable internal conditions (temperature, pH, glucose, etc.) via feedback loops despite external changes."
+    },
+    {
+      "id": "def-opportunity-cost",
+      "type": "definition",
+      "title": "Opportunity cost",
+      "subject": "economics",
+      "topic": "Microeconomics",
+      "tags": [
+        "micro",
+        "glossary"
+      ],
+      "term": "Opportunity cost",
+      "body": "The value of the next-best alternative forgone when a choice is made. True economic cost includes opportunity cost, not only cash outlay."
+    },
+    {
+      "id": "def-elasticity",
+      "type": "definition",
+      "title": "Price elasticity of demand",
+      "subject": "economics",
+      "topic": "Microeconomics",
+      "tags": [
+        "elasticity",
+        "glossary"
+      ],
+      "term": "E_d",
+      "body": "E_d = (%ΔQ_d) / (%ΔP). |E| > 1 elastic; |E| < 1 inelastic; |E| = 1 unit elastic. Determines how revenue responds to price changes."
+    },
+    {
+      "id": "def-gdp",
+      "type": "definition",
+      "title": "GDP",
+      "subject": "economics",
+      "topic": "Macroeconomics",
+      "tags": [
+        "macro",
+        "glossary"
+      ],
+      "term": "GDP",
+      "body": "Market value of all final goods and services produced within a country in a period. Expenditure: Y = C + I + G + (X − M)."
+    },
+    {
+      "id": "def-irr",
+      "type": "definition",
+      "title": "Internal rate of return",
+      "subject": "finance",
+      "topic": "Capital Budgeting",
+      "tags": [
+        "irr",
+        "glossary"
+      ],
+      "term": "IRR",
+      "body": "Discount rate that makes NPV of a project’s cash flows equal zero. Accept if IRR exceeds the hurdle / cost of capital (with caveats)."
+    },
+    {
+      "id": "def-beta",
+      "type": "definition",
+      "title": "Beta (CAPM)",
+      "subject": "finance",
+      "topic": "Asset Pricing",
+      "tags": [
+        "capm",
+        "glossary"
+      ],
+      "term": "β",
+      "body": "Measures systematic risk: sensitivity of an asset’s excess return to market excess return. CAPM: $\\mathrm{E}[R_{i}] = R_{f} + \\beta_{i}(\\mathrm{E}[R_{m}] - R_{f})$."
+    },
+    {
+      "id": "def-duration",
+      "type": "definition",
+      "title": "Macaulay duration",
+      "subject": "finance",
+      "topic": "Fixed Income",
+      "tags": [
+        "bonds",
+        "glossary"
+      ],
+      "term": "Duration",
+      "body": "Weighted average time to receive a bond’s cash flows (weights = PV of each cash flow / price). Approximates interest-rate sensitivity."
+    },
+    {
+      "id": "list-derivative-rules",
+      "type": "list",
+      "title": "Derivative rules checklist",
+      "subject": "mathematics",
+      "topic": "Calculus",
+      "tags": [
+        "calculus",
+        "derivatives"
+      ],
+      "listItems": [
+        "Power: (xⁿ)′ = n xⁿ⁻¹",
+        "Product: (uv)′ = u′v + uv′",
+        "Quotient: (u/v)′ = (u′v − uv′)/v²",
+        "Chain: (f(g(x)))′ = f′(g(x)) · g′(x)",
+        "eˣ and ln: (eˣ)′ = eˣ, (ln x)′ = 1/x"
+      ]
+    },
+    {
+      "id": "list-ftc-steps",
+      "type": "list",
+      "title": "FTC evaluation steps",
+      "subject": "mathematics",
+      "topic": "Calculus",
+      "tags": [
+        "calculus",
+        "integrals"
+      ],
+      "listItems": [
+        "Find antiderivative F with F′ = f",
+        "Evaluate F(b) − F(a)",
+        "Check continuity of f on [a,b]",
+        "Watch sign: net area vs total area"
+      ],
+      "listOrdered": true
+    },
+    {
+      "id": "list-row-reduce",
+      "type": "list",
+      "title": "Row reduction goals",
+      "subject": "mathematics",
+      "topic": "Linear Algebra",
+      "tags": [
+        "linalg",
+        "procedure"
+      ],
+      "listItems": [
+        "Pivot 1 in each pivot column",
+        "Zeros below (then above) each pivot",
+        "Identify free variables",
+        "Write parametric solution"
+      ],
+      "listOrdered": true
+    },
+    {
+      "id": "list-kinematics-choose",
+      "type": "list",
+      "title": "Kinematics equation picker",
+      "subject": "physics",
+      "topic": "Mechanics",
+      "tags": [
+        "kinematics",
+        "checklist"
+      ],
+      "listItems": [
+        "Known a, t, v₀ → use v = v₀ + at",
+        "Known a, t, x₀ → use x = x₀ + v₀t + ½at²",
+        "No time → use v² = v₀² + 2aΔx",
+        "Constant velocity → a = 0, x = x₀ + vt"
+      ]
+    },
+    {
+      "id": "list-circuit-laws",
+      "type": "list",
+      "title": "Circuit analysis checklist",
+      "subject": "physics",
+      "topic": "Electricity & Magnetism",
+      "tags": [
+        "circuits",
+        "checklist"
+      ],
+      "listItems": [
+        "KCL: current into node = current out",
+        "KVL: sum of voltage drops around loop = 0",
+        "Ohm: V = IR for resistors",
+        "Series R: add; parallel R: reciprocal sum"
+      ]
+    },
+    {
+      "id": "list-gas-laws",
+      "type": "list",
+      "title": "Ideal gas toolkit",
+      "subject": "chemistry",
+      "topic": "Gases",
+      "tags": [
+        "gases",
+        "checklist"
+      ],
+      "listItems": [
+        "PV = nRT (ideal gas law)",
+        "Boyle: P ∝ 1/V at fixed T, n",
+        "Charles: V ∝ T at fixed P, n",
+        "Dalton: P_total = Σ P_i for gases"
+      ]
+    },
+    {
+      "id": "list-buffer-prep",
+      "type": "list",
+      "title": "Buffer calculation outline",
+      "subject": "chemistry",
+      "topic": "Acids & Bases",
+      "tags": [
+        "buffers",
+        "procedure"
+      ],
+      "listItems": [
+        "Identify HA / A⁻ (or B / BH⁺)",
+        "Use Henderson–Hasselbalch: pH = pK_a + log([A⁻]/[HA])",
+        "Check assumptions (concentrations ≫ H⁺)",
+        "Account for dilution after mixing"
+      ],
+      "listOrdered": true
+    },
+    {
+      "id": "list-mitosis-stages",
+      "type": "list",
+      "title": "Mitosis stages",
+      "subject": "biology",
+      "topic": "Cell Biology",
+      "tags": [
+        "cell",
+        "mitosis"
+      ],
+      "listItems": [
+        "Prophase: chromosomes condense; spindle forms",
+        "Metaphase: chromosomes align at metaphase plate",
+        "Anaphase: sister chromatids separate",
+        "Telophase: nuclei reform; cytokinesis divides cell"
+      ],
+      "listOrdered": true
+    },
+    {
+      "id": "list-central-dogma",
+      "type": "list",
+      "title": "Central dogma flow",
+      "subject": "biology",
+      "topic": "Molecular Biology",
+      "tags": [
+        "molecular",
+        "checklist"
+      ],
+      "listItems": [
+        "DNA replication (DNA → DNA)",
+        "Transcription (DNA → RNA)",
+        "Translation (RNA → protein)",
+        "Reverse transcription in some viruses (RNA → DNA)"
+      ],
+      "listOrdered": true
+    },
+    {
+      "id": "list-market-structures",
+      "type": "list",
+      "title": "Market structures snapshot",
+      "subject": "economics",
+      "topic": "Microeconomics",
+      "tags": [
+        "markets",
+        "micro"
+      ],
+      "listItems": [
+        "Perfect competition: many firms, price takers",
+        "Monopoly: one seller, market power",
+        "Oligopoly: few firms, strategic interaction",
+        "Monopolistic competition: many firms, differentiated products"
+      ]
+    },
+    {
+      "id": "list-npv-decision",
+      "type": "list",
+      "title": "Capital budgeting decision rules",
+      "subject": "finance",
+      "topic": "Capital Budgeting",
+      "tags": [
+        "npv",
+        "checklist"
+      ],
+      "listItems": [
+        "NPV > 0 → accept (value-creating)",
+        "IRR > hurdle rate → accept (with multiple-IRR caution)",
+        "Payback: prefer shorter; ignores TVM unless discounted",
+        "Mutually exclusive: choose higher NPV, not higher IRR alone"
+      ]
+    },
+    {
+      "id": "list-bond-price-factors",
+      "type": "list",
+      "title": "Bond price drivers",
+      "subject": "finance",
+      "topic": "Fixed Income",
+      "tags": [
+        "bonds",
+        "checklist"
+      ],
+      "listItems": [
+        "Yield up → price down (inverse)",
+        "Longer maturity → more rate-sensitive",
+        "Lower coupon → more rate-sensitive",
+        "Credit risk / spreads also move price"
+      ]
+    },
+    {
+      "id": "list-hypothesis-test",
+      "type": "list",
+      "title": "Hypothesis test outline",
+      "subject": "mathematics",
+      "topic": "Probability",
+      "tags": [
+        "stats",
+        "procedure"
+      ],
+      "listItems": [
+        "State H₀ and H₁",
+        "Choose α and test statistic",
+        "Compute p-value or critical region",
+        "Decide: reject H₀ or fail to reject",
+        "State conclusion in context"
+      ],
+      "listOrdered": true
+    },
+    {
+      "id": "callout-chain-rule",
+      "type": "callout",
+      "title": "Don’t forget the chain rule",
+      "subject": "mathematics",
+      "topic": "Calculus",
+      "tags": [
+        "derivatives",
+        "tip"
+      ],
+      "body": "When differentiating composites (sin(3x), e^{x²}, ln(g(x))), multiply by the inner derivative. Missing g′ is the #1 error.",
+      "calloutVariant": "tip"
+    },
+    {
+      "id": "callout-abs-integrate",
+      "type": "callout",
+      "title": "Absolute value in integrals",
+      "subject": "mathematics",
+      "topic": "Calculus",
+      "tags": [
+        "integrals",
+        "warn"
+      ],
+      "body": "∫|f| is total area. Split where f changes sign; don’t drop absolute value and integrate blindly.",
+      "calloutVariant": "warn"
+    },
+    {
+      "id": "callout-det-zero",
+      "type": "callout",
+      "title": "Singular matrices",
+      "subject": "mathematics",
+      "topic": "Linear Algebra",
+      "tags": [
+        "linalg",
+        "info"
+      ],
+      "body": "If det(A) = 0, A is not invertible. The homogeneous system Ax = 0 has nontrivial solutions; columns are linearly dependent.",
+      "calloutVariant": "info"
+    },
+    {
+      "id": "callout-g-direction",
+      "type": "callout",
+      "title": "g points down",
+      "subject": "physics",
+      "topic": "Mechanics",
+      "tags": [
+        "kinematics",
+        "tip"
+      ],
+      "body": "Choose a consistent coordinate system. If +y is up, a_y = −g for free fall. Sign errors dominate kinematics mistakes.",
+      "calloutVariant": "tip"
+    },
+    {
+      "id": "callout-energy-vs-force",
+      "type": "callout",
+      "title": "Energy vs Newton",
+      "subject": "physics",
+      "topic": "Mechanics",
+      "tags": [
+        "energy",
+        "note"
+      ],
+      "body": "Conservative forces → potential energy and W = −ΔU. Nonconservative work (friction) removes mechanical energy: ΔK + ΔU = W_nc.",
+      "calloutVariant": "note"
+    },
+    {
+      "id": "callout-right-hand",
+      "type": "callout",
+      "title": "Right-hand rule",
+      "subject": "physics",
+      "topic": "Electricity & Magnetism",
+      "tags": [
+        "em",
+        "tip"
+      ],
+      "body": "For F = q v × B and for magnetic field around a wire, use the right-hand rule carefully — direction mistakes flip the sign of F.",
+      "calloutVariant": "tip"
+    },
+    {
+      "id": "callout-limiting-reagent",
+      "type": "callout",
+      "title": "Limiting reagent first",
+      "subject": "chemistry",
+      "topic": "Stoichiometry",
+      "tags": [
+        "stoichiometry",
+        "tip"
+      ],
+      "body": "Convert all reactants to moles of product using the balanced equation; the smallest product amount identifies the limiting reagent.",
+      "calloutVariant": "tip"
+    },
+    {
+      "id": "callout-strong-vs-weak",
+      "type": "callout",
+      "title": "Strong vs weak acids",
+      "subject": "chemistry",
+      "topic": "Acids & Bases",
+      "tags": [
+        "acids",
+        "warn"
+      ],
+      "body": "Strong acids fully dissociate (use [H⁺] ≈ C). Weak acids use K_a and ICE tables — do not treat them as fully dissociated.",
+      "calloutVariant": "warn"
+    },
+    {
+      "id": "callout-exothermic-sign",
+      "type": "callout",
+      "title": "Enthalpy sign convention",
+      "subject": "chemistry",
+      "topic": "Thermodynamics",
+      "tags": [
+        "thermo",
+        "info"
+      ],
+      "body": "Exothermic: ΔH < 0 (system releases heat). Endothermic: ΔH > 0. Heat of reaction signs flip when the reaction is reversed.",
+      "calloutVariant": "info"
+    },
+    {
+      "id": "callout-allele-freq",
+      "type": "callout",
+      "title": "Hardy–Weinberg assumptions",
+      "subject": "biology",
+      "topic": "Population Genetics",
+      "tags": [
+        "genetics",
+        "note"
+      ],
+      "body": "p² + 2pq + q² = 1 requires no selection, no migration, no mutation, random mating, and large population. Real pops often violate these.",
+      "calloutVariant": "note"
+    },
+    {
+      "id": "callout-atp",
+      "type": "callout",
+      "title": "ATP is not “energy stored forever”",
+      "subject": "biology",
+      "topic": "Metabolism",
+      "tags": [
+        "metabolism",
+        "tip"
+      ],
+      "body": "ATP is a short-term energy currency. Cells continuously regenerate ATP from ADP + Pᵢ via respiration or photosynthesis pathways.",
+      "calloutVariant": "tip"
+    },
+    {
+      "id": "callout-ceteris-paribus",
+      "type": "callout",
+      "title": "Ceteris paribus",
+      "subject": "economics",
+      "topic": "Microeconomics",
+      "tags": [
+        "micro",
+        "note"
+      ],
+      "body": "Demand/supply shifts assume “all else equal.” If income and price change together, separate the movements carefully on the graph.",
+      "calloutVariant": "note"
+    },
+    {
+      "id": "callout-real-vs-nominal",
+      "type": "callout",
+      "title": "Real vs nominal",
+      "subject": "economics",
+      "topic": "Macroeconomics",
+      "tags": [
+        "macro",
+        "warn"
+      ],
+      "body": "Nominal GDP uses current prices; real GDP holds prices fixed to isolate quantity changes. Growth rates usually quote real GDP.",
+      "calloutVariant": "warn"
+    },
+    {
+      "id": "callout-sunk-cost",
+      "type": "callout",
+      "title": "Ignore sunk costs",
+      "subject": "finance",
+      "topic": "Capital Budgeting",
+      "tags": [
+        "npv",
+        "danger"
+      ],
+      "body": "Sunk costs already spent should not enter NPV. Only incremental future cash flows (including opportunity costs and cannibalization).",
+      "calloutVariant": "danger"
+    },
+    {
+      "id": "callout-wacc-match",
+      "type": "callout",
+      "title": "Match risk to discount rate",
+      "subject": "finance",
+      "topic": "Corporate Finance",
+      "tags": [
+        "wacc",
+        "warn"
+      ],
+      "body": "Discount project cash flows at a rate reflecting project risk. Using firm WACC for a riskier project overstates NPV.",
+      "calloutVariant": "warn"
+    },
+    {
+      "id": "callout-diversification",
+      "type": "callout",
+      "title": "Diversification limit",
+      "subject": "finance",
+      "topic": "Portfolio Theory",
+      "tags": [
+        "portfolio",
+        "info"
+      ],
+      "body": "Diversification reduces idiosyncratic risk but not market (systematic) risk. β remains; CAPM prices only non-diversifiable risk.",
+      "calloutVariant": "info"
+    },
+    {
+      "id": "code-bisection",
+      "type": "code",
+      "title": "Bisection root finder",
+      "subject": "mathematics",
+      "topic": "Numerical Methods",
+      "tags": [
+        "numerical",
+        "roots"
+      ],
+      "code": "// f continuous, f(a)*f(b) < 0\nwhile (b-a) > tol:\n  m = (a+b)/2\n  if f(a)*f(m) <= 0: b = m\n  else: a = m\nreturn (a+b)/2",
+      "codeLanguage": "pseudocode"
+    },
+    {
+      "id": "code-gradient-descent",
+      "type": "code",
+      "title": "Gradient descent step",
+      "subject": "mathematics",
+      "topic": "Numerical Methods",
+      "tags": [
+        "optimization",
+        "ml"
+      ],
+      "code": "// minimize f(x)\nx ← x0\nfor k = 1..N:\n  x ← x − η ∇f(x)\nreturn x",
+      "codeLanguage": "pseudocode"
+    },
+    {
+      "id": "code-euler-ode",
+      "type": "code",
+      "title": "Euler method (ODE)",
+      "subject": "mathematics",
+      "topic": "Differential Equations",
+      "tags": [
+        "ode",
+        "numerical"
+      ],
+      "code": "// y' = f(t,y), step h\ny = y0; t = t0\nfor i = 1..n:\n  y = y + h * f(t, y)\n  t = t + h\nreturn y",
+      "codeLanguage": "pseudocode"
+    },
+    {
+      "id": "code-gaussian-elim",
+      "type": "code",
+      "title": "Gaussian elimination sketch",
+      "subject": "mathematics",
+      "topic": "Linear Algebra",
+      "tags": [
+        "linalg",
+        "algorithm"
+      ],
+      "code": "for col = 1..n-1:\n  pivot row with max |a[i,col]|\n  for row below pivot:\n    factor = a[row,col]/a[pivot,col]\n    row -= factor * pivot_row\n// back-substitute for x",
+      "codeLanguage": "pseudocode"
+    },
+    {
+      "id": "code-rk4",
+      "type": "code",
+      "title": "RK4 step (sketch)",
+      "subject": "physics",
+      "topic": "Mechanics",
+      "tags": [
+        "ode",
+        "numerical"
+      ],
+      "description": "One Runge–Kutta 4 step.",
+      "code": "k1 = f(t, y)\nk2 = f(t+h/2, y+h*k1/2)\nk3 = f(t+h/2, y+h*k2/2)\nk4 = f(t+h, y+h*k3)\ny += (h/6)*(k1+2*k2+2*k3+k4)",
+      "codeLanguage": "pseudocode"
+    },
+    {
+      "id": "code-ice-table",
+      "type": "code",
+      "title": "ICE table workflow",
+      "subject": "chemistry",
+      "topic": "Equilibrium",
+      "tags": [
+        "equilibrium",
+        "procedure"
+      ],
+      "code": "// aA ⇌ bB\nI: [A]=A0, [B]=0\nC: −a x, +b x\nE: A0−a x, b x\n// plug into K; solve for x\n// check x < A0 / a",
+      "codeLanguage": "pseudocode"
+    },
+    {
+      "id": "code-hardy-weinberg",
+      "type": "code",
+      "title": "Hardy–Weinberg genotype freqs",
+      "subject": "biology",
+      "topic": "Population Genetics",
+      "tags": [
+        "genetics",
+        "code"
+      ],
+      "code": "# allele freqs p, q with p+q=1\nAA = p**2\nAa = 2*p*q\naa = q**2\n# check AA+Aa+aa ≈ 1",
+      "codeLanguage": "python-ish"
+    },
+    {
+      "id": "code-elasticity",
+      "type": "code",
+      "title": "Arc elasticity of demand",
+      "subject": "economics",
+      "topic": "Microeconomics",
+      "tags": [
+        "elasticity",
+        "code"
+      ],
+      "code": "mid_Q = (Q1+Q2)/2\nmid_P = (P1+P2)/2\nEd = ((Q2-Q1)/mid_Q) / ((P2-P1)/mid_P)\n# |Ed| > 1 elastic",
+      "codeLanguage": "python-ish"
+    },
+    {
+      "id": "code-capm",
+      "type": "code",
+      "title": "CAPM expected return (code)",
+      "subject": "finance",
+      "topic": "Asset Pricing",
+      "tags": [
+        "capm",
+        "code"
+      ],
+      "description": "Computational form of CAPM. Prefer catalog equation “CAPM expected return” (fin-capm) for the LaTeX card.",
+      "code": "def expected_return(rf, beta, rm):\n    \"\"\"CAPM: E[R] = Rf + beta * (E[Rm] - Rf)\"\"\"\n    return rf + beta * (rm - rf)\n\n# beta = cov(r, rm) / var(rm)",
+      "codeLanguage": "python"
+    },
+    {
+      "id": "code-black-scholes-d",
+      "type": "code",
+      "title": "Black–Scholes d1, d2",
+      "subject": "finance",
+      "topic": "Derivatives",
+      "tags": [
+        "options",
+        "code"
+      ],
+      "code": "d1 = (ln(S/K) + (r + σ**2/2)*T) / (σ*sqrt(T))\nd2 = d1 - σ*sqrt(T)\n# call = S N(d1) - K e^{-rT} N(d2)",
+      "codeLanguage": "python-ish"
+    },
+    {
+      "id": "const-g",
+      "type": "constant",
+      "title": "Standard gravity g",
+      "subject": "physics",
+      "topic": "Constants",
+      "tags": [
+        "constant",
+        "mechanics"
+      ],
+      "latex": "g \\approx 9.81\\,\\mathrm{m/s^{2}}",
+      "body": "Often take g = 9.8 or 10 m/s² in rough problems.",
+      "symbol": "g",
+      "value": "9.81",
+      "unit": "m/s^{2}"
+    },
+    {
+      "id": "const-G",
+      "type": "constant",
+      "title": "Gravitational constant G",
+      "subject": "physics",
+      "topic": "Constants",
+      "tags": [
+        "constant",
+        "gravity"
+      ],
+      "latex": "G = 6.674\\times 10^{-11}\\,\\mathrm{N\\,m^{2}/kg^{2}}",
+      "symbol": "G",
+      "value": "6.674\\times 10^{-11}",
+      "unit": "N·m^{2}/kg^{2}"
+    },
+    {
+      "id": "const-h-planck",
+      "type": "constant",
+      "title": "Planck's constant h",
+      "subject": "physics",
+      "topic": "Constants",
+      "tags": [
+        "constant",
+        "quantum"
+      ],
+      "latex": "h = 6.626\\times 10^{-34}\\,\\mathrm{J\\,s}",
+      "symbol": "h",
+      "value": "6.626\\times 10^{-34}",
+      "unit": "J·s"
+    },
+    {
+      "id": "const-hbar",
+      "type": "constant",
+      "title": "Reduced Planck ℏ",
+      "subject": "physics",
+      "topic": "Constants",
+      "tags": [
+        "constant",
+        "quantum"
+      ],
+      "latex": "\\hbar = h/2\\pi \\approx 1.055\\times 10^{-34}\\,\\mathrm{J\\,s}",
+      "symbol": "\\hbar",
+      "value": "1.055\\times 10^{-34}",
+      "unit": "J·s"
+    },
+    {
+      "id": "const-e-charge",
+      "type": "constant",
+      "title": "Elementary charge e",
+      "subject": "physics",
+      "topic": "Constants",
+      "tags": [
+        "constant",
+        "em"
+      ],
+      "latex": "e = 1.602\\times 10^{-19}\\,\\mathrm{C}",
+      "symbol": "e",
+      "value": "1.602\\times 10^{-19}",
+      "unit": "C"
+    },
+    {
+      "id": "const-k-e",
+      "type": "constant",
+      "title": "Coulomb constant k_e",
+      "subject": "physics",
+      "topic": "Constants",
+      "tags": [
+        "constant",
+        "em"
+      ],
+      "latex": "k_e = 8.99\\times 10^{9}\\,\\mathrm{N\\,m^{2}/C^{2}}",
+      "body": "Also 1/(4πε₀).",
+      "symbol": "k_e",
+      "value": "8.99\\times 10^{9}",
+      "unit": "N·m^{2}/C^{2}"
+    },
+    {
+      "id": "const-epsilon0",
+      "type": "constant",
+      "title": "Vacuum permittivity ε₀",
+      "subject": "physics",
+      "topic": "Constants",
+      "tags": [
+        "constant",
+        "em"
+      ],
+      "latex": "\\varepsilon_0 = 8.854\\times 10^{-12}\\,\\mathrm{F/m}",
+      "symbol": "\\varepsilon_0",
+      "value": "8.854\\times 10^{-12}",
+      "unit": "F/m"
+    },
+    {
+      "id": "const-k-b",
+      "type": "constant",
+      "title": "Boltzmann constant k_B",
+      "subject": "physics",
+      "topic": "Constants",
+      "tags": [
+        "constant",
+        "thermo"
+      ],
+      "latex": "k_B = 1.381\\times 10^{-23}\\,\\mathrm{J/K}",
+      "symbol": "k_B",
+      "value": "1.381\\times 10^{-23}",
+      "unit": "J/K"
+    },
+    {
+      "id": "const-sigma-sb",
+      "type": "constant",
+      "title": "Stefan–Boltzmann σ",
+      "subject": "physics",
+      "topic": "Constants",
+      "tags": [
+        "constant",
+        "radiation"
+      ],
+      "latex": "\\sigma = 5.67\\times 10^{-8}\\,\\mathrm{W\\,m^{-2}\\,K^{-4}}",
+      "symbol": "\\sigma",
+      "value": "5.67\\times 10^{-8}",
+      "unit": "W/(m^{2}·K^{4})"
+    },
+    {
+      "id": "const-F-faraday",
+      "type": "constant",
+      "title": "Faraday's constant F",
+      "subject": "chemistry",
+      "topic": "Constants",
+      "tags": [
+        "constant",
+        "electrochem"
+      ],
+      "latex": "F = 96485\\,\\mathrm{C/mol}",
+      "body": "Charge of one mole of electrons ≈ N_A e.",
+      "symbol": "F",
+      "value": "96485",
+      "unit": "C/mol"
+    },
+    {
+      "id": "const-atm",
+      "type": "constant",
+      "title": "Standard atmosphere",
+      "subject": "chemistry",
+      "topic": "Constants",
+      "tags": [
+        "constant",
+        "gases"
+      ],
+      "latex": "1\\,\\mathrm{atm} = 101\\,325\\,\\mathrm{Pa} = 760\\,\\mathrm{torr}",
+      "symbol": "1\\,\\mathrm{atm}",
+      "value": "101325",
+      "unit": "Pa"
+    },
+    {
+      "id": "const-kw",
+      "type": "constant",
+      "title": "Water ion product K_w",
+      "subject": "chemistry",
+      "topic": "Constants",
+      "tags": [
+        "constant",
+        "acids"
+      ],
+      "latex": "K_w = [\\mathrm{H_3O^+}][\\mathrm{OH^-}] = 1.0\\times 10^{-14}\\ (25^\\circ\\mathrm{C})",
+      "symbol": "K_w",
+      "value": "1.0\\times 10^{-14}",
+      "unit": "(25°C)"
+    },
+    {
+      "id": "const-e-math",
+      "type": "constant",
+      "title": "Euler's number e",
+      "subject": "mathematics",
+      "topic": "Notation",
+      "tags": [
+        "constant",
+        "analysis"
+      ],
+      "latex": "e = \\sum_{n=0}^{\\infty} \\frac{1}{n!} \\approx 2.71828",
+      "body": "Base of natural logarithm; (e^x)′ = e^x.",
+      "symbol": "e",
+      "value": "2.71828\\ldots",
+      "unit": ""
+    },
+    {
+      "id": "const-pi",
+      "type": "constant",
+      "title": "Pi π",
+      "subject": "mathematics",
+      "topic": "Notation",
+      "tags": [
+        "constant",
+        "geometry"
+      ],
+      "latex": "\\pi \\approx 3.14159",
+      "body": "Circle circumference/diameter; appears in trig and complex analysis.",
+      "symbol": "\\pi",
+      "value": "3.14159\\ldots",
+      "unit": ""
+    },
+    {
+      "id": "const-phi",
+      "type": "constant",
+      "title": "Golden ratio φ",
+      "subject": "mathematics",
+      "topic": "Notation",
+      "tags": [
+        "constant",
+        "geometry"
+      ],
+      "latex": "\\varphi = \\frac{1+\\sqrt{5}}{2} \\approx 1.61803",
+      "symbol": "\\varphi",
+      "value": "1.61803\\ldots",
+      "unit": ""
+    },
+    {
+      "id": "const-ln2",
+      "type": "constant",
+      "title": "ln 2",
+      "subject": "mathematics",
+      "topic": "Notation",
+      "tags": [
+        "constant",
+        "logs"
+      ],
+      "latex": "\\ln 2 \\approx 0.693147",
+      "body": "Useful for half-life: t_{1/2} = ln 2 / λ.",
+      "symbol": "\\ln 2",
+      "value": "0.693147\\ldots",
+      "unit": ""
+    },
+    {
+      "id": "id-angle-add",
+      "type": "identity-set",
+      "title": "Angle addition formulas",
+      "subject": "mathematics",
+      "topic": "Trigonometry",
+      "tags": [
+        "trig",
+        "identity"
+      ],
+      "identities": [
+        "\\sin(a\\pm b) = \\sin a\\cos b \\pm \\cos a\\sin b",
+        "\\cos(a\\pm b) = \\cos a\\cos b \\mp \\sin a\\sin b",
+        "\\tan(a\\pm b) = \\frac{\\tan a \\pm \\tan b}{1 \\mp \\tan a\\tan b}"
+      ]
+    },
+    {
+      "id": "id-double-angle",
+      "type": "identity-set",
+      "title": "Double-angle formulas",
+      "subject": "mathematics",
+      "topic": "Trigonometry",
+      "tags": [
+        "trig",
+        "identity"
+      ],
+      "identities": [
+        "\\sin 2\\theta = 2\\sin\\theta\\cos\\theta",
+        "\\cos 2\\theta = \\cos^2\\theta - \\sin^2\\theta",
+        "\\cos 2\\theta = 2\\cos^2\\theta - 1 = 1 - 2\\sin^2\\theta"
+      ]
+    },
+    {
+      "id": "id-exp-laws",
+      "type": "identity-set",
+      "title": "Exponent laws",
+      "subject": "mathematics",
+      "topic": "Algebra",
+      "tags": [
+        "algebra",
+        "identity"
+      ],
+      "identities": [
+        "a^m a^n = a^{m+n}",
+        "\\frac{a^m}{a^n} = a^{m-n}",
+        "(a^m)^n = a^{mn}",
+        "(ab)^n = a^n b^n"
+      ]
+    },
+    {
+      "id": "id-diff-rules",
+      "type": "identity-set",
+      "title": "Core derivative identities",
+      "subject": "mathematics",
+      "topic": "Calculus",
+      "tags": [
+        "calculus",
+        "identity"
+      ],
+      "identities": [
+        "\\frac{d}{dx}[x^n] = n x^{n-1}",
+        "\\frac{d}{dx}[e^x] = e^x",
+        "\\frac{d}{dx}[\\ln x] = \\frac{1}{x}",
+        "\\frac{d}{dx}[\\sin x] = \\cos x,\\quad \\frac{d}{dx}[\\cos x] = -\\sin x"
+      ]
+    },
+    {
+      "id": "id-integral-basic",
+      "type": "identity-set",
+      "title": "Basic antiderivatives",
+      "subject": "mathematics",
+      "topic": "Calculus",
+      "tags": [
+        "calculus",
+        "identity"
+      ],
+      "identities": [
+        "\\int x^n\\,dx = \\frac{x^{n+1}}{n+1}+C\\ (n\\neq -1)",
+        "\\int e^x\\,dx = e^x + C",
+        "\\int \\frac{1}{x}\\,dx = \\ln|x| + C",
+        "\\int \\sin x\\,dx = -\\cos x + C"
+      ]
+    },
+    {
+      "id": "id-complex-euler",
+      "type": "identity-set",
+      "title": "Euler & complex forms",
+      "subject": "mathematics",
+      "topic": "Complex Numbers",
+      "tags": [
+        "complex",
+        "identity"
+      ],
+      "identities": [
+        "e^{i\\theta} = \\cos\\theta + i\\sin\\theta",
+        "e^{i\\pi} + 1 = 0",
+        "\\overline{z} = x - iy \\text{ if } z = x+iy",
+        "|z|^2 = z\\overline{z}"
+      ]
+    },
+    {
+      "id": "id-vector-ident",
+      "type": "identity-set",
+      "title": "Vector product identities",
+      "subject": "physics",
+      "topic": "Mechanics",
+      "tags": [
+        "vectors",
+        "identity"
+      ],
+      "identities": [
+        "\\mathbf{a}\\cdot\\mathbf{b} = |a||b|\\cos\\theta",
+        "|\\mathbf{a}\\times\\mathbf{b}| = |a||b|\\sin\\theta",
+        "\\mathbf{a}\\times\\mathbf{b} = -\\mathbf{b}\\times\\mathbf{a}",
+        "\\mathbf{a}\\cdot(\\mathbf{a}\\times\\mathbf{b}) = 0"
+      ]
+    },
+    {
+      "id": "id-maxwell-names",
+      "type": "identity-set",
+      "title": "Maxwell equations (names)",
+      "subject": "physics",
+      "topic": "Electromagnetism",
+      "tags": [
+        "maxwell",
+        "identity"
+      ],
+      "identities": [
+        "\\nabla\\cdot\\mathbf{E} = \\rho/\\varepsilon_0 \\quad\\text{(Gauss E)}",
+        "\\nabla\\cdot\\mathbf{B} = 0 \\quad\\text{(Gauss B)}",
+        "\\nabla\\times\\mathbf{E} = -\\partial_t\\mathbf{B} \\quad\\text{(Faraday)}",
+        "\\nabla\\times\\mathbf{B} = \\mu_0\\mathbf{J}+\\mu_0\\varepsilon_0\\partial_t\\mathbf{E}"
+      ]
+    },
+    {
+      "id": "id-thermo-laws",
+      "type": "identity-set",
+      "title": "Thermo first law forms",
+      "subject": "chemistry",
+      "topic": "Thermodynamics",
+      "tags": [
+        "thermo",
+        "identity"
+      ],
+      "identities": [
+        "\\Delta U = q + w",
+        "w = -P_{\\mathrm{ext}}\\Delta V \\text{ (expansion work)}",
+        "H = U + PV",
+        "\\Delta H = q_P \\text{ (constant pressure)}"
+      ]
+    },
+    {
+      "id": "id-nernst-related",
+      "type": "identity-set",
+      "title": "Electrochemistry relations",
+      "subject": "chemistry",
+      "topic": "Electrochemistry",
+      "tags": [
+        "electrochem",
+        "identity"
+      ],
+      "identities": [
+        "E = E^\\circ - \\frac{RT}{nF}\\ln Q",
+        "E^\\circ = \\frac{RT}{nF}\\ln K",
+        "\\Delta G = -nFE",
+        "\\Delta G^\\circ = -nFE^\\circ = -RT\\ln K"
+      ]
+    },
+    {
+      "id": "id-finance-tvm",
+      "type": "identity-set",
+      "title": "TVM core identities",
+      "subject": "finance",
+      "topic": "Time Value of Money",
+      "tags": [
+        "tvm",
+        "identity"
+      ],
+      "identities": [
+        "\\mathrm{FV} = \\mathrm{PV}(1+r)^{n}",
+        "\\mathrm{PV} = \\frac{\\mathrm{FV}}{(1+r)^{n}}",
+        "\\mathrm{FV}_{\\mathrm{ann}} = C\\frac{(1+r)^{n}-1}{r}",
+        "\\mathrm{PV}_{\\mathrm{ann}} = C\\frac{1-(1+r)^{-n}}{r}"
+      ]
+    },
+    {
+      "id": "id-capm-set",
+      "type": "identity-set",
+      "title": "CAPM / portfolio identities",
+      "subject": "finance",
+      "topic": "Portfolio Theory",
+      "tags": [
+        "capm",
+        "identity"
+      ],
+      "identities": [
+        "\\mathrm{E}[R_{i}] = R_{f} + \\beta_{i}\\bigl(\\mathrm{E}[R_{m}] - R_{f}\\bigr)",
+        "\\beta_{i} = \\frac{\\mathrm{Cov}(R_{i}, R_{m})}{\\mathrm{Var}(R_{m})}",
+        "\\sigma_{p}^{2} = w_{1}^{2}\\sigma_{1}^{2} + w_{2}^{2}\\sigma_{2}^{2} + 2 w_{1} w_{2} \\sigma_{1}\\sigma_{2}\\rho"
+      ]
+    },
+    {
+      "id": "mat-identity-2",
+      "type": "matrix",
+      "title": "2×2 identity",
+      "subject": "mathematics",
+      "topic": "Linear Algebra",
+      "tags": [
+        "matrix",
+        "linalg"
+      ],
+      "description": "I₂; AI = IA = A for compatible A.",
+      "matrixRows": [
+        [
+          "1",
+          "0"
+        ],
+        [
+          "0",
+          "1"
+        ]
+      ]
+    },
+    {
+      "id": "mat-identity-3",
+      "type": "matrix",
+      "title": "3×3 identity",
+      "subject": "mathematics",
+      "topic": "Linear Algebra",
+      "tags": [
+        "matrix",
+        "linalg"
+      ],
+      "matrixRows": [
+        [
+          "1",
+          "0",
+          "0"
+        ],
+        [
+          "0",
+          "1",
+          "0"
+        ],
+        [
+          "0",
+          "0",
+          "1"
+        ]
+      ]
+    },
+    {
+      "id": "mat-pauli-x",
+      "type": "matrix",
+      "title": "Pauli matrix σ_x",
+      "subject": "mathematics",
+      "topic": "Linear Algebra",
+      "tags": [
+        "matrix",
+        "quantum"
+      ],
+      "description": "Pauli X (bit-flip) matrix.",
+      "matrixRows": [
+        [
+          "0",
+          "1"
+        ],
+        [
+          "1",
+          "0"
+        ]
+      ]
+    },
+    {
+      "id": "mat-pauli-z",
+      "type": "matrix",
+      "title": "Pauli matrix σ_z",
+      "subject": "mathematics",
+      "topic": "Linear Algebra",
+      "tags": [
+        "matrix",
+        "quantum"
+      ],
+      "matrixRows": [
+        [
+          "1",
+          "0"
+        ],
+        [
+          "0",
+          "-1"
+        ]
+      ]
+    },
+    {
+      "id": "mat-reflection-x",
+      "type": "matrix",
+      "title": "Reflection across x-axis",
+      "subject": "mathematics",
+      "topic": "Linear Algebra",
+      "tags": [
+        "matrix",
+        "geometry"
+      ],
+      "matrixRows": [
+        [
+          "1",
+          "0"
+        ],
+        [
+          "0",
+          "-1"
+        ]
+      ]
+    },
+    {
+      "id": "mat-scale-2d",
+      "type": "matrix",
+      "title": "Scaling matrix 2D",
+      "subject": "mathematics",
+      "topic": "Linear Algebra",
+      "tags": [
+        "matrix",
+        "geometry"
+      ],
+      "description": "Scales x by s_x and y by s_y.",
+      "matrixRows": [
+        [
+          "s_x",
+          "0"
+        ],
+        [
+          "0",
+          "s_y"
+        ]
+      ]
+    },
+    {
+      "id": "mat-shear-x",
+      "type": "matrix",
+      "title": "Horizontal shear",
+      "subject": "mathematics",
+      "topic": "Linear Algebra",
+      "tags": [
+        "matrix",
+        "geometry"
+      ],
+      "description": "Shear parallel to x-axis by factor k.",
+      "matrixRows": [
+        [
+          "1",
+          "k"
+        ],
+        [
+          "0",
+          "1"
+        ]
+      ]
+    },
+    {
+      "id": "mat-markov-2",
+      "type": "matrix",
+      "title": "2-state transition matrix",
+      "subject": "mathematics",
+      "topic": "Probability",
+      "tags": [
+        "matrix",
+        "markov"
+      ],
+      "description": "Columns sum to 1 (column-stochastic form).",
+      "matrixRows": [
+        [
+          "1-a",
+          "b"
+        ],
+        [
+          "a",
+          "1-b"
+        ]
+      ]
+    },
+    {
+      "id": "mat-jacobian-2",
+      "type": "matrix",
+      "title": "Jacobian 2×2 template",
+      "subject": "mathematics",
+      "topic": "Calculus",
+      "tags": [
+        "matrix",
+        "multivariable"
+      ],
+      "description": "J for F=(f,g): ℝ²→ℝ².",
+      "matrixRows": [
+        [
+          "\\partial f/\\partial x",
+          "\\partial f/\\partial y"
+        ],
+        [
+          "\\partial g/\\partial x",
+          "\\partial g/\\partial y"
+        ]
+      ]
+    },
+    {
+      "id": "mat-hessian-2",
+      "type": "matrix",
+      "title": "Hessian 2×2 template",
+      "subject": "mathematics",
+      "topic": "Calculus",
+      "tags": [
+        "matrix",
+        "multivariable"
+      ],
+      "description": "Symmetric when mixed partials continuous.",
+      "matrixRows": [
+        [
+          "f_{xx}",
+          "f_{xy}"
+        ],
+        [
+          "f_{yx}",
+          "f_{yy}"
+        ]
+      ]
+    },
+    {
+      "id": "mat-rotation-3d-z",
+      "type": "matrix",
+      "title": "Rotation about z-axis",
+      "subject": "mathematics",
+      "topic": "Linear Algebra",
+      "tags": [
+        "matrix",
+        "rotation"
+      ],
+      "matrixRows": [
+        [
+          "\\cos\\theta",
+          "-\\sin\\theta",
+          "0"
+        ],
+        [
+          "\\sin\\theta",
+          "\\cos\\theta",
+          "0"
+        ],
+        [
+          "0",
+          "0",
+          "1"
+        ]
+      ]
+    },
+    {
+      "id": "mat-covariance-2",
+      "type": "matrix",
+      "title": "2×2 covariance template",
+      "subject": "mathematics",
+      "topic": "Probability",
+      "tags": [
+        "matrix",
+        "stats"
+      ],
+      "description": "Symmetric positive semidefinite for real data.",
+      "matrixRows": [
+        [
+          "\\sigma_x^2",
+          "\\mathrm{Cov}(X,Y)"
+        ],
+        [
+          "\\mathrm{Cov}(Y,X)",
+          "\\sigma_y^2"
+        ]
+      ]
+    },
+    {
+      "id": "plot-line-y-mx-b",
+      "type": "plot",
+      "title": "Line y = mx + b",
+      "subject": "mathematics",
+      "topic": "Functions",
+      "tags": [
+        "plot",
+        "linear"
+      ],
+      "imageUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22220%22%20height%3D%22160%22%20viewBox%3D%220%200%20220%20160%22%3E%0A%20%20%3Cline%20x1%3D%2232%22%20y1%3D%22136%22%20x2%3D%22208%22%20y2%3D%22136%22%20stroke%3D%22%236b7280%22%20stroke-width%3D%221.5%22%2F%3E%0A%20%20%3Cline%20x1%3D%2232%22%20y1%3D%22136%22%20x2%3D%2232%22%20y2%3D%2216%22%20stroke%3D%22%236b7280%22%20stroke-width%3D%221.5%22%2F%3E%0A%20%20%3Cline%20x1%3D%2240%22%20y1%3D%22120%22%20x2%3D%22200%22%20y2%3D%2240%22%20stroke%3D%22%23818cf8%22%20stroke-width%3D%222.5%22%2F%3E%0A%20%20%20%20%20%20%20%3Ccircle%20cx%3D%2240%22%20cy%3D%22120%22%20r%3D%223%22%20fill%3D%22%23fbbf24%22%2F%3E%0A%20%20%3Ctext%20x%3D%22200%22%20y%3D%22150%22%20fill%3D%22%239ca3af%22%20font-size%3D%2211%22%20font-family%3D%22sans-serif%22%3Ex%3C%2Ftext%3E%0A%20%20%20%20%20%20%20%3Ctext%20x%3D%228%22%20y%3D%2224%22%20fill%3D%22%239ca3af%22%20font-size%3D%2211%22%20font-family%3D%22sans-serif%22%3Ey%3C%2Ftext%3E%0A%20%20%20%20%20%20%20%3Ctext%20x%3D%22120%22%20y%3D%2250%22%20fill%3D%22%23a5b4fc%22%20font-size%3D%2212%22%20font-family%3D%22sans-serif%22%3Ey%3Dmx%2Bb%3C%2Ftext%3E%0A%3C%2Fsvg%3E",
+      "description": "Slope m, intercept b."
+    },
+    {
+      "id": "plot-exponential",
+      "type": "plot",
+      "title": "Exponential growth",
+      "subject": "mathematics",
+      "topic": "Functions",
+      "tags": [
+        "plot",
+        "exponential"
+      ],
+      "imageUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22220%22%20height%3D%22160%22%20viewBox%3D%220%200%20220%20160%22%3E%0A%20%20%3Cline%20x1%3D%2232%22%20y1%3D%22136%22%20x2%3D%22208%22%20y2%3D%22136%22%20stroke%3D%22%236b7280%22%20stroke-width%3D%221.5%22%2F%3E%0A%20%20%3Cline%20x1%3D%2232%22%20y1%3D%22136%22%20x2%3D%2232%22%20y2%3D%2216%22%20stroke%3D%22%236b7280%22%20stroke-width%3D%221.5%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M40%20130%20C80%20125%2C%20100%20100%2C%20120%2070%20S180%2020%2C%20200%2018%22%20fill%3D%22none%22%20stroke%3D%22%2334d399%22%20stroke-width%3D%222.5%22%2F%3E%0A%20%20%3Ctext%20x%3D%22200%22%20y%3D%22150%22%20fill%3D%22%239ca3af%22%20font-size%3D%2211%22%20font-family%3D%22sans-serif%22%3Ex%3C%2Ftext%3E%0A%20%20%20%20%20%20%20%3Ctext%20x%3D%228%22%20y%3D%2224%22%20fill%3D%22%239ca3af%22%20font-size%3D%2211%22%20font-family%3D%22sans-serif%22%3Ey%3C%2Ftext%3E%0A%20%20%20%20%20%20%20%3Ctext%20x%3D%22130%22%20y%3D%2245%22%20fill%3D%22%2386efac%22%20font-size%3D%2212%22%20font-family%3D%22sans-serif%22%3Ee%CB%A3%3C%2Ftext%3E%0A%3C%2Fsvg%3E"
+    },
+    {
+      "id": "plot-log",
+      "type": "plot",
+      "title": "Logarithm y = ln x",
+      "subject": "mathematics",
+      "topic": "Functions",
+      "tags": [
+        "plot",
+        "log"
+      ],
+      "imageUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22220%22%20height%3D%22160%22%20viewBox%3D%220%200%20220%20160%22%3E%0A%20%20%3Cline%20x1%3D%2232%22%20y1%3D%22136%22%20x2%3D%22208%22%20y2%3D%22136%22%20stroke%3D%22%236b7280%22%20stroke-width%3D%221.5%22%2F%3E%0A%20%20%3Cline%20x1%3D%2232%22%20y1%3D%22136%22%20x2%3D%2232%22%20y2%3D%2216%22%20stroke%3D%22%236b7280%22%20stroke-width%3D%221.5%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M50%20140%20C70%2090%2C%20100%2060%2C%20200%2040%22%20fill%3D%22none%22%20stroke%3D%22%23fbbf24%22%20stroke-width%3D%222.5%22%2F%3E%0A%20%20%20%20%20%20%20%3Cline%20x1%3D%2250%22%20y1%3D%2216%22%20x2%3D%2250%22%20y2%3D%22140%22%20stroke%3D%22%234b5563%22%20stroke-width%3D%221%22%20stroke-dasharray%3D%223%22%2F%3E%0A%20%20%3Ctext%20x%3D%22200%22%20y%3D%22150%22%20fill%3D%22%239ca3af%22%20font-size%3D%2211%22%20font-family%3D%22sans-serif%22%3Ex%3C%2Ftext%3E%0A%20%20%20%20%20%20%20%3Ctext%20x%3D%228%22%20y%3D%2224%22%20fill%3D%22%239ca3af%22%20font-size%3D%2211%22%20font-family%3D%22sans-serif%22%3Ey%3C%2Ftext%3E%0A%20%20%20%20%20%20%20%3Ctext%20x%3D%22140%22%20y%3D%2255%22%20fill%3D%22%23fcd34d%22%20font-size%3D%2212%22%20font-family%3D%22sans-serif%22%3Eln%20x%3C%2Ftext%3E%0A%3C%2Fsvg%3E",
+      "description": "Vertical asymptote at x = 0."
+    },
+    {
+      "id": "plot-sine",
+      "type": "plot",
+      "title": "Sine wave",
+      "subject": "mathematics",
+      "topic": "Trigonometry",
+      "tags": [
+        "plot",
+        "trig"
+      ],
+      "imageUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22240%22%20height%3D%22140%22%20viewBox%3D%220%200%20240%20140%22%3E%0A%20%20%3Cline%20x1%3D%2232%22%20y1%3D%22116%22%20x2%3D%22228%22%20y2%3D%22116%22%20stroke%3D%22%236b7280%22%20stroke-width%3D%221.5%22%2F%3E%0A%20%20%3Cline%20x1%3D%2232%22%20y1%3D%22116%22%20x2%3D%2232%22%20y2%3D%2216%22%20stroke%3D%22%236b7280%22%20stroke-width%3D%221.5%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M40%2070%20C55%2030%2C%2070%2030%2C%2085%2070%20S115%20110%2C%20130%2070%20S160%2030%2C%20175%2070%20S205%20110%2C%20220%2070%22%20fill%3D%22none%22%20stroke%3D%22%23818cf8%22%20stroke-width%3D%222.5%22%2F%3E%0A%20%20%3Ctext%20x%3D%22220%22%20y%3D%22130%22%20fill%3D%22%239ca3af%22%20font-size%3D%2211%22%20font-family%3D%22sans-serif%22%3Ex%3C%2Ftext%3E%0A%20%20%20%20%20%20%20%3Ctext%20x%3D%228%22%20y%3D%2224%22%20fill%3D%22%239ca3af%22%20font-size%3D%2211%22%20font-family%3D%22sans-serif%22%3Ey%3C%2Ftext%3E%0A%20%20%20%20%20%20%20%3Ctext%20x%3D%22175%22%20y%3D%2235%22%20fill%3D%22%23a5b4fc%22%20font-size%3D%2212%22%20font-family%3D%22sans-serif%22%3Esin%20x%3C%2Ftext%3E%0A%3C%2Fsvg%3E"
+    },
+    {
+      "id": "plot-normal",
+      "type": "plot",
+      "title": "Normal (bell) curve",
+      "subject": "mathematics",
+      "topic": "Probability",
+      "tags": [
+        "plot",
+        "stats"
+      ],
+      "imageUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22220%22%20height%3D%22150%22%20viewBox%3D%220%200%20220%20150%22%3E%0A%20%20%3Cline%20x1%3D%2232%22%20y1%3D%22126%22%20x2%3D%22208%22%20y2%3D%22126%22%20stroke%3D%22%236b7280%22%20stroke-width%3D%221.5%22%2F%3E%0A%20%20%3Cline%20x1%3D%2232%22%20y1%3D%22126%22%20x2%3D%2232%22%20y2%3D%2216%22%20stroke%3D%22%236b7280%22%20stroke-width%3D%221.5%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M40%20120%20C70%20118%2C%2085%2040%2C%20110%2030%20S150%2040%2C%20180%20118%20S200%20120%2C%20200%20120%22%20fill%3D%22none%22%20stroke%3D%22%23c084fc%22%20stroke-width%3D%222.5%22%2F%3E%0A%20%20%20%20%20%20%20%3Cline%20x1%3D%22110%22%20y1%3D%2230%22%20x2%3D%22110%22%20y2%3D%22126%22%20stroke%3D%22%234b5563%22%20stroke-width%3D%221%22%20stroke-dasharray%3D%223%22%2F%3E%0A%20%20%3Ctext%20x%3D%22200%22%20y%3D%22145%22%20fill%3D%22%239ca3af%22%20font-size%3D%2211%22%20font-family%3D%22sans-serif%22%3Ex%3C%2Ftext%3E%0A%20%20%20%20%20%20%20%3Ctext%20x%3D%22105%22%20y%3D%22142%22%20fill%3D%22%23e9d5ff%22%20font-size%3D%2210%22%20font-family%3D%22sans-serif%22%3E%CE%BC%3C%2Ftext%3E%0A%20%20%20%20%20%20%20%3Ctext%20x%3D%22140%22%20y%3D%2250%22%20fill%3D%22%23e9d5ff%22%20font-size%3D%2211%22%20font-family%3D%22sans-serif%22%3EN(%CE%BC%2C%CF%83%C2%B2)%3C%2Ftext%3E%0A%3C%2Fsvg%3E"
+    },
+    {
+      "id": "plot-projectile",
+      "type": "plot",
+      "title": "Projectile trajectory",
+      "subject": "physics",
+      "topic": "Mechanics",
+      "tags": [
+        "plot",
+        "kinematics"
+      ],
+      "imageUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22240%22%20height%3D%22150%22%20viewBox%3D%220%200%20240%20150%22%3E%0A%20%20%3Cline%20x1%3D%2232%22%20y1%3D%22126%22%20x2%3D%22228%22%20y2%3D%22126%22%20stroke%3D%22%236b7280%22%20stroke-width%3D%221.5%22%2F%3E%0A%20%20%3Cline%20x1%3D%2232%22%20y1%3D%22126%22%20x2%3D%2232%22%20y2%3D%2216%22%20stroke%3D%22%236b7280%22%20stroke-width%3D%221.5%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M40%20120%20Q120%2020%20220%20120%22%20fill%3D%22none%22%20stroke%3D%22%2334d399%22%20stroke-width%3D%222.5%22%2F%3E%0A%20%20%20%20%20%20%20%3Ccircle%20cx%3D%2240%22%20cy%3D%22120%22%20r%3D%223%22%20fill%3D%22%23fbbf24%22%2F%3E%0A%20%20%20%20%20%20%20%3Ccircle%20cx%3D%22220%22%20cy%3D%22120%22%20r%3D%223%22%20fill%3D%22%23fbbf24%22%2F%3E%0A%20%20%3Ctext%20x%3D%22220%22%20y%3D%22142%22%20fill%3D%22%239ca3af%22%20font-size%3D%2211%22%20font-family%3D%22sans-serif%22%3Ex%3C%2Ftext%3E%0A%20%20%20%20%20%20%20%3Ctext%20x%3D%228%22%20y%3D%2224%22%20fill%3D%22%239ca3af%22%20font-size%3D%2211%22%20font-family%3D%22sans-serif%22%3Ey%3C%2Ftext%3E%0A%20%20%20%20%20%20%20%3Ctext%20x%3D%22115%22%20y%3D%2245%22%20fill%3D%22%2386efac%22%20font-size%3D%2211%22%20font-family%3D%22sans-serif%22%3Erange%3C%2Ftext%3E%0A%3C%2Fsvg%3E",
+      "description": "Parabolic path under constant g (no drag)."
+    },
+    {
+      "id": "plot-sh-m-phase",
+      "type": "plot",
+      "title": "SHM: x vs t",
+      "subject": "physics",
+      "topic": "Waves",
+      "tags": [
+        "plot",
+        "shm"
+      ],
+      "imageUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22240%22%20height%3D%22140%22%20viewBox%3D%220%200%20240%20140%22%3E%0A%20%20%3Cline%20x1%3D%2232%22%20y1%3D%22116%22%20x2%3D%22228%22%20y2%3D%22116%22%20stroke%3D%22%236b7280%22%20stroke-width%3D%221.5%22%2F%3E%0A%20%20%3Cline%20x1%3D%2232%22%20y1%3D%22116%22%20x2%3D%2232%22%20y2%3D%2216%22%20stroke%3D%22%236b7280%22%20stroke-width%3D%221.5%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M40%2070%20C55%2030%2C%2070%2030%2C%2085%2070%20S115%20110%2C%20130%2070%20S160%2030%2C%20175%2070%20S205%20110%2C%20220%2070%22%20fill%3D%22none%22%20stroke%3D%22%2338bdf8%22%20stroke-width%3D%222.5%22%2F%3E%0A%20%20%3Ctext%20x%3D%22220%22%20y%3D%22130%22%20fill%3D%22%239ca3af%22%20font-size%3D%2211%22%20font-family%3D%22sans-serif%22%3Et%3C%2Ftext%3E%0A%20%20%20%20%20%20%20%3Ctext%20x%3D%228%22%20y%3D%2224%22%20fill%3D%22%239ca3af%22%20font-size%3D%2211%22%20font-family%3D%22sans-serif%22%3Ex%3C%2Ftext%3E%0A%20%20%20%20%20%20%20%3Ctext%20x%3D%22165%22%20y%3D%2235%22%20fill%3D%22%237dd3fc%22%20font-size%3D%2211%22%20font-family%3D%22sans-serif%22%3EA%20cos(%CF%89t)%3C%2Ftext%3E%0A%3C%2Fsvg%3E"
+    },
+    {
+      "id": "plot-iv-curve",
+      "type": "plot",
+      "title": "Ohmic I–V line",
+      "subject": "physics",
+      "topic": "Electricity & Magnetism",
+      "tags": [
+        "plot",
+        "circuits"
+      ],
+      "imageUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22200%22%20height%3D%22150%22%20viewBox%3D%220%200%20200%20150%22%3E%0A%20%20%3Cline%20x1%3D%2232%22%20y1%3D%22126%22%20x2%3D%22188%22%20y2%3D%22126%22%20stroke%3D%22%236b7280%22%20stroke-width%3D%221.5%22%2F%3E%0A%20%20%3Cline%20x1%3D%2232%22%20y1%3D%22126%22%20x2%3D%2232%22%20y2%3D%2216%22%20stroke%3D%22%236b7280%22%20stroke-width%3D%221.5%22%2F%3E%0A%20%20%3Cline%20x1%3D%2240%22%20y1%3D%22120%22%20x2%3D%22180%22%20y2%3D%2240%22%20stroke%3D%22%23f87171%22%20stroke-width%3D%222.5%22%2F%3E%0A%20%20%3Ctext%20x%3D%22180%22%20y%3D%22142%22%20fill%3D%22%239ca3af%22%20font-size%3D%2211%22%20font-family%3D%22sans-serif%22%3EV%3C%2Ftext%3E%0A%20%20%20%20%20%20%20%3Ctext%20x%3D%228%22%20y%3D%2224%22%20fill%3D%22%239ca3af%22%20font-size%3D%2211%22%20font-family%3D%22sans-serif%22%3EI%3C%2Ftext%3E%0A%20%20%20%20%20%20%20%3Ctext%20x%3D%22120%22%20y%3D%2255%22%20fill%3D%22%23fca5a5%22%20font-size%3D%2211%22%20font-family%3D%22sans-serif%22%3EI%3DV%2FR%3C%2Ftext%3E%0A%3C%2Fsvg%3E"
+    },
+    {
+      "id": "plot-arrhenius",
+      "type": "plot",
+      "title": "Arrhenius: ln k vs 1/T",
+      "subject": "chemistry",
+      "topic": "Kinetics",
+      "tags": [
+        "plot",
+        "kinetics"
+      ],
+      "imageUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22220%22%20height%3D%22150%22%20viewBox%3D%220%200%20220%20150%22%3E%0A%20%20%3Cline%20x1%3D%2232%22%20y1%3D%22126%22%20x2%3D%22208%22%20y2%3D%22126%22%20stroke%3D%22%236b7280%22%20stroke-width%3D%221.5%22%2F%3E%0A%20%20%3Cline%20x1%3D%2232%22%20y1%3D%22126%22%20x2%3D%2232%22%20y2%3D%2216%22%20stroke%3D%22%236b7280%22%20stroke-width%3D%221.5%22%2F%3E%0A%20%20%3Cline%20x1%3D%2250%22%20y1%3D%2240%22%20x2%3D%22190%22%20y2%3D%22120%22%20stroke%3D%22%23fbbf24%22%20stroke-width%3D%222.5%22%2F%3E%0A%20%20%3Ctext%20x%3D%22175%22%20y%3D%22142%22%20fill%3D%22%239ca3af%22%20font-size%3D%2211%22%20font-family%3D%22sans-serif%22%3E1%2FT%3C%2Ftext%3E%0A%20%20%20%20%20%20%20%3Ctext%20x%3D%224%22%20y%3D%2228%22%20fill%3D%22%239ca3af%22%20font-size%3D%2211%22%20font-family%3D%22sans-serif%22%3Eln%20k%3C%2Ftext%3E%0A%20%20%20%20%20%20%20%3Ctext%20x%3D%22100%22%20y%3D%2255%22%20fill%3D%22%23fcd34d%22%20font-size%3D%2211%22%20font-family%3D%22sans-serif%22%3Eslope%20%E2%88%92E%E2%82%90%2FR%3C%2Ftext%3E%0A%3C%2Fsvg%3E"
+    },
+    {
+      "id": "plot-titration",
+      "type": "plot",
+      "title": "Strong acid–base titration",
+      "subject": "chemistry",
+      "topic": "Acids & Bases",
+      "tags": [
+        "plot",
+        "titration"
+      ],
+      "imageUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22220%22%20height%3D%22160%22%20viewBox%3D%220%200%20220%20160%22%3E%0A%20%20%3Cline%20x1%3D%2232%22%20y1%3D%22136%22%20x2%3D%22208%22%20y2%3D%22136%22%20stroke%3D%22%236b7280%22%20stroke-width%3D%221.5%22%2F%3E%0A%20%20%3Cline%20x1%3D%2232%22%20y1%3D%22136%22%20x2%3D%2232%22%20y2%3D%2216%22%20stroke%3D%22%236b7280%22%20stroke-width%3D%221.5%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M40%20110%20L90%20100%20L110%2090%20L120%2040%20L140%2030%20L190%2028%22%20fill%3D%22none%22%20stroke%3D%22%2334d399%22%20stroke-width%3D%222.5%22%2F%3E%0A%20%20%20%20%20%20%20%3Cline%20x1%3D%22120%22%20y1%3D%2216%22%20x2%3D%22120%22%20y2%3D%22136%22%20stroke%3D%22%234b5563%22%20stroke-width%3D%221%22%20stroke-dasharray%3D%223%22%2F%3E%0A%20%20%3Ctext%20x%3D%22185%22%20y%3D%22152%22%20fill%3D%22%239ca3af%22%20font-size%3D%2210%22%20font-family%3D%22sans-serif%22%3EV%20base%3C%2Ftext%3E%0A%20%20%20%20%20%20%20%3Ctext%20x%3D%224%22%20y%3D%2228%22%20fill%3D%22%239ca3af%22%20font-size%3D%2211%22%20font-family%3D%22sans-serif%22%3EpH%3C%2Ftext%3E%0A%20%20%20%20%20%20%20%3Ctext%20x%3D%22125%22%20y%3D%2255%22%20fill%3D%22%2386efac%22%20font-size%3D%2210%22%20font-family%3D%22sans-serif%22%3Eeq%20pt%3C%2Ftext%3E%0A%3C%2Fsvg%3E"
+    },
+    {
+      "id": "plot-mm-kinetics",
+      "type": "plot",
+      "title": "Michaelis–Menten v vs [S]",
+      "subject": "biology",
+      "topic": "Enzymes",
+      "tags": [
+        "plot",
+        "enzymes"
+      ],
+      "imageUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22220%22%20height%3D%22150%22%20viewBox%3D%220%200%20220%20150%22%3E%0A%20%20%3Cline%20x1%3D%2232%22%20y1%3D%22126%22%20x2%3D%22208%22%20y2%3D%22126%22%20stroke%3D%22%236b7280%22%20stroke-width%3D%221.5%22%2F%3E%0A%20%20%3Cline%20x1%3D%2232%22%20y1%3D%22126%22%20x2%3D%2232%22%20y2%3D%2216%22%20stroke%3D%22%236b7280%22%20stroke-width%3D%221.5%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M40%20125%20Q90%2040%20200%2030%22%20fill%3D%22none%22%20stroke%3D%22%2334d399%22%20stroke-width%3D%222.5%22%2F%3E%0A%20%20%20%20%20%20%20%3Cline%20x1%3D%2232%22%20y1%3D%2230%22%20x2%3D%22200%22%20y2%3D%2230%22%20stroke%3D%22%23818cf8%22%20stroke-width%3D%221%22%20stroke-dasharray%3D%224%22%2F%3E%0A%20%20%3Ctext%20x%3D%22175%22%20y%3D%22142%22%20fill%3D%22%239ca3af%22%20font-size%3D%2211%22%20font-family%3D%22sans-serif%22%3E%5BS%5D%3C%2Ftext%3E%0A%20%20%20%20%20%20%20%3Ctext%20x%3D%224%22%20y%3D%2228%22%20fill%3D%22%239ca3af%22%20font-size%3D%2211%22%20font-family%3D%22sans-serif%22%3Ev%3C%2Ftext%3E%0A%20%20%20%20%20%20%20%3Ctext%20x%3D%22155%22%20y%3D%2225%22%20fill%3D%22%23a5b4fc%22%20font-size%3D%2210%22%20font-family%3D%22sans-serif%22%3EVmax%3C%2Ftext%3E%0A%3C%2Fsvg%3E"
+    },
+    {
+      "id": "plot-logistic",
+      "type": "plot",
+      "title": "Logistic population growth",
+      "subject": "biology",
+      "topic": "Population",
+      "tags": [
+        "plot",
+        "ecology"
+      ],
+      "imageUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22220%22%20height%3D%22150%22%20viewBox%3D%220%200%20220%20150%22%3E%0A%20%20%3Cline%20x1%3D%2232%22%20y1%3D%22126%22%20x2%3D%22208%22%20y2%3D%22126%22%20stroke%3D%22%236b7280%22%20stroke-width%3D%221.5%22%2F%3E%0A%20%20%3Cline%20x1%3D%2232%22%20y1%3D%22126%22%20x2%3D%2232%22%20y2%3D%2216%22%20stroke%3D%22%236b7280%22%20stroke-width%3D%221.5%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M40%20120%20C80%20118%2C%20100%20100%2C%20120%2070%20S160%2035%2C%20200%2032%22%20fill%3D%22none%22%20stroke%3D%22%23818cf8%22%20stroke-width%3D%222.5%22%2F%3E%0A%20%20%20%20%20%20%20%3Cline%20x1%3D%2232%22%20y1%3D%2232%22%20x2%3D%22200%22%20y2%3D%2232%22%20stroke%3D%22%234b5563%22%20stroke-width%3D%221%22%20stroke-dasharray%3D%223%22%2F%3E%0A%20%20%3Ctext%20x%3D%22200%22%20y%3D%22142%22%20fill%3D%22%239ca3af%22%20font-size%3D%2211%22%20font-family%3D%22sans-serif%22%3Et%3C%2Ftext%3E%0A%20%20%20%20%20%20%20%3Ctext%20x%3D%224%22%20y%3D%2228%22%20fill%3D%22%239ca3af%22%20font-size%3D%2211%22%20font-family%3D%22sans-serif%22%3EN%3C%2Ftext%3E%0A%20%20%20%20%20%20%20%3Ctext%20x%3D%22165%22%20y%3D%2228%22%20fill%3D%22%23a5b4fc%22%20font-size%3D%2210%22%20font-family%3D%22sans-serif%22%3EK%3C%2Ftext%3E%0A%3C%2Fsvg%3E",
+      "description": "S-curve approaching carrying capacity K."
+    },
+    {
+      "id": "plot-laffer",
+      "type": "plot",
+      "title": "Laffer curve (schematic)",
+      "subject": "economics",
+      "topic": "Macroeconomics",
+      "tags": [
+        "plot",
+        "macro"
+      ],
+      "imageUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22220%22%20height%3D%22150%22%20viewBox%3D%220%200%20220%20150%22%3E%0A%20%20%3Cline%20x1%3D%2232%22%20y1%3D%22126%22%20x2%3D%22208%22%20y2%3D%22126%22%20stroke%3D%22%236b7280%22%20stroke-width%3D%221.5%22%2F%3E%0A%20%20%3Cline%20x1%3D%2232%22%20y1%3D%22126%22%20x2%3D%2232%22%20y2%3D%2216%22%20stroke%3D%22%236b7280%22%20stroke-width%3D%221.5%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M40%20120%20Q110%2020%20200%20120%22%20fill%3D%22none%22%20stroke%3D%22%23fbbf24%22%20stroke-width%3D%222.5%22%2F%3E%0A%20%20%20%20%20%20%20%3Ccircle%20cx%3D%22110%22%20cy%3D%2235%22%20r%3D%223%22%20fill%3D%22%23f87171%22%2F%3E%0A%20%20%3Ctext%20x%3D%22175%22%20y%3D%22142%22%20fill%3D%22%239ca3af%22%20font-size%3D%2210%22%20font-family%3D%22sans-serif%22%3Etax%20rate%3C%2Ftext%3E%0A%20%20%20%20%20%20%20%3Ctext%20x%3D%224%22%20y%3D%2228%22%20fill%3D%22%239ca3af%22%20font-size%3D%2210%22%20font-family%3D%22sans-serif%22%3Erevenue%3C%2Ftext%3E%0A%3C%2Fsvg%3E",
+      "description": "Schematic only — peak location is empirical."
+    },
+    {
+      "id": "plot-cost-curves",
+      "type": "plot",
+      "title": "MC, ATC schematic",
+      "subject": "economics",
+      "topic": "Microeconomics",
+      "tags": [
+        "plot",
+        "costs"
+      ],
+      "imageUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22220%22%20height%3D%22160%22%20viewBox%3D%220%200%20220%20160%22%3E%0A%20%20%3Cline%20x1%3D%2232%22%20y1%3D%22136%22%20x2%3D%22208%22%20y2%3D%22136%22%20stroke%3D%22%236b7280%22%20stroke-width%3D%221.5%22%2F%3E%0A%20%20%3Cline%20x1%3D%2232%22%20y1%3D%22136%22%20x2%3D%2232%22%20y2%3D%2216%22%20stroke%3D%22%236b7280%22%20stroke-width%3D%221.5%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M50%2040%20C80%20100%2C%20100%20110%2C%20130%2070%20S180%2040%2C%20200%2035%22%20fill%3D%22none%22%20stroke%3D%22%23f87171%22%20stroke-width%3D%222%22%2F%3E%0A%20%20%20%20%20%20%20%3Cpath%20d%3D%22M55%2090%20C90%20120%2C%20120%20100%2C%20160%2070%20S200%2055%2C%20200%2055%22%20fill%3D%22none%22%20stroke%3D%22%23818cf8%22%20stroke-width%3D%222%22%2F%3E%0A%20%20%3Ctext%20x%3D%22185%22%20y%3D%22152%22%20fill%3D%22%239ca3af%22%20font-size%3D%2211%22%20font-family%3D%22sans-serif%22%3EQ%3C%2Ftext%3E%0A%20%20%20%20%20%20%20%3Ctext%20x%3D%224%22%20y%3D%2228%22%20fill%3D%22%239ca3af%22%20font-size%3D%2211%22%20font-family%3D%22sans-serif%22%3E%24%3C%2Ftext%3E%0A%20%20%20%20%20%20%20%3Ctext%20x%3D%22170%22%20y%3D%2240%22%20fill%3D%22%23fca5a5%22%20font-size%3D%2210%22%20font-family%3D%22sans-serif%22%3EMC%3C%2Ftext%3E%0A%20%20%20%20%20%20%20%3Ctext%20x%3D%22170%22%20y%3D%2265%22%20fill%3D%22%23a5b4fc%22%20font-size%3D%2210%22%20font-family%3D%22sans-serif%22%3EATC%3C%2Ftext%3E%0A%3C%2Fsvg%3E"
+    },
+    {
+      "id": "plot-yield-curve",
+      "type": "plot",
+      "title": "Yield curve (normal)",
+      "subject": "finance",
+      "topic": "Fixed Income",
+      "tags": [
+        "plot",
+        "bonds"
+      ],
+      "imageUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22220%22%20height%3D%22150%22%20viewBox%3D%220%200%20220%20150%22%3E%0A%20%20%3Cline%20x1%3D%2232%22%20y1%3D%22126%22%20x2%3D%22208%22%20y2%3D%22126%22%20stroke%3D%22%236b7280%22%20stroke-width%3D%221.5%22%2F%3E%0A%20%20%3Cline%20x1%3D%2232%22%20y1%3D%22126%22%20x2%3D%2232%22%20y2%3D%2216%22%20stroke%3D%22%236b7280%22%20stroke-width%3D%221.5%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M40%20100%20C80%2095%2C%20120%2070%2C%20200%2045%22%20fill%3D%22none%22%20stroke%3D%22%2334d399%22%20stroke-width%3D%222.5%22%2F%3E%0A%20%20%3Ctext%20x%3D%22160%22%20y%3D%22142%22%20fill%3D%22%239ca3af%22%20font-size%3D%2210%22%20font-family%3D%22sans-serif%22%3Ematurity%3C%2Ftext%3E%0A%20%20%20%20%20%20%20%3Ctext%20x%3D%224%22%20y%3D%2228%22%20fill%3D%22%239ca3af%22%20font-size%3D%2211%22%20font-family%3D%22sans-serif%22%3Ey%3C%2Ftext%3E%0A%20%20%20%20%20%20%20%3Ctext%20x%3D%22120%22%20y%3D%2255%22%20fill%3D%22%2386efac%22%20font-size%3D%2211%22%20font-family%3D%22sans-serif%22%3Eupward%3C%2Ftext%3E%0A%3C%2Fsvg%3E"
+    },
+    {
+      "id": "plot-efficient-frontier",
+      "type": "plot",
+      "title": "Efficient frontier (schematic)",
+      "subject": "finance",
+      "topic": "Portfolio Theory",
+      "tags": [
+        "plot",
+        "portfolio"
+      ],
+      "imageUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22220%22%20height%3D%22160%22%20viewBox%3D%220%200%20220%20160%22%3E%0A%20%20%3Cline%20x1%3D%2232%22%20y1%3D%22136%22%20x2%3D%22208%22%20y2%3D%22136%22%20stroke%3D%22%236b7280%22%20stroke-width%3D%221.5%22%2F%3E%0A%20%20%3Cline%20x1%3D%2232%22%20y1%3D%22136%22%20x2%3D%2232%22%20y2%3D%2216%22%20stroke%3D%22%236b7280%22%20stroke-width%3D%221.5%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M50%20120%20C80%20100%2C%20100%2050%2C%20140%2030%20S190%2025%2C%20200%2028%22%20fill%3D%22none%22%20stroke%3D%22%23c084fc%22%20stroke-width%3D%222.5%22%2F%3E%0A%20%20%20%20%20%20%20%3Ccircle%20cx%3D%22120%22%20cy%3D%2255%22%20r%3D%223%22%20fill%3D%22%23fbbf24%22%2F%3E%0A%20%20%3Ctext%20x%3D%22165%22%20y%3D%22152%22%20fill%3D%22%239ca3af%22%20font-size%3D%2210%22%20font-family%3D%22sans-serif%22%3E%CF%83%3C%2Ftext%3E%0A%20%20%20%20%20%20%20%3Ctext%20x%3D%224%22%20y%3D%2228%22%20fill%3D%22%239ca3af%22%20font-size%3D%2211%22%20font-family%3D%22sans-serif%22%3EE%5Br%5D%3C%2Ftext%3E%0A%20%20%20%20%20%20%20%3Ctext%20x%3D%22125%22%20y%3D%2250%22%20fill%3D%22%23fcd34d%22%20font-size%3D%2210%22%20font-family%3D%22sans-serif%22%3Etangency%3C%2Ftext%3E%0A%3C%2Fsvg%3E"
     },
     {
       "id": "proc-problem-solve",

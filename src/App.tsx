@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AuthGate } from '@/components/auth/AuthGate'
+import { AppInitSplash } from '@/components/init/AppInitSplash'
 import { Landing } from '@/pages/Landing'
 import { Workspace } from '@/pages/Workspace'
 import { useAuthStore } from '@/stores/authStore'
@@ -20,7 +21,9 @@ export default function App() {
           path="/app"
           element={
             <AuthGate>
-              <Workspace />
+              <AppInitSplash>
+                <Workspace />
+              </AppInitSplash>
             </AuthGate>
           }
         />

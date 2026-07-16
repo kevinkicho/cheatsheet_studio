@@ -16,7 +16,11 @@ import {
   type PanelGroupLevel,
   type GroupSortOrder,
 } from './constants'
-import { getPackContentBox, snapToGridValue } from './contentBox'
+import {
+  getPackContentBox,
+  resolvePackedPrintPageCount,
+  snapToGridValue,
+} from './contentBox'
 import {
   folderAtGroupLevel,
   splitCheatSections,
@@ -263,10 +267,12 @@ export function packCheatsheetLayout(
   if (totalBodyCells < 1) totalBodyCells = 1
 
   // ── 3) Pages + global area scale ────────────────────────────────────────
-  // Prefer **more pages** over crushing cards. Old minScale 0.52 made “Small”
-  // exports unreadable (KaTeX clipped in micro cards).
+  // Prefer readable cards, but do **not** invent empty page frames.
+  // minScale 0.94 + plannedPages floor previously forced a blank second page
+  // whenever ideal-cell area was slightly over one page (even when densify fit).
+  const userPages = Math.max(1, canvas.printPageCount ?? 1)
   const minScale = multiPage
-    ? 0.94 // almost never shrink multipage packs
+    ? 0.88 // modest shrink before adding pages (was 0.94)
     : density === 'xs'
       ? 0.82
       : density === 'sm'
@@ -284,6 +290,22 @@ export function packCheatsheetLayout(
       )
     : 1
   if (!multiPage) pages = 1
+
+  // Prefer the user’s current page budget when it stays readable — ideal-cell
+  // budgeting alone often over-plans pages. Final frame count still comes from
+  // actual content extent in resolvePackedPrintPageCount.
+  if (multiPage && userPages < pages) {
+    const scaleOnUser = computeGridAreaScale(
+      totalBodyCells,
+      pageCells,
+      userPages,
+      GRID_PACK_FILL_TARGET,
+      0.01,
+    )
+    if (scaleOnUser >= minScale) {
+      pages = userPages
+    }
+  }
 
   let areaScale = computeGridAreaScale(
     totalBodyCells,
@@ -307,8 +329,7 @@ export function packCheatsheetLayout(
         minScale,
       )
     }
-    // Hard floor: never squash multipage content below this
-    areaScale = Math.max(0.94, areaScale)
+    areaScale = Math.max(minScale, areaScale)
   }
 
   // ── 4) Scale body cells; natural tight topic blocks (no forced columns) ─
@@ -405,6 +426,18 @@ export function packCheatsheetLayout(
   const useHierarchicalPlace =
     usePanels && deepLevel > shallowLevel && (options.folders?.length ?? 0) > 0
 
+  // groupSort:
+  // - name-asc/desc: sort sections by name, lock insertion order (multiOrder off,
+  //   preserveOrder) through hierarchical leaf pack + post re-pack. Dense
+  //   top-left place with left-only compact — not diagonal readingFlow voids.
+  // - none: multi-order densest + full gravity (may reorder freely).
+  const placeOpts = {
+    sortByHeight: !nameOrdered,
+    readingFlow: false,
+    multiOrder: !nameOrdered,
+    preserveOrder: nameOrdered,
+  }
+
   // ── Gaps (user knobs) + chrome pad + title floor ───────────────────────
   // l1PanelGap  → air between L1 outer frames (content clearance + 2×pad)
   // l2PanelGap  → air between L2 sibling frames inside an L1
@@ -426,27 +459,37 @@ export function packCheatsheetLayout(
 
   // L1 title strip is reserved via titleCells *inside* each parent.
   const L1_TITLE_CLEAR_PX = 26
-  // L2 local chip ~16px — free-flow must leave this vertical room or
-  // ensureLeafTitleClearance shoves groups apart into sparse voids.
+  // L2 local chip ~16px — only between *stacked* frames (title is on top of
+  // each panel). Must NOT inflate horizontal content clear or side-by-side
+  // stroke gaps stay ~userGap+title (e.g. 2+16=18) while vertical is correct.
   const L2_TITLE_PACK_PX = leafLevelsStroke ? 16 : 0
 
-  // Content-to-content clearance so stroked frames sit ~userGap apart:
-  // contentGap = userGap + 2×pad (pad lives inside each frame).
+  // Content-to-content clearance so stroked frames sit ~userGap apart.
+  // Horizontal: userGap + 2×pad (no title — chips are not on the side).
+  // Vertical:   userGap + 2×pad + title (stacked chrome includes header).
   const l1ContentClearPx = usePanels
     ? Math.max(0, l1GapPx) + (outerLevelsStroke ? panelPad * 2 : 0)
     : Math.max(0, l1GapPx)
-  // L2 free-flow: user gap + pad + title pack floor (stable dense shelves).
-  // Final stroke-to-stroke gap is still enforced at pure l2GapPx later.
-  const l2ContentClearPx =
+  const l2ContentClearH =
+    usePanels && leafLevelsStroke
+      ? Math.max(0, l2GapPx) + panelPad * 2
+      : Math.max(0, l2GapPx)
+  const l2ContentClearV =
     usePanels && leafLevelsStroke
       ? Math.max(0, l2GapPx) + panelPad * 2 + L2_TITLE_PACK_PX
       : Math.max(0, l2GapPx)
+  // Legacy single-value (vertical) for callers that only pass one minGap.
+  const l2ContentClearPx = l2ContentClearV
 
-  // Free-flow cells — nearest-cell (small user px → 0; title floor often 1 cell)
-  const leafGapCells = gapPxToCells(l2ContentClearPx, grid)
+  // Free-flow cells use *horizontal* clear (smaller) so we never reserve a
+  // full title gutter between side-by-side leaves. Pixel post-pass opens the
+  // exact H/V content clear. Do NOT force min-1 cell — that locked H stroke
+  // at ~18px for 2px user gap on a 24px grid.
+  const leafGapCells = gapPxToCells(l2ContentClearH, grid)
   const outerGapCells = gapPxToCells(l1ContentClearPx, grid)
 
   // Pixel post-passes (separateFolderClusters / resolveLeafGroupCollisions)
+  // Flat L1 vertical stack may need title; horizontal uses pad-only clear.
   const interTopicChromePx = usePanels
     ? l1ContentClearPx +
       (outerLevelsStroke && !useHierarchicalPlace ? L1_TITLE_CLEAR_PX : 0)
@@ -464,10 +507,6 @@ export function packCheatsheetLayout(
     : 0
   const nestInsetCells =
     nestInsetPx > 0 ? Math.min(1, Math.ceil(nestInsetPx / grid)) : 0
-  const placeOpts = {
-    sortByHeight: !nameOrdered,
-    readingFlow: nameOrdered,
-  }
   const regionPos = useHierarchicalPlace
     ? placePlansHierarchical(
         plans.map((p) => ({
@@ -556,13 +595,26 @@ export function packCheatsheetLayout(
       const quietBorder = usePanels
         ? { borderEnabled: false as const, borderWidth: 0, border: 'none' }
         : {}
+      let pw = Math.round(rect.cw * grid)
+      let ph = Math.round(rect.ch * grid)
+      // Never crush process/mindmap cards below a readable free-form footprint
+      if (isProc) {
+        pw = Math.max(pw, 280)
+        ph = Math.max(ph, 200)
+        // Honor existing processFlow viewBox when larger (user-resized diagram)
+        const pf = it.processFlow as
+          | { width?: number; height?: number }
+          | undefined
+        if (pf?.width && pf.width > pw) pw = Math.min(packWidth, Math.round(pf.width * 0.9))
+        if (pf?.height && pf.height > ph) ph = Math.max(ph, Math.round(pf.height * 0.85))
+      }
       placed.push({
         ...it,
         hidden: false,
         x: Math.round(packLeft + (origin.c + p.c) * grid),
         y: Math.round(packTop + (origin.r + localR + p.r) * grid),
-        width: Math.round(rect.cw * grid),
-        height: Math.round(rect.ch * grid),
+        width: pw,
+        height: ph,
         zIndex: z++,
         style: { ...it.style, ...styleBase, ...quietBorder },
         autoFit: false,
@@ -615,14 +667,25 @@ export function packCheatsheetLayout(
     (m, it) => Math.max(m, it.y + it.height),
     box.top,
   )
-  const pageStep = Math.max(1, box.pageHeight)
-  let pageCount = multiPage
-    ? Math.min(20, Math.max(1, Math.ceil(bottomFinal / pageStep)))
-    : 1
-  // Prefer planned page count when continuous y is a bit short of last page
-  if (multiPage) {
-    pageCount = Math.min(20, Math.max(pageCount, pages))
-  }
+  const rightFinal = result.reduce(
+    (m, it) => (it.hidden ? m : Math.max(m, it.x + it.width)),
+    box.left,
+  )
+  // Early estimate (refined after finalize with full extent + layout-aware rules).
+  // Content extent only — do not floor with ideal-cell `pages` (empty frames).
+  let pageCount = resolvePackedPrintPageCount({
+    multiPage,
+    dissolve: dissolvePrintArea && box.dissolved,
+    layout: canvas.printPageLayout,
+    userPageCount: canvas.printPageCount ?? 1,
+    pageWidth: box.pageWidth,
+    pageHeight: box.pageHeight,
+    margins: box.margins,
+    contentBottom: bottomFinal,
+    contentRight: rightFinal,
+    packLeft: packLeft,
+    packTop: packTop,
+  })
 
   // Snap positions to grid and clamp into the *card pack band* (chrome inset).
   // Panels may paint to the full content box; cards stay inset so pad never
@@ -696,11 +759,14 @@ export function packCheatsheetLayout(
     leafGapCells,
     l1GapPx,
     l2ContentClearPx,
+    l2ContentClearH,
+    l2ContentClearV,
     interTopicChromePx,
     outerTitleCells,
     panelPad,
     panelTitleBandPx: PANEL_TITLE_BAND_PX,
     multiPage,
+    groupSort,
     box: {
       top: box.top,
       height: box.height,
@@ -729,6 +795,16 @@ export function packCheatsheetLayout(
       // labels mode that missed placement still hide (avoid orphan floaters).
       if (useLabels && isHeadingCard(old) && !headingIds.has(old.id)) {
         return { ...old, hidden: true, autoFit: false }
+      }
+      // Visible body card never placed — pin to pack origin so it still
+      // participates in panel chrome (orphans) instead of floating off-sheet.
+      if (!old.hidden && !isHeadingCard(old)) {
+        return {
+          ...old,
+          x: packLeft,
+          y: packTop,
+          autoFit: false,
+        }
       }
       return { ...old, autoFit: false }
     }
@@ -772,13 +848,25 @@ export function packCheatsheetLayout(
     (m, it) => (it.hidden ? m : Math.max(m, it.y + it.height)),
     box.top,
   )
-  if (multiPage) {
-    // Dissolved pack is continuous; page frames still tile by pageHeight
-    pageCount = Math.min(
-      20,
-      Math.max(1, Math.ceil((bottom2 - box.top + box.margins.top) / pageStep)),
-    )
-  }
-
+  const right2 = merged.reduce(
+    (m, it) => (it.hidden ? m : Math.max(m, it.x + it.width)),
+    box.left,
+  )
+  // Layout-aware page frames: grid/horizontal must not collapse to height-only
+  // ceil (that deleted right-hand columns after dissolve pack). Content extent
+  // only — never invent empty pages from the ideal-cell budget.
+  pageCount = resolvePackedPrintPageCount({
+    multiPage,
+    dissolve: dissolvePrintArea && box.dissolved,
+    layout: canvas.printPageLayout,
+    userPageCount: canvas.printPageCount ?? 1,
+    pageWidth: box.pageWidth,
+    pageHeight: box.pageHeight,
+    margins: box.margins,
+    contentBottom: bottom2,
+    contentRight: right2,
+    packLeft: box.left,
+    packTop: box.top,
+  })
   return { items: merged, printPageCount: pageCount, layoutPanels }
 }

@@ -29,6 +29,77 @@ describe('canvasStore — items, folders, multi-select', () => {
     expect(items[0]!.type).toBe('custom-equation')
   })
 
+  it('updateItem normalizes and persists processFlow (Done/Save card path)', () => {
+    // Regression: missing normalizeCanvasItem import threw
+    // "normalizeCanvasItem is not defined" on every updateItem (mindmap Done).
+    const id = useCanvasStore.getState().addProcessChart(
+      'mindmap\n  root((Topic))',
+      {
+        title: 'Mind map',
+        mermaidKind: 'mindmap',
+        processFlow: {
+          v: 1,
+          direction: 'TD',
+          curveStyle: 'basis',
+          diagramKind: 'mindmap',
+          width: 200,
+          height: 200,
+          nodes: [
+            {
+              id: 'root',
+              x: 0,
+              y: 0,
+              width: 120,
+              height: 120,
+              label: 'Topic',
+              shape: 'circle',
+            },
+          ],
+          edges: [],
+        },
+      },
+    )
+    expect(() => {
+      useCanvasStore.getState().updateItem(id, {
+        mermaidSource: 'mindmap\n  root((Topic))\n    child(New topic)',
+        processFlow: {
+          v: 1,
+          direction: 'TD',
+          curveStyle: 'basis',
+          diagramKind: 'mindmap',
+          width: 400,
+          height: 300,
+          nodes: [
+            {
+              id: 'root',
+              x: 0,
+              y: 0,
+              width: 120,
+              height: 120,
+              label: 'Topic',
+              shape: 'circle',
+            },
+            {
+              id: 'child',
+              x: 200,
+              y: 40,
+              width: 220,
+              height: 220,
+              label: 'New topic',
+              shape: 'circle',
+            },
+          ],
+          edges: [{ id: 'e1', source: 'root', target: 'child' }],
+        },
+        contentFitKey: 1,
+      })
+    }).not.toThrow()
+    const item = useCanvasStore.getState().items.find((i) => i.id === id)!
+    expect(item.processFlow?.nodes).toHaveLength(2)
+    expect(item.processFlow?.nodes[1]!.width).toBe(220)
+    expect(item.mermaidSource).toContain('New topic')
+  })
+
   it('addFromLibrary with matchPreview uses ghost size and freezes autoFit', () => {
     const id = useCanvasStore.getState().addFromLibrary(libEq(), 40, 50, {
       width: 312,
@@ -43,6 +114,33 @@ describe('canvasStore — items, folders, multi-select', () => {
     expect(item.autoFit).toBe(false)
     expect(item.latex).toBe('a^2+b^2=c^2')
     expect(item.libraryItemId).toBe('lib-eq-1')
+  })
+
+  it('addFromLibrary matchPreview freezes definition (text) cards like equations', () => {
+    const lib: LibraryItem = {
+      id: 'lib-def-1',
+      type: 'definition',
+      title: 'Beta (CAPM)',
+      subject: 'finance',
+      topic: 'Asset Pricing',
+      tags: [],
+      term: 'β',
+      body: 'Measures systematic risk. CAPM: $E=mc^2$.',
+      isSystem: true,
+    }
+    const id = useCanvasStore.getState().addFromLibrary(lib, 10, 20, {
+      width: 280,
+      height: 120,
+      matchPreview: true,
+    })
+    const item = useCanvasStore.getState().items.find((i) => i.id === id)!
+    expect(item.type).toBe('definition')
+    expect(item.width).toBe(280)
+    expect(item.height).toBe(120)
+    expect(item.autoFit).toBe(false)
+    expect(item.contentFill).toBe(true)
+    expect(item.term).toBe('β')
+    expect(item.body).toContain('systematic')
   })
 
   it('addFromLibrary without preview keeps estimate + autoFit for equations', () => {

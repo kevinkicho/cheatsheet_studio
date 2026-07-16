@@ -44,6 +44,14 @@ type Searchable = Pick<
   | 'latex'
   | 'description'
   | 'tableMarkdown'
+  | 'term'
+  | 'body'
+  | 'code'
+  | 'symbol'
+  | 'value'
+  | 'unit'
+  | 'listItems'
+  | 'identities'
 >
 
 function escapeRegExp(s: string): string {
@@ -95,6 +103,14 @@ function secondaryText(item: Searchable): string {
     stripLatexCommands(item.latex ?? ''),
     item.description ?? '',
     item.tableMarkdown ?? '',
+    item.term ?? '',
+    item.body ?? '',
+    item.code ?? '',
+    item.symbol ?? '',
+    item.value ?? '',
+    item.unit ?? '',
+    (item.listItems ?? []).join(' '),
+    (item.identities ?? []).map(stripLatexCommands).join(' '),
   ]
     .join('\n')
     .toLowerCase()

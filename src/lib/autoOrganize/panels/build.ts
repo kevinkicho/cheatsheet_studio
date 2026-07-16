@@ -66,6 +66,7 @@ export function buildLayoutPanelsFromMembers(args: {
     const title =
       (folderId ? folderName.get(folderId) : undefined) ||
       (plan.heading?.title && plan.heading.title.trim()) ||
+      (plan.groupFolderId ? undefined : 'Ungrouped') ||
       plan.body[0]?.title ||
       `Group ${plan.index + 1}`
 
@@ -151,9 +152,12 @@ export function buildNestedHierarchyPanels(args: {
   const sorted = normalizePanelGroupLevels(levels)
   if (sorted.length === 0) return []
 
-  const cards = placed.filter(
-    (i) => !i.hidden && !isHeadingCard(i) && i.folderId,
-  )
+  /** Synthetic folder id for canvas cards with no Layers folder. */
+  const UNGROUPED_KEY = '__ungrouped__'
+
+  // Include *all* visible body cards — folderless cards form an "Ungrouped"
+  // panel so auto-layout never leaves blocks outside chrome.
+  const cards = placed.filter((i) => !i.hidden && !isHeadingCard(i))
   if (cards.length === 0) return []
 
   const minL = sorted[0]!
@@ -173,13 +177,20 @@ export function buildNestedHierarchyPanels(args: {
   const panels: LayoutPanel[] = []
   let accentIdx = 0
 
+  const groupKeyOf = (
+    c: CanvasItem,
+    level: PanelGroupLevel,
+  ): string => {
+    if (!c.folderId) return UNGROUPED_KEY
+    return folderAtGroupLevel(c.folderId, folders, level) ?? UNGROUPED_KEY
+  }
+
   // Skip deeper levels that collapse to the same folder keys as a shallower
   // selected level (e.g. tree only 2 deep but UI has L2+L3 → double frames).
   const groupKeysAtLevel = (level: PanelGroupLevel): string => {
     const keys: string[] = []
     for (const c of cards) {
-      const key = folderAtGroupLevel(c.folderId, folders, level)
-      if (key) keys.push(key)
+      keys.push(groupKeyOf(c, level))
     }
     return [...new Set(keys)].sort().join('\0')
   }
@@ -222,21 +233,24 @@ export function buildNestedHierarchyPanels(args: {
 
     const groups = new Map<string, CanvasItem[]>()
     for (const c of cards) {
-      const key = folderAtGroupLevel(c.folderId, folders, level)
-      if (!key) continue
+      const key = groupKeyOf(c, level)
       if (!groups.has(key)) groups.set(key, [])
       groups.get(key)!.push(c)
     }
 
-    for (const [folderId, members] of groups) {
+    for (const [groupKey, members] of groups) {
       if (members.length === 0) continue
 
-      const title =
-        folderName.get(folderId) ||
-        folderHierarchyPath(folderId, folders) ||
-        folderId
+      const isUngrouped = groupKey === UNGROUPED_KEY
+      const folderId = isUngrouped ? null : groupKey
+      const title = isUngrouped
+        ? 'Ungrouped'
+        : folderName.get(groupKey) ||
+          folderHierarchyPath(groupKey, folders) ||
+          groupKey
       const accent =
         LAYOUT_PANEL_ACCENTS[accentIdx++ % LAYOUT_PANEL_ACCENTS.length]
+      const panelId = `panel-L${level}-${isUngrouped ? 'ungrouped' : groupKey}`
 
       // Always use the full user pad. Cards are packed into a chrome-inset
       // band (packLeft/Right) so pad fits inside the content box without
@@ -252,7 +266,7 @@ export function buildNestedHierarchyPanels(args: {
         let chipY = Math.round(minY - titleBand)
         if (contentTop != null && chipY < contentTop) chipY = contentTop
         panels.push({
-          id: `panel-L${level}-${folderId}`,
+          id: panelId,
           folderId,
           title,
           showTitle: true,
@@ -336,7 +350,7 @@ export function buildNestedHierarchyPanels(args: {
         }
       })
       panels.push({
-        id: `panel-L${level}-${folderId}`,
+        id: panelId,
         folderId,
         title,
         showTitle: true,

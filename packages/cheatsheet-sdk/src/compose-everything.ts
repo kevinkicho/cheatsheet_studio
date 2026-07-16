@@ -47,6 +47,7 @@ function applyExportPaintFlags(items: CanvasItem[]): CanvasItem[] {
     const isFig =
       it.type === 'figure' ||
       it.type === 'custom-image' ||
+      it.type === 'plot' ||
       (Boolean(it.imageUrl) && !it.latex && !it.tableMarkdown)
     return {
       ...it,

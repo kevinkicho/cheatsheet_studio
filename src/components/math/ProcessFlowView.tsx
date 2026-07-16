@@ -28,10 +28,17 @@ export function ProcessFlowView({
 }: Props) {
   // Depend on geometry fields so SVG rebuilds whenever paths/nodes change
   // (object identity alone can miss deep updates from the editor sync).
+  // Include labels/shapes so re-wrap + style match editor after Done/save
   const geomKey = [
     snapshot.width,
     snapshot.height,
-    snapshot.nodes.map((n) => `${n.id}:${n.x},${n.y},${n.width}x${n.height}`).join(';'),
+    snapshot.diagramKind ?? '',
+    snapshot.nodes
+      .map(
+        (n) =>
+          `${n.id}:${n.x},${n.y},${n.width}x${n.height}:${n.label}:${n.shape}:${n.fillColor ?? ''}`,
+      )
+      .join(';'),
     snapshot.edges
       .map(
         (e) =>

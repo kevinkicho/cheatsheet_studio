@@ -5,6 +5,7 @@ import {
   LayoutGrid,
   List,
   MessageSquareText,
+  RefreshCw,
   Rows3,
   Search,
   X,
@@ -38,6 +39,8 @@ function cmpStr(a: string, b: string): number {
 export function BottomLibraryPanel() {
   const items = useLibraryStore((s) => s.items)
   const source = useLibraryStore((s) => s.source)
+  const loading = useLibraryStore((s) => s.loading)
+  const load = useLibraryStore((s) => s.load)
   const librarySubject = useUiStore((s) => s.librarySubject)
   const setLibrarySubject = useUiStore((s) => s.setLibrarySubject)
   const librarySearch = useUiStore((s) => s.librarySearch)
@@ -309,9 +312,25 @@ export function BottomLibraryPanel() {
               <X className="h-3 w-3" />
             </button>
           )}
-          <span className="shrink-0 tabular-nums text-[10px] text-zinc-500">
+          <span
+            className="shrink-0 tabular-nums text-[10px] text-zinc-500"
+            title={`Showing ${filtered.length} of ${items.length} (${source})`}
+          >
             {filtered.length}/{items.length}
           </span>
+          <button
+            type="button"
+            title="Reload catalog (RTDB → Firestore → seed)"
+            data-testid="library-refresh"
+            disabled={loading}
+            onClick={() => void load()}
+            className="inline-flex shrink-0 items-center gap-1 rounded border border-zinc-700 px-1.5 py-0.5 text-[10px] text-zinc-400 hover:border-zinc-600 hover:text-zinc-200 disabled:opacity-40"
+          >
+            <RefreshCw
+              className={`h-3 w-3 ${loading ? 'animate-spin' : ''}`}
+            />
+            <span className="hidden sm:inline">Refresh</span>
+          </button>
         </div>
 
         <div
@@ -321,7 +340,7 @@ export function BottomLibraryPanel() {
           <select
             value={librarySubject}
             onChange={(e) => setLibrarySubject(e.target.value)}
-            className="max-w-[38%] cursor-pointer rounded border border-zinc-700 bg-zinc-900 px-1.5 py-1 text-[10px] text-zinc-200 outline-none focus:border-indigo-500/50"
+            className="max-w-[7.5rem] shrink-0 cursor-pointer truncate rounded border border-zinc-700 bg-zinc-900 px-1.5 py-1 text-[10px] text-zinc-200 outline-none focus:border-indigo-500/50"
             title="Filter by subject"
             data-testid="library-filter-subject"
           >
@@ -336,14 +355,18 @@ export function BottomLibraryPanel() {
           <select
             value={effectiveTopic}
             onChange={(e) => setLibraryTopic(e.target.value)}
-            className="min-w-0 flex-1 cursor-pointer rounded border border-zinc-700 bg-zinc-900 px-1.5 py-1 text-[10px] text-zinc-200 outline-none focus:border-indigo-500/50"
-            title="Filter by topic"
+            className="max-w-[9.5rem] min-w-0 shrink cursor-pointer truncate rounded border border-zinc-700 bg-zinc-900 px-1.5 py-1 text-[10px] text-zinc-200 outline-none focus:border-indigo-500/50 sm:max-w-[11rem]"
+            title={
+              effectiveTopic === 'all'
+                ? 'Filter by topic'
+                : `Topic: ${effectiveTopic}`
+            }
             data-testid="library-filter-topic"
           >
             <option value="all">All topics</option>
             {topicOptions.map((t) => (
-              <option key={t} value={t}>
-                {t}
+              <option key={t} value={t} title={t}>
+                {t.length > 28 ? `${t.slice(0, 26)}…` : t}
               </option>
             ))}
           </select>
@@ -353,7 +376,7 @@ export function BottomLibraryPanel() {
             onChange={(e) =>
               setLibraryTypeFilter(e.target.value as LibraryTypeFilter)
             }
-            className="cursor-pointer rounded border border-zinc-700 bg-zinc-900 px-1.5 py-1 text-[10px] text-zinc-200 outline-none focus:border-indigo-500/50"
+            className="max-w-[6.5rem] shrink-0 cursor-pointer truncate rounded border border-zinc-700 bg-zinc-900 px-1.5 py-1 text-[10px] text-zinc-200 outline-none focus:border-indigo-500/50"
             title="Filter by type"
             data-testid="library-filter-type"
           >
@@ -361,6 +384,14 @@ export function BottomLibraryPanel() {
             <option value="equation">Equations</option>
             <option value="table">Tables</option>
             <option value="figure">Figures</option>
+            <option value="definition">Definitions</option>
+            <option value="list">Lists</option>
+            <option value="callout">Callouts</option>
+            <option value="code">Code</option>
+            <option value="constant">Constants</option>
+            <option value="identity-set">Identity sets</option>
+            <option value="plot">Plots</option>
+            <option value="matrix">Matrices</option>
           </select>
 
           <button

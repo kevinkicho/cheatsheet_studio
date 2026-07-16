@@ -20,20 +20,68 @@ export type Subject =
   | 'biology'
   | 'economics'
   | 'finance'
+  | 'psychology'
+  | 'general'
+  /** AI-created or user-defined subjects use free-form ids (slug). */
+  | (string & {})
 
 /**
  * Library / canvas content kinds.
- * VECTOR-FIRST: equations (LaTeX), tables (markdown), figures (SVG diagrams).
- * Do not store diagram screenshots as PNG — use SVG. Photos may be raster.
+ * VECTOR-FIRST: prefer LaTeX, markdown/text, SVG, Mermaid — not raster diagrams.
+ * Photos may still use raster via Import Image.
  * See docs/vector-graphics.md
+ *
+ * Tiers:
+ * - Core: equation | table | figure
+ * - Tier 1 prose: definition | list | callout | code
+ * - Tier 2 STEM: constant | identity-set | plot | matrix
+ * - Canvas-only: custom-equation | custom-image | process-chart
  */
-export type LibraryItemType = 'equation' | 'table' | 'figure'
+export type LibraryItemType =
+  | 'equation'
+  | 'table'
+  | 'figure'
+  /** Term + definition body (glossary card). */
+  | 'definition'
+  /** Ordered/unordered bullet list. */
+  | 'list'
+  /** Highlighted note / tip / warn box. */
+  | 'callout'
+  /** Monospace code / pseudocode / snippet. */
+  | 'code'
+  /** Named constant with symbol, value, unit (e.g. c, ℏ). */
+  | 'constant'
+  /** Related identities as a stacked set of LaTeX lines. */
+  | 'identity-set'
+  /** Graph/plot figure (SVG preferred via imageUrl). */
+  | 'plot'
+  /** Matrix / array (structured rows or LaTeX). */
+  | 'matrix'
+
 export type CanvasItemType =
   | LibraryItemType
   | 'custom-equation'
   | 'custom-image'
   /** Mermaid process / flowchart card (source in mermaidSource). */
   | 'process-chart'
+
+/** Callout accent for note-style cards. */
+export type CalloutVariant = 'note' | 'tip' | 'info' | 'warn' | 'danger'
+
+/** All library types (for filters / catalogs). */
+export const LIBRARY_ITEM_TYPES: LibraryItemType[] = [
+  'equation',
+  'table',
+  'figure',
+  'definition',
+  'list',
+  'callout',
+  'code',
+  'constant',
+  'identity-set',
+  'plot',
+  'matrix',
+]
 
 /** Mermaid diagram family used for templates + config UI. */
 export type MermaidDiagramKind =
@@ -95,12 +143,42 @@ export interface LibraryItem {
   subject: Subject
   topic: string
   tags: string[]
+  /** Equation / matrix / constant LaTeX (KaTeX). */
   latex?: string
   tableMarkdown?: string
   imageUrl?: string
   imagePath?: string
   description?: string
   source?: string
+  // ── Tier 1 prose ──────────────────────────────────────────
+  /** Defined term (definition cards). */
+  term?: string
+  /** Prose body (definition / callout); plain text or light markdown. */
+  body?: string
+  /** Bullet / numbered list entries. */
+  listItems?: string[]
+  /** When true, render list as ordered (1,2,3…). */
+  listOrdered?: boolean
+  /** Callout accent. */
+  calloutVariant?: CalloutVariant
+  /** Source / pseudocode for code cards. */
+  code?: string
+  /** Language hint for code cards (display only). */
+  codeLanguage?: string
+  // ── Tier 2 STEM ───────────────────────────────────────────
+  /** Constant symbol (e.g. c, ℏ, N_A). */
+  symbol?: string
+  /** Constant numeric/symbolic value string. */
+  value?: string
+  /** Constant unit (e.g. m/s, J·K⁻¹). */
+  unit?: string
+  /** Stacked LaTeX identities (identity-set). */
+  identities?: string[]
+  /**
+   * Matrix entries as row-major cells (each cell is LaTeX or plain text).
+   * When set, preferred over free-form latex for matrix cards.
+   */
+  matrixRows?: string[][]
   isSystem: boolean
   createdBy?: string
   createdAt?: number
@@ -127,7 +205,7 @@ export interface CanvasItem {
   contentFitKey?: number
   /**
    * When true, content may scale above 100% to fill the card body
-   * (set by double-click fit).
+   * (Properties “Scale content to fill card”).
    */
   contentFill?: boolean
   /**
@@ -155,6 +233,20 @@ export interface CanvasItem {
   tableMarkdown?: string
   imageUrl?: string
   imagePath?: string
+  // ── Tier 1 prose ──────────────────────────────────────────
+  term?: string
+  body?: string
+  listItems?: string[]
+  listOrdered?: boolean
+  calloutVariant?: CalloutVariant
+  code?: string
+  codeLanguage?: string
+  // ── Tier 2 STEM ───────────────────────────────────────────
+  symbol?: string
+  value?: string
+  unit?: string
+  identities?: string[]
+  matrixRows?: string[][]
   /**
    * Mermaid diagram source (process-chart cards).
    * Kept for re-open / library; free-form cards prefer `processFlow` for paint.
@@ -346,20 +438,21 @@ export interface LayoutPanel {
   shape?: PanelShape
   /**
    * Orthogonal runs that form an L / stepped region (polygon packing).
-   * Used for hit-testing / fill; stroke should prefer `outlinePath` so
-   * merged n-gon edges do not paint double borders at run joins.
+   * Soft fill paints these under a single group opacity (opaque color) so
+   * overlapping runs do not double-composite alpha. Stroke prefers
+   * `outlinePath` so merged n-gon edges do not paint double borders.
    */
   runs?: Array<{ x: number; y: number; width: number; height: number }>
   /**
    * SVG path `d` for the exterior outline of an n-gon polyomino, in
-   * **absolute board coordinates** (same space as x/y). Stroke this once;
-   * do not stroke each run separately.
+   * **absolute board coordinates** (same space as x/y). Stroke-only edge
+   * segments — not a closed fillable region. Soft fill uses `runs`.
    */
   outlinePath?: string
   /**
-   * When false, paint fill/title only (no border/outline stroke).
-   * Nested multi-level panels set this false on inner levels so only the
-   * outer (L1) solid frame strokes — avoids double borders.
+   * When false, title-chip only (no border/outline, no soft fill).
+   * Soft fill is further restricted to **leaf** stroked panels (no nested
+   * stroked child) so L1+L2 washes do not stack into muddy tints.
    * Default true.
    */
   showStroke?: boolean
@@ -414,6 +507,8 @@ export const SUBJECTS: { id: Subject; label: string }[] = [
   { id: 'biology', label: 'Biology' },
   { id: 'economics', label: 'Economics' },
   { id: 'finance', label: 'Finance' },
+  { id: 'psychology', label: 'Psychology' },
+  { id: 'general', label: 'General' },
 ]
 
 const defaultPage = resolvePagePixels(

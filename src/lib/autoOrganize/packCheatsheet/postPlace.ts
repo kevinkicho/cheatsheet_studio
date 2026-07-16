@@ -1,8 +1,20 @@
 /**
  * Post-place refine: densify leaves, hierarchical re-pack, gaps, multipage seams.
+ *
+ * ⚠ FREEZE — see LAYOUT_INVARIANTS.md + sheet.invariants.test.ts
+ * Do not add global gravity/refit or cross-L1 freefall. Thrash history:
+ * densify ↔ L1 order ↔ Chemistry empty shells ↔ H/V gap asymmetry.
+ *
+ * Multi-level phase contract:
+ * 1. densify card interiors inside each leaf
+ * 2. repack L2 AABBs *inside each L1* (densest), stack L1s by groupSort
+ * 3. axis-aware L2 min-gap (content clear)
+ * 4. restack L1 clusters (hard order guarantee)
+ * 5. block gap + re-clear L2
+ * 6. final L1 restack
  */
 import type { CanvasItem } from '@/types'
-import type { PanelGroupLevel } from '../constants'
+import type { GroupSortOrder, PanelGroupLevel } from '../constants'
 import type { FolderRef } from '../folders'
 import {
   densifyPlacedGroups,
@@ -11,6 +23,7 @@ import {
   resolveLeafGroupCollisions,
   gravityCompactGroups,
   repackGroupsInParents,
+  restackParentClusters,
   separateFolderClusters,
   resolveCardOverlaps,
   separateLeafCardsByGap,
@@ -37,12 +50,19 @@ export type PostPlaceOpts = {
   blockGapPx: number
   leafGapCells: number
   l1GapPx: number
+  /** @deprecated Prefer l2ContentClearH / l2ContentClearV. Vertical fallback. */
   l2ContentClearPx: number
+  /** Side-by-side L2 content AABB min gap (no title). */
+  l2ContentClearH?: number
+  /** Stacked L2 content AABB min gap (includes title band). */
+  l2ContentClearV?: number
   interTopicChromePx: number
   outerTitleCells: number
   panelPad: number
   panelTitleBandPx: number
   multiPage: boolean
+  /** Sheet groupSort — locks L1 stack order; L2s densify inside each L1. */
+  groupSort?: GroupSortOrder
   /** Pack content box for multipage gutters. */
   box: {
     top: number
@@ -80,16 +100,51 @@ export function refinePlacedCards(
     leafGapCells,
     l1GapPx,
     l2ContentClearPx,
+    l2ContentClearH,
+    l2ContentClearV,
     interTopicChromePx,
     outerTitleCells,
     panelPad,
     panelTitleBandPx,
     multiPage,
+    groupSort = 'none',
     box,
   } = opts
   const hasFolders = folders.length > 0
+  const preserveOrder =
+    groupSort === 'name-asc' || groupSort === 'name-desc'
+  const clearH = Math.max(0, l2ContentClearH ?? l2ContentClearPx)
+  const clearV = Math.max(0, l2ContentClearV ?? l2ContentClearPx)
+  const interParentGapPx = Math.max(
+    0,
+    l1GapPx + (outerLevelsStroke ? panelPad * 2 : 0),
+  )
 
-  // Close voids per leaf group, then multi-order free-flow interiors
+  const resolveL2 = (items: CanvasItem[]) =>
+    leafLevelsStroke && hasFolders
+      ? resolveLeafGroupCollisions(items, folders, deepLevel, {
+          grid,
+          minGapX: clearH,
+          minGapY: clearV,
+          minGapPx: clearV,
+          parentLevel: shallowLevel,
+          contentRight: packRight,
+        })
+      : items
+
+  const restackL1 = (items: CanvasItem[]) =>
+    multiLevelHierarchy && hasFolders
+      ? restackParentClusters(items, folders, shallowLevel, {
+          grid,
+          contentLeft: packLeft,
+          contentTop: packTop,
+          contentRight: packRight,
+          parentGapPx: interParentGapPx,
+          groupSort,
+        })
+      : items
+
+  // ── 1) Card interiors per leaf ──────────────────────────────────────────
   if (usePanels && hasFolders) {
     result = densifyPlacedGroups(result, folders, deepLevel, {
       grid,
@@ -122,19 +177,8 @@ export function refinePlacedCards(
     contentRight: packRight,
   })
 
-  if (usePanels && leafLevelsStroke && hasFolders) {
-    result = resolveLeafGroupCollisions(result, folders, deepLevel, {
-      grid,
-      minGapPx: Math.max(0, l2ContentClearPx),
-      parentLevel: shallowLevel,
-    })
-  }
-
+  // ── 2) Hierarchical: densest L2s inside each L1, L1s stacked by sort ───
   if (usePanels && multiLevelHierarchy && hasFolders) {
-    const interParentGapPx = Math.max(
-      0,
-      l1GapPx + (outerLevelsStroke ? panelPad * 2 : 0),
-    )
     result = repackGroupsInParents(
       result,
       folders,
@@ -145,12 +189,18 @@ export function refinePlacedCards(
         contentLeft: packLeft,
         contentTop: packTop,
         contentRight: packRight,
+        // 0-cell free-flow inside L1; pixel L2 clear opens exact gap after
         gapCells: leafGapCells,
         parentGapPx: interParentGapPx,
         titleCells: outerTitleCells,
+        groupSort,
+        denseLeaves: true,
+        // Within-parent densify (not global freefall)
+        leafGapXPx: clearH,
+        leafGapYPx: clearV,
       },
     )
-  } else if (usePanels && hasFolders) {
+  } else if (usePanels && hasFolders && !preserveOrder) {
     result = gravityCompactGroups(result, folders, deepLevel, {
       grid,
       gapPx: Math.max(
@@ -163,23 +213,34 @@ export function refinePlacedCards(
     })
   }
 
-  if (usePanels && hasFolders) {
-    const stackGap = multiLevelHierarchy
-      ? Math.max(0, l1GapPx + (outerLevelsStroke ? panelPad * 2 : 0))
-      : interTopicChromePx
+  // ── 3) L2 min-gap (axis-aware) ──────────────────────────────────────────
+  result = resolveL2(result)
+
+  // ── 4) Hard L1 order (Biology → Chemistry → …) ─────────────────────────
+  if (usePanels && multiLevelHierarchy && hasFolders) {
+    result = restackL1(result)
+  } else if (usePanels && hasFolders) {
     result = separateFolderClusters(result, folders, shallowLevel, {
       grid,
-      minGapPx: stackGap,
+      minGapPx: interTopicChromePx,
+      contentRight: packRight,
     })
   }
 
-  // Pixel-exact block gap AFTER hierarchical repositions
+  // ── 5) Block gap then re-clear L2 ───────────────────────────────────────
   if (hasFolders && blockGapPx > 0) {
     result = separateLeafCardsByGap(result, folders, deepLevel, {
       grid,
       minGapPx: blockGapPx,
       contentRight: packRight,
     })
+  }
+  result = resolveL2(result)
+
+  // ── 6) Final L1 restack (block gap may have shifted clusters) ───────────
+  if (usePanels && multiLevelHierarchy && hasFolders) {
+    result = restackL1(result)
+    result = resolveL2(result)
   }
 
   // Final hard clamp into chrome-inset pack band
@@ -237,6 +298,13 @@ export function refinePlacedCards(
       mode: 'board',
     })
   }
+
+  // Final global de-overlap (cross-folder too). Hierarchical re-pack + multipage
+  // can reintroduce paint stacks after the earlier same-leaf pass.
+  result = resolveCardOverlaps(result, {
+    grid,
+    contentRight: packRight,
+  })
 
   return result
 }

@@ -34,6 +34,7 @@ import { FullLibraryView } from '@/pages/FullLibraryView'
 import { SheetsView } from '@/pages/SheetsView'
 import { SheetJsonDropOverlay } from '@/components/import/SheetJsonDropOverlay'
 import { Toast, type ToastMessage } from '@/components/ui/Toast'
+import { AiChatFab } from '@/components/catalog/AiChatFab'
 import { useSheetJsonImport } from '@/hooks/useSheetJsonImport'
 
 export function AppShell() {
@@ -270,6 +271,8 @@ export function AppShell() {
       />
 
       <Toast toast={toast} onDismiss={() => setToast(null)} />
+
+      <AiChatFab />
 
       <DragOverlay dropAnimation={null}>
         {activeLib ? (

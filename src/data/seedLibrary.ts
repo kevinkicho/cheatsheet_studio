@@ -1,4 +1,5 @@
-import type { LibraryItem, Subject } from '@/types'
+import type { CalloutVariant, LibraryItem, Subject } from '@/types'
+import { SEED_LIBRARY_TIERS } from './seedLibrary.tiers'
 
 /**
  * Encode an inline SVG as a data URL for figure cards.
@@ -104,13 +105,210 @@ function fig(
   }
 }
 
+/** Glossary definition card (term + body). */
+function defn(
+  id: string,
+  title: string,
+  subject: Subject,
+  topic: string,
+  term: string,
+  body: string,
+  tags: string[],
+  description?: string,
+): LibraryItem {
+  return {
+    id,
+    type: 'definition',
+    title,
+    subject,
+    topic,
+    tags,
+    term,
+    body,
+    description,
+    isSystem: true,
+  }
+}
+
+/** Bullet / ordered list card. */
+function listCard(
+  id: string,
+  title: string,
+  subject: Subject,
+  topic: string,
+  listItems: string[],
+  tags: string[],
+  opts?: { listOrdered?: boolean; description?: string },
+): LibraryItem {
+  return {
+    id,
+    type: 'list',
+    title,
+    subject,
+    topic,
+    tags,
+    listItems,
+    listOrdered: opts?.listOrdered,
+    description: opts?.description,
+    isSystem: true,
+  }
+}
+
+/** Note / tip / warn callout. */
+function callout(
+  id: string,
+  title: string,
+  subject: Subject,
+  topic: string,
+  body: string,
+  tags: string[],
+  opts?: { calloutVariant?: CalloutVariant; description?: string },
+): LibraryItem {
+  return {
+    id,
+    type: 'callout',
+    title,
+    subject,
+    topic,
+    tags,
+    body,
+    calloutVariant: opts?.calloutVariant ?? 'note',
+    description: opts?.description,
+    isSystem: true,
+  }
+}
+
+/** Code / pseudocode snippet. */
+function codeCard(
+  id: string,
+  title: string,
+  subject: Subject,
+  topic: string,
+  code: string,
+  tags: string[],
+  opts?: { codeLanguage?: string; description?: string },
+): LibraryItem {
+  return {
+    id,
+    type: 'code',
+    title,
+    subject,
+    topic,
+    tags,
+    code,
+    codeLanguage: opts?.codeLanguage,
+    description: opts?.description,
+    isSystem: true,
+  }
+}
+
+/** Physical / math constant (symbol, value, unit). */
+function constant(
+  id: string,
+  title: string,
+  subject: Subject,
+  topic: string,
+  symbol: string,
+  value: string,
+  unit: string,
+  tags: string[],
+  opts?: { latex?: string; body?: string; description?: string },
+): LibraryItem {
+  return {
+    id,
+    type: 'constant',
+    title,
+    subject,
+    topic,
+    tags,
+    symbol,
+    value,
+    unit,
+    latex: opts?.latex,
+    body: opts?.body,
+    description: opts?.description,
+    isSystem: true,
+  }
+}
+
+/** Stacked related identities (each line is KaTeX). */
+function identitySet(
+  id: string,
+  title: string,
+  subject: Subject,
+  topic: string,
+  identities: string[],
+  tags: string[],
+  description?: string,
+): LibraryItem {
+  return {
+    id,
+    type: 'identity-set',
+    title,
+    subject,
+    topic,
+    tags,
+    identities,
+    description,
+    isSystem: true,
+  }
+}
+
+/** Graph / plot — SVG via svgUrl (same vector rule as figures). */
+function plot(
+  id: string,
+  title: string,
+  subject: Subject,
+  topic: string,
+  imageUrl: string,
+  tags: string[],
+  description?: string,
+): LibraryItem {
+  return {
+    id,
+    type: 'plot',
+    title,
+    subject,
+    topic,
+    tags,
+    imageUrl,
+    description,
+    isSystem: true,
+  }
+}
+
+/** Matrix from row cells (each cell LaTeX) or free-form latex. */
+function matrix(
+  id: string,
+  title: string,
+  subject: Subject,
+  topic: string,
+  matrixRows: string[][],
+  tags: string[],
+  description?: string,
+): LibraryItem {
+  return {
+    id,
+    type: 'matrix',
+    title,
+    subject,
+    topic,
+    tags,
+    matrixRows,
+    description,
+    isSystem: true,
+  }
+}
+
 /**
  * Static catalog: offline fallback and Admin seed source (`npm run seed`).
  *
  * VECTOR GRAPHICS GUARANTEE — every entry is one of:
- * - equation → KaTeX LaTeX (vector type)
- * - table → markdown pipes (vector HTML/em type)
- * - figure → svgUrl(`<svg viewBox=…>`) (vector paths)
+ * - equation → KaTeX LaTeX
+ * - table → markdown pipes
+ * - figure / plot → svgUrl(`<svg viewBox=…>`)
+ * - definition / list / callout / code → text
+ * - constant / identity-set / matrix → KaTeX or structured fields
  * Enforced by src/data/seedLibrary.vector.test.ts and scripts/seed-library.ts.
  * See docs/vector-graphics.md
  */
@@ -1273,20 +1471,20 @@ const SEED_LIBRARY_RAW: LibraryItem[] = [
   ),
   eq(
     'fin-capm',
-    'CAPM',
+    'CAPM expected return',
     'finance',
     'Asset Pricing',
-    'E[R_i] = R_f + \\beta_i\\big(E[R_m] - R_f\\big)',
-    ['returns'],
-    'Expected return vs systematic risk.',
+    '\\mathrm{E}[R_{i}] = R_{f} + \\beta_{i}\\bigl(\\mathrm{E}[R_{m}] - R_{f}\\bigr)',
+    ['returns', 'capm'],
+    'Security market line: required / expected return from systematic risk.',
   ),
   eq(
     'fin-beta',
     'Beta (definition)',
     'finance',
     'Asset Pricing',
-    '\\beta_i = \\frac{\\mathrm{Cov}(R_i, R_m)}{\\mathrm{Var}(R_m)}',
-    ['risk'],
+    '\\beta_{i} = \\frac{\\mathrm{Cov}(R_{i}, R_{m})}{\\mathrm{Var}(R_{m})}',
+    ['risk', 'capm'],
     'Sensitivity to market returns.',
   ),
   eq(
@@ -1321,7 +1519,7 @@ const SEED_LIBRARY_RAW: LibraryItem[] = [
     'Sharpe Ratio',
     'finance',
     'Portfolio Theory',
-    'S = \\frac{E[R_p] - R_f}{\\sigma_p}',
+    'S = \\frac{\\mathrm{E}[R_{p}] - R_{f}}{\\sigma_{p}}',
     ['risk'],
     'Excess return per unit of total risk.',
   ),
@@ -1330,7 +1528,7 @@ const SEED_LIBRARY_RAW: LibraryItem[] = [
     'Treynor Ratio',
     'finance',
     'Portfolio Theory',
-    'T = \\frac{E[R_p] - R_f}{\\beta_p}',
+    'T = \\frac{\\mathrm{E}[R_{p}] - R_{f}}{\\beta_{p}}',
     ['risk'],
     'Excess return per unit of systematic risk.',
   ),
@@ -1867,6 +2065,230 @@ const SEED_LIBRARY_RAW: LibraryItem[] = [
     ['diagram', 'tvm'],
     'Annuity cash-flow timeline.',
   ),
+
+  // ═══════════════════════════════════════════════════════════
+  // Tier 1 prose + Tier 2 STEM (sample blocks for each kind)
+  // ═══════════════════════════════════════════════════════════
+  defn(
+    'def-derivative',
+    'Derivative (definition)',
+    'mathematics',
+    'Calculus',
+    'Derivative',
+    'The derivative f′(a) is the instantaneous rate of change of f at a — the slope of the tangent line to y = f(x) at x = a.',
+    ['calculus', 'glossary'],
+    'Limit definition motivates the tangent-line interpretation.',
+  ),
+  defn(
+    'def-npv',
+    'Net Present Value',
+    'finance',
+    'Capital Budgeting',
+    'NPV',
+    'Present value of all cash inflows minus the present value of all cash outflows, discounted at the project’s cost of capital.',
+    ['finance', 'glossary'],
+  ),
+  listCard(
+    'list-limit-laws',
+    'Limit laws checklist',
+    'mathematics',
+    'Calculus',
+    [
+      'Sum / difference: lim (f ± g) = lim f ± lim g',
+      'Product: lim (f·g) = (lim f)(lim g)',
+      'Quotient: lim (f/g) = (lim f)/(lim g) if lim g ≠ 0',
+      'Constant multiple: lim (c f) = c lim f',
+    ],
+    ['calculus', 'limits'],
+    { description: 'Basic algebraic limit rules.' },
+  ),
+  listCard(
+    'list-stoich-steps',
+    'Stoichiometry steps',
+    'chemistry',
+    'Stoichiometry',
+    [
+      'Balance the chemical equation',
+      'Convert given mass → moles',
+      'Use mole ratio from coefficients',
+      'Convert moles → desired unit',
+    ],
+    ['stoichiometry', 'procedure'],
+    { listOrdered: true },
+  ),
+  callout(
+    'callout-domain',
+    'Check the domain',
+    'mathematics',
+    'Algebra',
+    'Before simplifying, note where expressions are undefined (division by zero, even roots of negatives, log of non-positive).',
+    ['algebra', 'tip'],
+    { calloutVariant: 'tip' },
+  ),
+  callout(
+    'callout-units',
+    'Unit consistency',
+    'physics',
+    'Problem Solving',
+    'Always convert to SI (or a consistent set) before substituting into formulas. Mixed units are a common source of wrong answers.',
+    ['units', 'warn'],
+    { calloutVariant: 'warn' },
+  ),
+  codeCard(
+    'code-newton',
+    'Newton iteration (pseudocode)',
+    'mathematics',
+    'Numerical Methods',
+    `x ← x0
+for k = 1..N:
+  if |f(x)| < tol: return x
+  x ← x − f(x) / f'(x)
+return x`,
+    ['numerical', 'root-finding'],
+    {
+      codeLanguage: 'pseudocode',
+      description: 'Newton–Raphson root finder sketch.',
+    },
+  ),
+  codeCard(
+    'code-npv-loop',
+    'NPV accumulation',
+    'finance',
+    'Capital Budgeting',
+    `npv = 0
+for t, cf in enumerate(cashflows):
+  npv += cf / (1 + r)**t
+return npv`,
+    ['npv', 'code'],
+    { codeLanguage: 'python-ish' },
+  ),
+  constant(
+    'const-c',
+    'Speed of light',
+    'physics',
+    'Constants',
+    'c',
+    '2.998\\times 10^{8}',
+    'm/s',
+    ['constant', 'em'],
+    {
+      latex: 'c = 2.998\\times 10^{8}\\,\\mathrm{m/s}',
+      body: 'Exact defined value in SI is 299 792 458 m/s.',
+    },
+  ),
+  constant(
+    'const-avogadro',
+    "Avogadro's number",
+    'chemistry',
+    'Constants',
+    'N_A',
+    '6.022\\times 10^{23}',
+    'mol^{-1}',
+    ['constant', 'mole'],
+    {
+      latex: 'N_A = 6.022\\times 10^{23}\\,\\mathrm{mol^{-1}}',
+    },
+  ),
+  constant(
+    'const-gas-r',
+    'Gas constant R',
+    'chemistry',
+    'Constants',
+    'R',
+    '8.314',
+    'J/(mol·K)',
+    ['constant', 'thermo'],
+    {
+      latex: 'R = 8.314\\,\\mathrm{J\\,mol^{-1}\\,K^{-1}}',
+    },
+  ),
+  identitySet(
+    'id-pythag-trig',
+    'Pythagorean identities',
+    'mathematics',
+    'Trigonometry',
+    [
+      '\\sin^2\\theta + \\cos^2\\theta = 1',
+      '1 + \\tan^2\\theta = \\sec^2\\theta',
+      '1 + \\cot^2\\theta = \\csc^2\\theta',
+    ],
+    ['trig', 'identity'],
+    'Core Pythagorean relations.',
+  ),
+  identitySet(
+    'id-log-laws',
+    'Logarithm laws',
+    'mathematics',
+    'Algebra',
+    [
+      '\\log_b(xy) = \\log_b x + \\log_b y',
+      '\\log_b(x/y) = \\log_b x - \\log_b y',
+      '\\log_b(x^k) = k\\log_b x',
+    ],
+    ['log', 'identity'],
+  ),
+  matrix(
+    'mat-2x2',
+    'General 2×2 matrix',
+    'mathematics',
+    'Linear Algebra',
+    [
+      ['a', 'b'],
+      ['c', 'd'],
+    ],
+    ['matrix', 'linalg'],
+    'Prototype 2×2 matrix.',
+  ),
+  matrix(
+    'mat-rotation-2d',
+    '2D rotation matrix',
+    'mathematics',
+    'Linear Algebra',
+    [
+      ['\\cos\\theta', '-\\sin\\theta'],
+      ['\\sin\\theta', '\\cos\\theta'],
+    ],
+    ['matrix', 'rotation'],
+    'Rotates vectors counterclockwise by θ.',
+  ),
+  plot(
+    'plot-parabola',
+    'Parabola y = x²',
+    'mathematics',
+    'Functions',
+    svgUrl(`<svg xmlns="http://www.w3.org/2000/svg" width="220" height="160" viewBox="0 0 220 160">
+      <line x1="20" y1="140" x2="200" y2="140" stroke="#6b7280" stroke-width="1.5"/>
+      <line x1="110" y1="150" x2="110" y2="15" stroke="#6b7280" stroke-width="1.5"/>
+      <path d="M40 140 Q110 10 180 140" fill="none" stroke="#818cf8" stroke-width="2.5"/>
+      <text x="185" y="155" fill="#9ca3af" font-size="11" font-family="sans-serif">x</text>
+      <text x="118" y="22" fill="#9ca3af" font-size="11" font-family="sans-serif">y</text>
+      <text x="125" y="50" fill="#a5b4fc" font-size="12" font-family="sans-serif">y = x²</text>
+    </svg>`),
+    ['plot', 'graph'],
+    'Standard upward-opening parabola.',
+  ),
+  plot(
+    'plot-supply-demand',
+    'Supply & demand',
+    'economics',
+    'Markets',
+    svgUrl(`<svg xmlns="http://www.w3.org/2000/svg" width="220" height="160" viewBox="0 0 220 160">
+      <line x1="30" y1="140" x2="200" y2="140" stroke="#6b7280" stroke-width="1.5"/>
+      <line x1="30" y1="140" x2="30" y2="20" stroke="#6b7280" stroke-width="1.5"/>
+      <line x1="40" y1="120" x2="180" y2="40" stroke="#34d399" stroke-width="2.5"/>
+      <line x1="40" y1="40" x2="180" y2="120" stroke="#f87171" stroke-width="2.5"/>
+      <circle cx="110" cy="80" r="4" fill="#fbbf24"/>
+      <text x="185" y="155" fill="#9ca3af" font-size="11" font-family="sans-serif">Q</text>
+      <text x="8" y="30" fill="#9ca3af" font-size="11" font-family="sans-serif">P</text>
+      <text x="150" y="50" fill="#86efac" font-size="11" font-family="sans-serif">S</text>
+      <text x="150" y="125" fill="#fca5a5" font-size="11" font-family="sans-serif">D</text>
+    </svg>`),
+    ['plot', 'micro'],
+    'Linear supply and demand with equilibrium.',
+  ),
 ]
 
-export const SEED_LIBRARY: LibraryItem[] = uniqueById(SEED_LIBRARY_RAW)
+export const SEED_LIBRARY: LibraryItem[] = uniqueById([
+  ...SEED_LIBRARY_RAW,
+  ...SEED_LIBRARY_TIERS,
+])

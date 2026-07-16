@@ -42,7 +42,12 @@
     "agent:everything:stats": "tsx packages/cheatsheet-sdk/src/cli.ts everything --stats",
     "agent:everything:svg": "tsx packages/cheatsheet-sdk/src/cli.ts everything -o examples/agent-out/everything.sheet.json && tsx packages/cheatsheet-sdk/src/cli.ts export-svg examples/agent-out/everything.sheet.json -o examples/agent-out/everything.svg --keep-html",
     "review:ngon": "vite-node scripts/review-ngon-layout.ts --shape polygon",
-    "review:rect": "vite-node scripts/review-ngon-layout.ts --shape rect"
+    "review:rect": "vite-node scripts/review-ngon-layout.ts --shape rect",
+    "catalog:list": "tsx scripts/enrich-topics-ollama.ts --list",
+    "catalog:thin": "tsx scripts/enrich-topics-ollama.ts --thin-list",
+    "catalog:enrich": "tsx scripts/enrich-topics-ollama.ts",
+    "catalog:enrich:thin": "tsx scripts/enrich-topics-ollama.ts --thin --limit 5",
+    "catalog:publish-rtdb": "tsx scripts/publish-catalog-rtdb.ts"
   },
   "dependencies": {
     "@dagrejs/dagre": "^3.0.0",

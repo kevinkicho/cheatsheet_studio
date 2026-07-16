@@ -302,7 +302,13 @@ export const MINDMAP_LEVEL_GAP = 158
 export const MINDMAP_HUB_MIN = 148
 export const MINDMAP_LEAF_MIN = 118
 
-/** Word-wrap label for sizing / SVG paint. */
+/**
+ * Word-wrap label for sizing / SVG paint / editor paint.
+ *
+ * Only breaks at spaces — never mid-word (screenshot 014741: "Popularisatio"/"n").
+ * A single long token stays on one line; callers shrink font via fitLabelFontPx
+ * so it still fits the shape.
+ */
 export function wrapMindmapLabelLines(
   label: string,
   maxCharsPerLine = 14,
@@ -319,19 +325,34 @@ export function wrapMindmapLabelLines(
       cur = next
     } else {
       if (cur) lines.push(cur)
-      // Hard-break very long tokens
-      if (w.length > maxCharsPerLine) {
-        for (let i = 0; i < w.length; i += maxCharsPerLine) {
-          lines.push(w.slice(i, i + maxCharsPerLine))
-        }
-        cur = ''
-      } else {
-        cur = w
-      }
+      // Keep whole word even if longer than max — no mid-token slice
+      cur = w
     }
   }
   if (cur) lines.push(cur)
   return lines.length ? lines : [raw]
+}
+
+/**
+ * Shared mindmap label layout (editor MindmapNode + canvas processFlowToSvg).
+ * Same wrapCols / pad / maxPx so card paint matches interactive editor.
+ */
+export function mindmapLabelLayout(
+  label: string,
+  boxW: number,
+  boxH: number,
+  opts?: { isHub?: boolean },
+): { lines: string[]; pad: number; wrapCols: number; maxPx: number; minPx: number } {
+  const side = Math.min(Math.max(12, boxW), Math.max(12, boxH))
+  const isHub = opts?.isHub === true
+  // Slightly more chars per line than side/8 so short words wrap at spaces,
+  // not mid-word, while still reflowing multi-word labels.
+  const wrapCols = Math.max(10, Math.floor(side / 7))
+  const lines = wrapMindmapLabelLines(label, wrapCols)
+  const pad = Math.max(6, Math.round(side * 0.08))
+  const maxPx = Math.max(isHub ? 28 : 22, Math.floor(side * 0.48))
+  const minPx = isHub ? 13 : 11
+  return { lines, pad, wrapCols, maxPx, minPx }
 }
 
 /**

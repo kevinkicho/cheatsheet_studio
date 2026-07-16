@@ -8,16 +8,14 @@ import {
 import { ArrowDownAZ, Check, Copy, Plus } from 'lucide-react'
 import { SUBJECTS, type LibraryItem } from '@/types'
 import { useCanvasStore } from '@/stores/canvasStore'
-import { FitContent } from '@/components/math/FitContent'
-import { FigureView } from '@/components/math/FigureView'
-import { LatexView } from '@/components/math/LatexView'
-import { MarkdownTable } from '@/components/math/MarkdownTable'
 import {
   cycleSortLevel,
   multiSortStable,
   sortLevelIndex,
   type SortLevel,
 } from '@/lib/multiSort'
+import { CARD_KIND_LABELS } from '@/lib/cardKinds'
+import { LibraryItemPreviewBody } from './LibraryItemPreviewBody'
 
 type SortKey = 'title' | 'topic' | 'type'
 
@@ -28,9 +26,17 @@ const SORT_LABELS: Record<SortKey, string> = {
 }
 
 const TYPE_LABEL: Record<LibraryItem['type'], string> = {
-  equation: 'Equation',
-  table: 'Table',
-  figure: 'Figure',
+  equation: CARD_KIND_LABELS.equation,
+  table: CARD_KIND_LABELS.table,
+  figure: CARD_KIND_LABELS.figure,
+  definition: CARD_KIND_LABELS.definition,
+  list: CARD_KIND_LABELS.list,
+  callout: CARD_KIND_LABELS.callout,
+  code: CARD_KIND_LABELS.code,
+  constant: CARD_KIND_LABELS.constant,
+  'identity-set': CARD_KIND_LABELS['identity-set'],
+  plot: CARD_KIND_LABELS.plot,
+  matrix: CARD_KIND_LABELS.matrix,
 }
 
 function cmpStr(a: string, b: string): number {
@@ -261,51 +267,13 @@ export function LibraryCatalogList({ items }: { items: LibraryItem[] }) {
                   <br />
                   Drag a row onto the canvas, or use Add to canvas.
                 </p>
-              ) : selected.type === 'figure' && selected.imageUrl ? (
+              ) : (
                 <div className="space-y-2">
-                  <div className="mx-auto h-28 max-w-full overflow-hidden rounded-md bg-zinc-950/40 p-1">
-                    <FitContent
-                      mode="scale"
-                      fitMethod="transform"
-                      align="center"
-                      minScale={0.05}
-                      maxScale={32}
-                      showBadge
-                      contentKey={`cat-fig-${selected.id}`}
-                      className="h-full w-full"
-                    >
-                      <FigureView
-                        src={selected.imageUrl}
-                        alt={selected.title}
-                        fillContainer={false}
-                      />
-                    </FitContent>
-                  </div>
-                  {selected.description && (
-                    <p className="text-[10px] leading-snug text-zinc-500">
-                      {selected.description}
-                    </p>
-                  )}
-                </div>
-              ) : selected.type === 'table' && selected.tableMarkdown ? (
-                <div className="space-y-2">
-                  <MarkdownTable
-                    markdown={selected.tableMarkdown}
-                    fitContent
-                    className="overflow-auto text-[11px] text-zinc-200"
-                  />
-                  {selected.description && (
-                    <p className="text-[10px] leading-snug text-zinc-500">
-                      {selected.description}
-                    </p>
-                  )}
-                </div>
-              ) : selected.latex ? (
-                <div className="space-y-2">
-                  <div className="rounded-md border border-zinc-800 bg-zinc-950/50 px-2 py-3">
-                    <LatexView
-                      latex={selected.latex}
-                      className="text-sm text-zinc-100 [&_.katex-display]:m-0"
+                  <div className="mx-auto h-36 max-w-full overflow-hidden rounded-md bg-zinc-950/40 p-2">
+                    <LibraryItemPreviewBody
+                      item={selected}
+                      stageW={280}
+                      stageH={128}
                     />
                   </div>
                   {selected.description && (
@@ -313,14 +281,12 @@ export function LibraryCatalogList({ items }: { items: LibraryItem[] }) {
                       {selected.description}
                     </p>
                   )}
-                  <p className="break-all font-mono text-[9px] leading-snug text-zinc-600">
-                    {selected.latex}
-                  </p>
+                  {selected.latex ? (
+                    <p className="break-all font-mono text-[9px] leading-snug text-zinc-600">
+                      {selected.latex}
+                    </p>
+                  ) : null}
                 </div>
-              ) : (
-                <p className="py-6 text-center text-[11px] text-zinc-600">
-                  No preview content for this item.
-                </p>
               )}
             </div>
 

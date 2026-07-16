@@ -31,7 +31,18 @@ The parent file `src/lib/autoOrganize.ts` re-exports this barrel for compatibili
 | `geometry.ts` | Rect overlaps, perimeter paths |
 | `index.ts` | Public barrel |
 
+## Requirements (Auto-layout button)
+
+**Canonical product requirements** for Apply auto layout (gaps, sort, density,
+pipeline, regressions, test commands):
+
+→ **[`AUTO_LAYOUT_REQUIREMENTS.md`](./AUTO_LAYOUT_REQUIREMENTS.md)**
+
+Process freeze / change rules: [`LAYOUT_INVARIANTS.md`](./LAYOUT_INVARIANTS.md)  
+Hard kitchen-sink tests: `sheet.invariants.test.ts`
+
 ## Notes
 
 - Prefer editing the module that owns the concern rather than growing `packCheatsheet.ts`.
 - Keep public names stable; tests and the UI import from `@/lib/autoOrganize` only.
+- Before packing changes: fail an invariant first, then fix (see requirements §14).

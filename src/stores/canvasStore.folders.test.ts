@@ -59,6 +59,40 @@ describe('canvasStore — folders nesting', () => {
     expect(openAfter).toBe(!openBefore)
   })
 
+  it('renameFolder updates matching layout panel title on canvas', () => {
+    const id = useCanvasStore.getState().addFolder('Old Topic')
+    useCanvasStore.setState((s) => ({
+      canvas: {
+        ...s.canvas,
+        layoutPanels: [
+          {
+            id: 'panel-1',
+            folderId: id,
+            title: 'Old Topic',
+            x: 0,
+            y: 0,
+            width: 200,
+            height: 100,
+            memberIds: [],
+          },
+          {
+            id: 'panel-other',
+            folderId: 'other',
+            title: 'Keep me',
+            x: 0,
+            y: 0,
+            width: 100,
+            height: 50,
+          },
+        ],
+      },
+    }))
+    useCanvasStore.getState().renameFolder(id, 'New Topic')
+    const panels = useCanvasStore.getState().canvas.layoutPanels ?? []
+    expect(panels.find((p) => p.id === 'panel-1')?.title).toBe('New Topic')
+    expect(panels.find((p) => p.id === 'panel-other')?.title).toBe('Keep me')
+  })
+
   it('setFolderHidden hides items in folder', () => {
     const folder = useCanvasStore.getState().addFolder('HideMe')
     const itemId = useCanvasStore.getState().addCustomEquation('z', 'z')

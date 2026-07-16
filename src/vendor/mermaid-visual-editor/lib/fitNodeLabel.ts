@@ -27,12 +27,16 @@ export function fitLabelFontPx(
   boxH: number,
   opts?: FitLabelOpts,
 ): number {
+  const w = Math.max(12, boxW)
+  const h = Math.max(12, boxH)
   const padX = opts?.padX ?? 6
   const padY = opts?.padY ?? 4
   const minPx = opts?.minPx ?? 11
-  const maxPx = opts?.maxPx ?? 32
-  const w = Math.max(12, boxW)
-  const h = Math.max(12, boxH)
+  // Grow with the box when caller doesn't cap — enlarged shapes should fill
+  // with type, not stop at a fixed 32px ceiling.
+  const maxPx =
+    opts?.maxPx ??
+    Math.min(96, Math.max(32, Math.floor(Math.min(w, h) * 0.45)))
   const availW = Math.max(8, w - padX * 2)
   const availH = Math.max(8, h - padY * 2)
 

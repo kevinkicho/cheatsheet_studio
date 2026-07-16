@@ -19,11 +19,14 @@ export {
 export { mergeAdjacentOutermostPanels } from './merge'
 export {
   translateLayoutPanelCluster,
+  resizeLayoutPanelCluster,
   relayoutPanelContents,
   takePanelPackSeed,
   peekPanelPackSeed,
   resetPanelPackSeed,
 } from './relayout'
+export { resolvePanelMemberIds } from './resolveMembers'
+export { packIntoBox } from './packIntoBox'
 export {
   isPanelChildOf,
   hasOuterStrokedParent,

@@ -215,7 +215,23 @@ export function splitByHeadings(items: CanvasItem[]): CanvasItem[][] {
 }
 
 export function isHeadingCard(it: CanvasItem): boolean {
-  if (it.mermaidSource || it.tableMarkdown || it.type === 'process-chart') {
+  // Non-equation structured cards are never section banners
+  if (
+    it.mermaidSource ||
+    it.tableMarkdown ||
+    it.type === 'process-chart' ||
+    it.type === 'table' ||
+    it.type === 'figure' ||
+    it.type === 'custom-image' ||
+    it.type === 'plot' ||
+    it.type === 'definition' ||
+    it.type === 'list' ||
+    it.type === 'callout' ||
+    it.type === 'code' ||
+    it.type === 'constant' ||
+    it.type === 'identity-set' ||
+    it.type === 'matrix'
+  ) {
     return false
   }
   const title = (it.title ?? '').trim()
